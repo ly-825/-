@@ -268,7 +268,7 @@ def page(title: str, body: str) -> HTMLResponse:
     body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }}
     a {{ color:inherit; text-decoration:none; }}
     .layout {{ display:grid; grid-template-columns:240px 1fr; min-height:100vh; }}
-    aside {{ background:#0f1f46; color:white; padding:24px 18px; }}
+    aside {{ background:#0f1f46; color:white; padding:24px 18px; max-height:100vh; overflow:auto; position:sticky; top:0; }}
     .brand {{ font-size:20px; font-weight:800; margin-bottom:26px; }}
     nav a {{ display:block; padding:12px 14px; border-radius:12px; color:rgba(255,255,255,.82); margin-bottom:8px; }}
     nav a:hover {{ background:rgba(255,255,255,.1); color:white; }}
@@ -280,9 +280,10 @@ def page(title: str, body: str) -> HTMLResponse:
     .card {{ background:var(--card); border:1px solid var(--line); border-radius:20px; padding:20px; box-shadow:0 12px 34px rgba(20,32,55,.06); margin-bottom:18px; }}
     .grid {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }}
     .stat strong {{ display:block; font-size:30px; margin-top:8px; }}
-    table {{ width:100%; border-collapse:collapse; }}
+    .card:has(table) {{ overflow:auto; max-height:68vh; }}
+    table {{ width:100%; min-width:760px; border-collapse:collapse; }}
     th,td {{ padding:12px 10px; border-bottom:1px solid var(--line); text-align:left; font-size:14px; }}
-    th {{ color:var(--muted); font-weight:700; background:#fbfcff; }}
+    th {{ color:var(--muted); font-weight:700; background:#fbfcff; position:sticky; top:0; z-index:1; }}
     .form-grid {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }}
     label {{ display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }}
     input,select {{ width:100%; height:42px; border:1px solid var(--line); border-radius:12px; padding:0 12px; background:white; }}
@@ -296,8 +297,10 @@ def page(title: str, body: str) -> HTMLResponse:
     .dropzone span {{ color:var(--muted); }}
     .file-name {{ margin-top:12px; color:var(--primary); font-weight:700; }}
     .hidden-file {{ position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }}
+    .table-scroll {{ overflow:auto; max-height:68vh; }}
+    .table-scroll table {{ margin:0; }}
     pre {{ white-space:pre-wrap; word-break:break-all; background:#0f172a; color:#dbeafe; padding:16px; border-radius:14px; overflow:auto; }}
-    @media (max-width:900px) {{ .layout {{ grid-template-columns:1fr; }} aside {{ position:static; }} .grid,.form-grid {{ grid-template-columns:1fr; }} }}
+    @media (max-width:900px) {{ .layout {{ grid-template-columns:1fr; }} aside {{ position:static; max-height:none; }} .grid,.form-grid {{ grid-template-columns:1fr; }} }}
   </style>
 </head>
 <body>
@@ -324,6 +327,14 @@ def page(title: str, body: str) -> HTMLResponse:
     </aside>
     <main>{body}</main>
   </div>
+  <script>
+    document.querySelectorAll('.card > table').forEach((table) => {{
+      const wrapper = document.createElement('div');
+      wrapper.className = 'table-scroll';
+      table.parentNode.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+    }});
+  </script>
 </body>
 </html>
     """
@@ -332,21 +343,68 @@ def page(title: str, body: str) -> HTMLResponse:
 
 @router.get("/admin", response_class=HTMLResponse)
 def admin_home(db: Session = Depends(get_db)) -> HTMLResponse:
-    inventory_count = db.query(MaterialInventory).filter(MaterialInventory.inventory_type != "scrap").count()
-    available_count = (
-        db.query(MaterialInventory)
-        .filter(MaterialInventory.inventory_type != "scrap", MaterialInventory.status == "available")
-        .count()
+    pending_drawing_count = db.query(ProductDrawing).filter(ProductDrawing.confirmed == 0).count()
+    confirmed_drawing_count = db.query(ProductDrawing).filter(ProductDrawing.confirmed == 1).count()
+    product_quantity = sum(
+        item.quantity
+        for item in db.query(MaterialInventory)
+        .filter(MaterialInventory.inventory_type != "scrap", MaterialInventory.quantity > 0)
+        .all()
     )
-    drawing_count = db.query(ProductDrawing).count()
+    pending_scrap_count = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "scrap", MaterialInventory.status == "pending").count()
+    available_scrap_quantity = sum(
+        item.quantity
+        for item in db.query(MaterialInventory)
+        .filter(MaterialInventory.inventory_type == "scrap", MaterialInventory.status == "available", MaterialInventory.quantity > 0)
+        .all()
+    )
+    latest_product_transactions = (
+        db.query(MaterialInventory)
+        .filter(MaterialInventory.inventory_type != "scrap", MaterialInventory.quantity > 0)
+        .order_by(MaterialInventory.updated_at.desc())
+        .limit(5)
+        .all()
+    )
+    latest_rows = "".join(
+        f"""
+        <tr>
+          <td>{item.material_code or item.source_product_code or '-'}</td>
+          <td>{item.material or '-'}</td>
+          <td>{item.thickness if item.thickness is not None else '-'}</td>
+          <td><strong>{item.quantity}</strong></td>
+          <td>{item.location or '-'}</td>
+        </tr>
+        """
+        for item in latest_product_transactions
+    )
     body = f"""
-    <div class="top"><div><h1>后台首页</h1><p class="muted">图纸识别、库存出入库和余料确认入库统一管理。</p></div><div class="actions"><a class="btn" href="/admin/drawings">上传图纸</a><a class="btn secondary" href="/admin/inventory">查询库存</a></div></div>
+    <div class="top"><div><h1>工作台</h1><p class="muted">按工厂日常流程处理图纸、产品库存和余料流转。</p></div><div class="actions"><a class="btn" href="/admin/drawings">上传图纸</a><a class="btn secondary" href="/admin/inventory/outbound">产品出库</a><a class="btn secondary" href="/admin/scraps/outbound">余料出库</a></div></div>
     <section class="grid">
-      <div class="card stat"><span class="muted">库存总数</span><strong>{inventory_count}</strong></div>
-      <div class="card stat"><span class="muted">可用库存</span><strong>{available_count}</strong></div>
-      <div class="card stat"><span class="muted">图纸记录</span><strong>{drawing_count}</strong></div>
+      <div class="card stat"><span class="muted">待确认图纸</span><strong>{pending_drawing_count}</strong><a class="btn secondary" href="/admin/drawings/pending">去确认</a></div>
+      <div class="card stat"><span class="muted">已确认图纸</span><strong>{confirmed_drawing_count}</strong><a class="btn secondary" href="/admin/inventory/inbound">产品入库</a></div>
+      <div class="card stat"><span class="muted">产品可用数量</span><strong>{product_quantity}</strong><a class="btn secondary" href="/admin/inventory">库存查询</a></div>
+      <div class="card stat"><span class="muted">待入库余料</span><strong>{pending_scrap_count}</strong><a class="btn secondary" href="/admin/scraps/pending">去入库</a></div>
+      <div class="card stat"><span class="muted">余料可用数量</span><strong>{available_scrap_quantity}</strong><a class="btn secondary" href="/admin/scraps">余料记录</a></div>
     </section>
-    <section class="card"><h2>业务流程</h2><div class="actions"><a class="btn" href="/admin/drawings">1 上传/识别图纸</a><a class="btn secondary" href="/admin/drawings/pending">2 确认图纸</a><a class="btn secondary" href="/admin/inventory/inbound">3 产品入库</a><a class="btn secondary" href="/admin/scraps/pending">4 确认余料入库</a><a class="btn secondary" href="/admin/scraps/outbound">5 余料出库</a></div></section>
+    <section class="card">
+      <h2>常用操作</h2>
+      <div class="actions">
+        <a class="btn" href="/admin/drawings">上传/识别图纸</a>
+        <a class="btn secondary" href="/admin/drawings/pending">确认图纸</a>
+        <a class="btn secondary" href="/admin/inventory/inbound">产品入库</a>
+        <a class="btn secondary" href="/admin/inventory/outbound">产品出库</a>
+        <a class="btn secondary" href="/admin/scraps/pending">余料确认入库</a>
+        <a class="btn secondary" href="/admin/scraps/outbound">余料出库</a>
+      </div>
+    </section>
+    <section class="card">
+      <h2>最近可用产品库存</h2>
+      <table><thead><tr><th>产品编号</th><th>材质</th><th>厚度</th><th>数量</th><th>库位</th></tr></thead><tbody>{latest_rows or "<tr><td colspan='5'>暂无产品库存。</td></tr>"}</tbody></table>
+    </section>
+    <section class="card">
+      <h2>当前业务流程</h2>
+      <p class="muted">图纸确认后才能产品入库；产品入库会自动生成待入库余料；余料确认尺寸和库位后，才能用于余料出库。</p>
+    </section>
     """
     return page("后台首页", body)
 
