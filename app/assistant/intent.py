@@ -15,7 +15,10 @@ def parse_intent(message: str, context: str | dict | None = None) -> AssistantIn
         return _rule_intent("reverse", context)
     if "图纸" in text and re.search(r"(能不能|是否|可以|修改|删除|重新识别|改|删|规则)", text):
         return _rule_intent("drawing", context)
-    if "图纸" in text and (re.search(r"(按|根据|参数|列出|呈现|显示|打印)", text) or detect_drawing_parameter(text)):
+    drawing_parameter = detect_drawing_parameter(text)
+    if ("图纸" in text and (re.search(r"(按|根据|参数|列出|呈现|显示|打印)", text) or drawing_parameter)) or (
+        "产品" in text and drawing_parameter and "库存" not in text
+    ):
         intent = fallback_parse_intent(message, context)
         intent["intent"] = "drawing_parameter_list"
         intent["entity"] = "drawing"

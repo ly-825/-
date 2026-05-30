@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.assistant.render import table
@@ -66,6 +67,9 @@ def query_drawings(intent: AssistantIntent, db: Session) -> AssistantResponse:
 def _query_product(intent: AssistantIntent, db: Session) -> AssistantResponse:
     keyword = _keyword(intent, "product")
     query = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "product", MaterialInventory.quantity > 0)
+    thickness_value = _thickness_filter(intent)
+    if thickness_value is not None:
+        query = query.filter(_thickness_clause(thickness_value))
     if keyword:
         query = _like_inventory(query, keyword)
     items = query.order_by(MaterialInventory.updated_at.desc()).limit(200).all()
@@ -92,7 +96,7 @@ def _query_product(intent: AssistantIntent, db: Session) -> AssistantResponse:
     return AssistantResponse(
         answer=f"查到 {len(rows)} 个产品库存汇总。",
         data=table(
-            f"{keyword or '全部'}产品库存",
+            f"{_title_prefix(keyword, thickness_value)}产品库存",
             [
                 {"prop": "product_code", "label": "产品型号"},
                 {"prop": "quantity", "label": "数量"},
@@ -109,6 +113,9 @@ def _query_product(intent: AssistantIntent, db: Session) -> AssistantResponse:
 def _query_raw_plate(intent: AssistantIntent, db: Session) -> AssistantResponse:
     keyword = _keyword(intent, "raw_plate")
     query = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "raw_plate", MaterialInventory.quantity > 0)
+    thickness_value = _thickness_filter(intent)
+    if thickness_value is not None:
+        query = query.filter(_thickness_clause(thickness_value))
     if keyword:
         query = _like_inventory(query, keyword)
     items = query.order_by(MaterialInventory.created_at.asc()).limit(200).all()
@@ -133,7 +140,7 @@ def _query_raw_plate(intent: AssistantIntent, db: Session) -> AssistantResponse:
     return AssistantResponse(
         answer=f"查到 {len(rows)} 个板料规格汇总。",
         data=table(
-            f"{keyword or '全部'}板料库存",
+            f"{_title_prefix(keyword, thickness_value)}板料库存",
             [
                 {"prop": "material", "label": "材质"},
                 {"prop": "size", "label": "规格"},
@@ -154,6 +161,9 @@ def _query_scrap(intent: AssistantIntent, db: Session) -> AssistantResponse:
         MaterialInventory.status == "available",
         MaterialInventory.quantity > 0,
     )
+    thickness_value = _thickness_filter(intent)
+    if thickness_value is not None:
+        query = query.filter(_thickness_clause(thickness_value))
     if keyword:
         query = _like_inventory(query, keyword)
     items = query.order_by(MaterialInventory.diameter.asc(), MaterialInventory.created_at.asc()).limit(100).all()
@@ -171,7 +181,7 @@ def _query_scrap(intent: AssistantIntent, db: Session) -> AssistantResponse:
     return AssistantResponse(
         answer=f"查到 {len(rows)} 条可用余料。",
         data=table(
-            f"{keyword or '全部'}可用余料",
+            f"{_title_prefix(keyword, thickness_value)}可用余料",
             [
                 {"prop": "material", "label": "材质"},
                 {"prop": "thickness", "label": "厚度"},
@@ -192,9 +202,11 @@ def _keyword(intent: AssistantIntent, domain: str) -> str:
     if explicit:
         return str(explicit).strip()
     message = str(intent.get("_message") or "")
+    message = re.sub(r"厚度\s*(?:为|是|等于|=)?\s*-?\d+(?:\.\d+)?", " ", message)
     phrases = (
         "查一下", "查询", "查", "库存", "有没有", "还有多少", "多少", "几个", "几件", "几张",
-        "帮我", "请", "一下", "情况", "数量", "统计", "报表", "明细", "列表", "有什么", "有哪些",
+        "帮我", "给我", "请", "一下", "情况", "数量", "统计", "报表", "明细", "列表", "有什么", "有哪些",
+        "为", "是", "等于", "的",
     )
     if domain == "raw_plate":
         phrases += ("板料", "钢板", "原料")
@@ -208,6 +220,35 @@ def _keyword(intent: AssistantIntent, domain: str) -> str:
     for phrase in phrases:
         text = text.replace(phrase, " ")
     return " ".join(part.strip(" ，,。？?：:") for part in text.split() if part.strip(" ，,。？?：:"))
+
+
+def _thickness_filter(intent: AssistantIntent) -> float | None:
+    filters = intent.get("filters") or {}
+    value = filters.get("thickness")
+    if value is not None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            pass
+    message = str(intent.get("_message") or "")
+    match = re.search(r"厚度\s*(?:为|是|等于|=)?\s*(-?\d+(?:\.\d+)?)", message)
+    if not match:
+        return None
+    return float(match.group(1))
+
+
+def _thickness_clause(value: float):
+    tolerance = 0.0001
+    return and_(MaterialInventory.thickness >= value - tolerance, MaterialInventory.thickness <= value + tolerance)
+
+
+def _title_prefix(keyword: str, thickness_value: float | None) -> str:
+    parts = []
+    if keyword:
+        parts.append(keyword)
+    if thickness_value is not None:
+        parts.append(f"厚度{_fmt(thickness_value)}")
+    return "".join(parts) if parts else "全部"
 
 
 def _like_inventory(query, keyword: str):
@@ -227,4 +268,3 @@ def _fmt(value: float | int | None) -> str:
     if isinstance(value, float):
         return f"{value:g}"
     return str(value)
-

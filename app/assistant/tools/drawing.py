@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.assistant.render import table
@@ -47,21 +48,23 @@ def list_drawings_by_parameter(intent: AssistantIntent, db: Session) -> Assistan
     query = db.query(ProductDrawing)
     if value_keyword:
         query = _apply_value_filter(query, field, value_keyword, meta["kind"])
-    if meta["kind"] == "number":
+    if meta["kind"] == "number" and field != "thickness":
         query = query.order_by(getattr(ProductDrawing, field).is_(None), getattr(ProductDrawing, field).asc(), ProductDrawing.product_code.asc())
     elif meta["kind"] == "date":
         query = query.order_by(getattr(ProductDrawing, field).desc())
-    else:
+    elif field != "thickness":
         query = query.order_by(getattr(ProductDrawing, field).is_(None), getattr(ProductDrawing, field).asc(), ProductDrawing.product_code.asc())
 
     drawings = query.limit(300).all()
+    if field == "thickness":
+        drawings = sorted(drawings, key=lambda drawing: (_drawing_value(drawing, field) is None, _drawing_value(drawing, field) or 0, drawing.product_code or ""))
     rows = []
     for drawing in drawings:
         locked = drawing_has_inventory_references(drawing.id, db)
         rows.append(
             {
                 "parameter": meta["label"],
-                "value": _display_value(getattr(drawing, field), meta["kind"]),
+                "value": _display_value(_drawing_value(drawing, field), meta["kind"]),
                 "product_code": drawing.product_code or "-",
                 "product_name": drawing.product_name or "-",
                 "material": drawing.material or "-",
@@ -108,11 +111,18 @@ def detect_drawing_parameter(message: str) -> str | None:
 
 
 def _apply_value_filter(query, field: str, keyword: str, kind: str):
-    column = getattr(ProductDrawing, field)
     if kind == "number":
         number = _extract_number(keyword)
         if number is not None:
-            return query.filter(column == number)
+            if field == "thickness":
+                return query.filter(
+                    _number_clause(ProductDrawing.thickness, number)
+                    | _number_clause(ProductDrawing.product_thickness, number)
+                    | _number_clause(ProductDrawing.plate_thickness, number)
+                )
+            column = getattr(ProductDrawing, field)
+            return query.filter(_number_clause(column, number))
+    column = getattr(ProductDrawing, field)
     if kind == "status":
         if re.search(r"(已确认|确认)", keyword):
             return query.filter(column == 1)
@@ -155,3 +165,14 @@ def _display_value(value, kind: str) -> str:
     if isinstance(value, float):
         return f"{value:g}"
     return str(value)
+
+
+def _number_clause(column, value: float | int):
+    tolerance = 0.0001
+    return and_(column >= value - tolerance, column <= value + tolerance)
+
+
+def _drawing_value(drawing: ProductDrawing, field: str):
+    if field == "thickness":
+        return drawing.plate_thickness or drawing.product_thickness or drawing.thickness
+    return getattr(drawing, field)
