@@ -1,0 +1,14 @@
+<view class="container">
+  <view class="header"><view class="title">余料管理</view><view class="subtitle">确认待入库余料，查询可用余料并执行出库。</view></view>
+  <view class="grid">
+    <view class="card"><view class="stat-label">待入库余料</view><view class="stat-value">{{pendingCount}}</view></view>
+    <view class="card"><view class="stat-label">可用余料数量</view><view class="stat-value">{{availableQuantity}}</view></view>
+  </view>
+  <view class="card">
+    <view class="section-title">常用操作</view>
+    <view class="menu-item" bindtap="go" data-url="/pages/scraps/pending"><view><view class="menu-title">待入库余料</view><view class="menu-desc">确认实际尺寸、数量和库位</view></view><view class="arrow">›</view></view>
+    <view class="menu-item" bindtap="go" data-url="/pages/scraps/list"><view><view class="menu-title">余料查询</view><view class="menu-desc">按材质、厚度、直径和库位查询</view></view><view class="arrow">›</view></view>
+    <view class="menu-item" bindtap="go" data-url="/pages/scraps/outbound"><view><view class="menu-title">余料出库</view><view class="menu-desc">按规格和库位汇总出库</view></view><view class="arrow">›</view></view>
+    <view class="menu-item" bindtap="go" data-url="/pages/scraps/transactions"><view><view class="menu-title">余料流水</view><view class="menu-desc">查看确认入库和出库记录</view></view><view class="arrow">›</view></view>
+  </view>
+</view>

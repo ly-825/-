@@ -1,0 +1,39 @@
+<view class="container">
+  <view class="header">
+    <view class="eyebrow">SCRAP OUTBOUND</view>
+    <view class="title">余料出库</view>
+    <view class="subtitle">查询可用余料后，按规格和库位汇总出库。</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">筛选条件</view>
+    <input class="input" placeholder="材质" value="{{filters.material}}" data-field="material" bindinput="onFilter" />
+    <input class="input" type="digit" placeholder="厚度" value="{{filters.thickness}}" data-field="thickness" bindinput="onFilter" />
+    <input class="input" type="digit" placeholder="所需直径" value="{{filters.required_diameter}}" data-field="required_diameter" bindinput="onFilter" />
+    <input class="input" placeholder="库位" value="{{filters.location}}" data-field="location" bindinput="onFilter" />
+    <button class="btn secondary" bindtap="load">查询可出库余料</button>
+  </view>
+
+  <view class="card">
+    <view class="section-title">出库信息</view>
+    <picker range="{{items}}" range-key="label" bindchange="onPick">
+      <view class="picker">{{selectedLabel}}</view>
+    </picker>
+    <input class="input" type="number" placeholder="出库数量" value="{{form.quantity}}" data-field="quantity" bindinput="onInput" />
+    <input class="input" placeholder="操作人" value="{{form.operator_name}}" data-field="operator_name" bindinput="onInput" />
+    <input class="input" placeholder="备注" value="{{form.remark}}" data-field="remark" bindinput="onInput" />
+    <button class="btn" bindtap="submit">确认出库</button>
+  </view>
+
+  <view class="card">
+    <view class="section-title">可出库余料</view>
+    <view wx:if="{{!items.length}}" class="empty">请先查询匹配余料</view>
+    <view wx:for="{{items}}" wx:key="group_key" class="list-item">
+      <view class="row">
+        <view class="name">{{item.material}}｜{{item.usable_size}}</view>
+        <view class="badge">{{item.quantity}}</view>
+      </view>
+      <view class="meta">厚度 {{item.thickness}}｜库位 {{item.location}}</view>
+    </view>
+  </view>
+</view>

@@ -18,11 +18,26 @@ backend/
 │   ├── schemas.py
 │   ├── routers/
 │   │   ├── drawings.py
-│   │   └── inventory.py
+│   │   ├── inventory.py
+│   │   └── mobile.py
 │   └── services/
 │       ├── dxf_parser.py
+│       ├── inventory_service.py
 │       ├── qwen_service.py
-│       └── qr_service.py
+│       ├── qr_service.py
+│       └── scrap_service.py
+├── miniprogram/
+│   ├── app.js
+│   ├── app.json
+│   ├── app.wxss
+│   ├── project.config.json
+│   ├── utils/
+│   │   └── api.js
+│   └── pages/
+│       ├── index/
+│       ├── drawings/
+│       ├── inventory/
+│       └── scraps/
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -80,6 +95,92 @@ http://127.0.0.1:8000/docs
 
 ```text
 http://127.0.0.1:8000/admin
+```
+
+如果要用真手机在同一 Wi-Fi 下测试小程序，需要让后端监听局域网：
+
+```bash
+.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+同时把 `miniprogram/app.js` 中的 `baseUrl` 改成电脑局域网地址，例如：
+
+```text
+http://192.168.31.68:8000
+```
+
+## 小程序前端
+
+小程序代码位于：
+
+```text
+miniprogram/
+```
+
+使用方式：
+
+```text
+1. 先启动后端服务
+2. 打开微信开发者工具
+3. 导入 backend/miniprogram 目录
+4. 电脑开发者工具调试时可使用 http://127.0.0.1:8000
+5. 真手机预览时使用电脑局域网 IP，并在微信开发者工具中勾选“不校验合法域名、web-view、TLS 版本以及 HTTPS 证书”
+```
+
+当前小程序覆盖：
+
+```text
+工作台
+图纸上传、列表、详情确认、重新识别
+产品库存查询、产品入库、产品出库、库存流水
+待入库余料确认、余料查询、余料出库、余料流水
+```
+
+小程序不包含扫码功能。
+
+## 内部试运行
+
+当前版本适合少量人员内部试运行。试运行前建议确认：
+
+```text
+1. 后端服务已启动
+2. 手机和电脑在同一个 Wi-Fi
+3. 小程序 baseUrl 指向当前后端地址
+4. /api/mobile/summary 可以访问
+5. 已执行一次数据备份
+6. 产品入库、产品出库、余料确认、余料出库、流水撤销流程已抽查
+```
+
+正式发布前仍建议补充登录权限、正式 HTTPS 域名、服务器部署、自动备份和生产数据库方案。
+
+## 数据备份
+
+库存数据和上传图纸默认保存在：
+
+```text
+data/app.db
+data/uploads/
+```
+
+试运行期间，建议每天使用前或重要操作前执行一次备份：
+
+```bash
+bash scripts/backup.sh
+```
+
+备份会生成到：
+
+```text
+backups/年-月-日_时分秒/
+```
+
+恢复时：
+
+```text
+1. 停止后端服务
+2. 将备份中的 app.db 复制回 data/app.db
+3. 将备份中的 uploads 内容复制回 data/uploads/
+4. 重新启动后端服务
 ```
 
 后台包含：
@@ -142,6 +243,44 @@ python -m app.seed
 
 ## 核心接口
 
+### 小程序工作台
+
+```http
+GET /api/mobile/summary
+```
+
+### 小程序图纸管理
+
+```http
+POST /api/mobile/drawings/upload
+GET /api/mobile/drawings
+GET /api/mobile/drawings/pending
+GET /api/mobile/drawings/confirmed
+GET /api/mobile/drawings/{drawing_id}
+POST /api/mobile/drawings/{drawing_id}/confirm
+POST /api/mobile/drawings/{drawing_id}/rerun
+```
+
+### 小程序产品库存
+
+```http
+GET /api/mobile/products
+GET /api/mobile/products/{product_code}/batches
+POST /api/mobile/products/inbound
+POST /api/mobile/products/outbound
+GET /api/mobile/products/transactions
+```
+
+### 小程序余料管理
+
+```http
+GET /api/mobile/scraps/pending
+POST /api/mobile/scraps/{inventory_id}/confirm
+GET /api/mobile/scraps
+POST /api/mobile/scraps/outbound
+GET /api/mobile/scraps/transactions
+```
+
 ### 上传DXF
 
 ```http
@@ -185,7 +324,6 @@ POST /api/inventory
 ## 下一步建议
 
 - 增加用户和权限
-- 增加后台管理前端
-- 增加小程序上传和扫码页面
+- 增加小程序前端页面
 - 增加 MySQL/PostgreSQL 生产配置
 - 增加图纸模板规则库

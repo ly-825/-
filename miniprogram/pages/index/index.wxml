@@ -1,0 +1,47 @@
+<view class="container">
+  <view class="header">
+    <view class="eyebrow">MOBILE WORKBENCH</view>
+    <view class="title">工厂工作台</view>
+    <view class="subtitle">把图纸确认、产品库存和余料流转集中到一块移动端操作面板。</view>
+  </view>
+
+  <view class="grid">
+    <view class="card stat-card">
+      <view class="stat-label">待办：确认图纸</view>
+      <view class="stat-value">{{summary.pending_drawing_count}}</view>
+    </view>
+    <view class="card stat-card">
+      <view class="stat-label">待办：余料入库</view>
+      <view class="stat-value">{{summary.pending_scrap_count}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">图纸管理</view>
+    <view class="menu-item" bindtap="go" data-url="/pages/drawings/upload">
+      <view><view class="menu-title">上传 DXF</view><view class="menu-desc">选择文件并自动识别</view></view><view class="arrow">›</view>
+    </view>
+    <view class="menu-item" bindtap="go" data-url="/pages/drawings/list?status=pending">
+      <view><view class="menu-title">待确认图纸</view><view class="menu-desc">人工核对并保存确认结果</view></view><view class="arrow">›</view>
+    </view>
+    <view class="menu-item" bindtap="go" data-url="/pages/drawings/list?status=confirmed">
+      <view><view class="menu-title">已确认图纸</view><view class="menu-desc">用于产品入库和出库</view></view><view class="arrow">›</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">库存管理</view>
+    <view class="menu-item" bindtap="go" data-url="/pages/inventory/list"><view><view class="menu-title">库存查询</view><view class="menu-desc">查看产品库存汇总</view></view><view class="arrow">›</view></view>
+    <view class="menu-item" bindtap="go" data-url="/pages/inventory/inbound"><view><view class="menu-title">产品入库</view><view class="menu-desc">按已确认图纸入库</view></view><view class="arrow">›</view></view>
+    <view class="menu-item" bindtap="go" data-url="/pages/inventory/outbound"><view><view class="menu-title">产品出库</view><view class="menu-desc">按型号扣减库存</view></view><view class="arrow">›</view></view>
+    <view class="menu-item" bindtap="go" data-url="/pages/inventory/transactions"><view><view class="menu-title">库存流水</view><view class="menu-desc">产品入库和出库记录</view></view><view class="arrow">›</view></view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">余料管理</view>
+    <view class="menu-item" bindtap="go" data-url="/pages/scraps/pending"><view><view class="menu-title">待入库余料</view><view class="menu-desc">确认实际尺寸和库位</view></view><view class="arrow">›</view></view>
+    <view class="menu-item" bindtap="go" data-url="/pages/scraps/list"><view><view class="menu-title">余料记录</view><view class="menu-desc">查询可用余料</view></view><view class="arrow">›</view></view>
+    <view class="menu-item" bindtap="go" data-url="/pages/scraps/outbound"><view><view class="menu-title">余料出库</view><view class="menu-desc">按规格和库位出库</view></view><view class="arrow">›</view></view>
+    <view class="menu-item" bindtap="go" data-url="/pages/scraps/transactions"><view><view class="menu-title">余料流水</view><view class="menu-desc">余料确认和出库记录</view></view><view class="arrow">›</view></view>
+  </view>
+</view>

@@ -1,15 +1,21 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app import admin_pages
 from app.config import settings
-from app.database import Base, engine
+from app.database import Base, SessionLocal, engine
 from app.home import render_home
-from app.routers import drawings, inventory
+from app.routers import drawings, inventory, mobile
+from app.schema_migrations import ensure_runtime_schema
+from app.services.drawing_upload import backfill_missing_file_hashes
 
 Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
 Base.metadata.create_all(bind=engine)
+ensure_runtime_schema(engine)
+with SessionLocal() as db:
+    backfill_missing_file_hashes(db)
 
 app = FastAPI(
     title="杭州特耐时 DXF智能用料系统",
@@ -17,8 +23,23 @@ app = FastAPI(
     version="0.1.0",
 )
 
+@app.middleware("http")
+async def require_access_token(request: Request, call_next):
+    token = settings.admin_access_token
+    provided = None
+    if token and (request.url.path.startswith("/admin") or request.url.path.startswith("/api")):
+        provided = request.headers.get("x-access-token") or request.query_params.get("token") or request.cookies.get("access_token")
+        if provided != token:
+            return JSONResponse(status_code=401, content={"detail": "未授权访问"})
+    response = await call_next(request)
+    if token and provided == token and request.query_params.get("token") == token:
+        response.set_cookie("access_token", token, httponly=True, samesite="lax")
+    return response
+
+
 app.include_router(drawings.router, prefix="/api/drawings", tags=["图纸识别"])
 app.include_router(inventory.router, prefix="/api/inventory", tags=["库存管理"])
+app.include_router(mobile.router, prefix="/api/mobile", tags=["小程序接口"])
 app.include_router(admin_pages.router, tags=["中文后台"])
 
 

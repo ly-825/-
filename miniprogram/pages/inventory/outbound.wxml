@@ -1,0 +1,32 @@
+<view class="container">
+  <view class="header">
+    <view class="eyebrow">PRODUCT OUTBOUND</view>
+    <view class="title">产品出库</view>
+    <view class="subtitle">搜索可出库库存，选择产品后填写出库数量。</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">选择产品</view>
+    <input class="input" placeholder="搜索型号、名称、材质、厚度或库位" value="{{searchKeyword}}" confirm-type="search" bindinput="onKeyword" bindconfirm="onSearch" />
+    <button class="btn secondary" bindtap="onSearch">搜索</button>
+    <view class="selected-box">{{selectedLabel}}</view>
+    <view wx:if="{{!searchKeyword}}" class="empty">输入型号、名称、材质、厚度或库位搜索产品</view>
+    <view wx:elif="{{!filteredOptions.length}}" class="empty">没有匹配的可出库库存</view>
+    <view wx:for="{{filteredOptions}}" wx:key="product_code" class="search-item" bindtap="selectProduct" data-index="{{index}}">
+      <view class="row">
+        <view class="name">{{item.product_code_text}}</view>
+        <view class="badge">{{item.quantity}}</view>
+      </view>
+      <view class="meta">{{item.product_name_text}}｜{{item.material_text}}｜厚度 {{item.thickness_text}}｜库位 {{item.location_text}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">出库信息</view>
+    <input class="input" type="number" placeholder="出库数量" value="{{form.quantity}}" data-field="quantity" bindinput="onInput" />
+    <input class="input" placeholder="指定库位，可选；不填按所有库位FIFO" value="{{form.location}}" data-field="location" bindinput="onInput" />
+    <input class="input" placeholder="操作人" value="{{form.operator_name}}" data-field="operator_name" bindinput="onInput" />
+    <input class="input" placeholder="备注" value="{{form.remark}}" data-field="remark" bindinput="onInput" />
+    <button class="btn" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">确认出库</button>
+  </view>
+</view>

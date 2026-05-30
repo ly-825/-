@@ -1,0 +1,28 @@
+<view class="container">
+  <view class="header">
+    <view class="eyebrow">SCRAP QUERY</view>
+    <view class="title">余料记录</view>
+    <view class="subtitle">按材质、厚度、所需直径和库位查询可用余料。</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">筛选条件</view>
+    <input class="input" placeholder="材质" value="{{filters.material}}" data-field="material" bindinput="onFilter" />
+    <input class="input" type="digit" placeholder="厚度" value="{{filters.thickness}}" data-field="thickness" bindinput="onFilter" />
+    <input class="input" type="digit" placeholder="所需直径" value="{{filters.required_diameter}}" data-field="required_diameter" bindinput="onFilter" />
+    <input class="input" placeholder="库位" value="{{filters.location}}" data-field="location" bindinput="onFilter" />
+    <button class="btn secondary" bindtap="load">查询余料</button>
+  </view>
+
+  <view class="card">
+    <view class="section-title">查询结果</view>
+    <view wx:if="{{!items.length}}" class="empty">暂无匹配余料</view>
+    <view wx:for="{{items}}" wx:key="group_key" class="list-item">
+      <view class="row">
+        <view class="name">{{item.material}}｜{{item.usable_size}}</view>
+        <view class="badge">{{item.quantity}}</view>
+      </view>
+      <view class="meta">厚度 {{item.thickness}}｜库位 {{item.location}}</view>
+    </view>
+  </view>
+</view>

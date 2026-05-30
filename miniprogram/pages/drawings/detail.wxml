@@ -1,0 +1,16 @@
+<view class="container">
+  <view class="header"><view class="title">图纸详情</view><view class="subtitle">核对识别结果，确认后可用于产品入库。</view></view>
+  <view class="card">
+    <input class="input" placeholder="产品型号" value="{{form.product_code}}" data-field="product_code" bindinput="onInput" />
+    <input class="input" placeholder="产品名称" value="{{form.product_name}}" data-field="product_name" bindinput="onInput" />
+    <input class="input" placeholder="材质" value="{{form.material}}" data-field="material" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="外径" value="{{form.max_outer_diameter}}" data-field="max_outer_diameter" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="内径" value="{{form.min_inner_diameter}}" data-field="min_inner_diameter" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="产品厚度" value="{{form.product_thickness}}" data-field="product_thickness" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="钢板厚度" value="{{form.plate_thickness}}" data-field="plate_thickness" bindinput="onInput" />
+    <input class="input" placeholder="中心余料尺寸，例如 φ77.5" value="{{form.expected_scrap_size}}" data-field="expected_scrap_size" bindinput="onInput" />
+    <button class="btn" bindtap="confirm">保存确认结果</button>
+    <button class="btn secondary" bindtap="rerun">重新识别当前图纸</button>
+    <button class="btn secondary" bindtap="deleteDrawing" loading="{{deleting}}">删除图纸</button>
+  </view>
+</view>

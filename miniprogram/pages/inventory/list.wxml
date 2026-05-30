@@ -1,0 +1,16 @@
+<view class="container">
+  <view class="header"><view class="title">库存查询</view><view class="subtitle">只显示产品库存汇总。</view></view>
+  <view class="card">
+    <input class="input" placeholder="产品型号、材质、库位" value="{{filters.q}}" data-field="q" bindinput="onFilter" />
+    <input class="input" placeholder="材质" value="{{filters.material}}" data-field="material" bindinput="onFilter" />
+    <input class="input" type="digit" placeholder="厚度" value="{{filters.thickness}}" data-field="thickness" bindinput="onFilter" />
+    <button class="btn secondary" bindtap="load">查询</button>
+  </view>
+  <view class="card">
+    <view wx:if="{{!items.length}}" class="empty">暂无产品库存</view>
+    <view wx:for="{{items}}" wx:key="product_code" class="list-item">
+      <view class="row"><view class="name">{{item.product_code}}</view><view class="badge">{{item.quantity}}</view></view>
+      <view class="meta">{{item.material_text}}｜厚度 {{item.thickness_text}}｜库位 {{item.location_text}}</view>
+    </view>
+  </view>
+</view>

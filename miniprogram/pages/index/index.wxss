@@ -1,0 +1,7 @@
+.grid {
+  margin-bottom: 22rpx;
+}
+
+.card .card {
+  box-shadow: none;
+}

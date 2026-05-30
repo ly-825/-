@@ -23,6 +23,7 @@ class MaterialInventory(Base):
     location: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="available", index=True)
     source_product_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_drawing_id: Mapped[int | None] = mapped_column(ForeignKey("product_drawings.id"), nullable=True, index=True)
     qr_code: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -37,9 +38,27 @@ class InventoryTransactionRecord(Base):
     quantity: Mapped[int] = mapped_column(Integer)
     before_quantity: Mapped[int] = mapped_column(Integer)
     after_quantity: Mapped[int] = mapped_column(Integer)
+    reversed_transaction_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
     operator_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     remark: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RawPlateSpecification(Base):
+    __tablename__ = "raw_plate_specifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    spec_name: Mapped[str] = mapped_column(String(100), index=True)
+    material: Mapped[str] = mapped_column(String(100), index=True)
+    length: Mapped[float] = mapped_column(Float, index=True)
+    width: Mapped[float] = mapped_column(Float, index=True)
+    thickness: Mapped[float] = mapped_column(Float, index=True)
+    density: Mapped[float] = mapped_column(Float, default=7.85)
+    remark: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ProductDrawing(Base):
@@ -49,6 +68,7 @@ class ProductDrawing(Base):
     product_code: Mapped[str | None] = mapped_column(String(100), index=True, nullable=True)
     product_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     dxf_file_url: Mapped[str] = mapped_column(String(500))
+    file_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
     material: Mapped[str | None] = mapped_column(String(100), nullable=True)
     thickness: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_outer_diameter: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -69,6 +89,10 @@ class ProductDrawing(Base):
     parse_result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     parse_status: Mapped[str] = mapped_column(String(20), default="pending")
     confirmed: Mapped[int] = mapped_column(Integer, default=0)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    is_active: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    previous_drawing_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    replaced_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -78,9 +102,24 @@ class ScrapGenerationRecord(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     source_product_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_drawing_id: Mapped[int | None] = mapped_column(ForeignKey("product_drawings.id"), nullable=True, index=True)
     source_inventory_id: Mapped[int | None] = mapped_column(ForeignKey("material_inventory.id"), nullable=True)
     scrap_inventory_id: Mapped[int | None] = mapped_column(ForeignKey("material_inventory.id"), nullable=True)
     theoretical_size: Mapped[str | None] = mapped_column(String(255), nullable=True)
     actual_size: Mapped[str | None] = mapped_column(String(255), nullable=True)
     operator_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     registered_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OperationLog(Base):
+    __tablename__ = "operation_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    action: Mapped[str] = mapped_column(String(50), index=True)
+    object_type: Mapped[str] = mapped_column(String(50), index=True)
+    object_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    operator_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    remark: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    before_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

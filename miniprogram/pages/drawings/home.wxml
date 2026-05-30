@@ -1,0 +1,13 @@
+<view class="container">
+  <view class="header"><view class="title">图纸管理</view><view class="subtitle">上传 DXF、确认识别结果，并为产品入库提供基础数据。</view></view>
+  <view class="grid">
+    <view class="card"><view class="stat-label">待确认</view><view class="stat-value">{{pendingCount}}</view></view>
+    <view class="card"><view class="stat-label">已确认</view><view class="stat-value">{{confirmedCount}}</view></view>
+  </view>
+  <view class="card">
+    <view class="section-title">常用操作</view>
+    <view class="menu-item" bindtap="go" data-url="/pages/drawings/upload"><view><view class="menu-title">上传 DXF</view><view class="menu-desc">选择文件并自动识别图纸信息</view></view><view class="arrow">›</view></view>
+    <view class="menu-item" bindtap="go" data-url="/pages/drawings/list?status=pending"><view><view class="menu-title">待确认图纸</view><view class="menu-desc">核对识别字段并保存确认</view></view><view class="arrow">›</view></view>
+    <view class="menu-item" bindtap="go" data-url="/pages/drawings/list?status=confirmed"><view><view class="menu-title">已确认图纸</view><view class="menu-desc">查看可用于库存操作的产品</view></view><view class="arrow">›</view></view>
+  </view>
+</view>

@@ -1,0 +1,24 @@
+<view class="container">
+  <view class="header">
+    <view class="eyebrow">PENDING SCRAP</view>
+    <view class="title">待入库余料</view>
+    <view class="subtitle">确认实际数量、直径和库位后变为可用余料。</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">待确认记录</view>
+    <view wx:if="{{!items.length}}" class="empty">暂无待入库余料</view>
+    <view wx:for="{{items}}" wx:key="id" class="list-item">
+      <view class="row">
+        <view class="name">{{item.source_product_code_text}}</view>
+        <view class="badge">{{item.quantity}}</view>
+      </view>
+      <view class="meta">{{item.material}}｜厚度 {{item.thickness}}｜理论直径 {{item.diameter_text}}</view>
+      <input class="input" type="number" placeholder="实际数量" value="{{item.actual_quantity}}" data-index="{{index}}" data-field="actual_quantity" bindinput="onInput" />
+      <input class="input" type="digit" placeholder="实际直径" value="{{item.actual_diameter}}" data-index="{{index}}" data-field="actual_diameter" bindinput="onInput" />
+      <input class="input" placeholder="库位" value="{{item.confirm_location}}" data-index="{{index}}" data-field="confirm_location" bindinput="onInput" />
+      <input class="input" placeholder="确认人" value="{{item.operator_name}}" data-index="{{index}}" data-field="operator_name" bindinput="onInput" />
+      <button class="btn secondary" bindtap="confirm" data-index="{{index}}">确认入库</button>
+    </view>
+  </view>
+</view>

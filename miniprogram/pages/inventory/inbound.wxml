@@ -1,0 +1,28 @@
+<view class="container">
+  <view class="header">
+    <view class="eyebrow">PRODUCT INBOUND</view>
+    <view class="title">产品入库</view>
+    <view class="subtitle">搜索已确认图纸，选择产品后填写数量和库位。</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">选择产品</view>
+    <input class="input" placeholder="搜索型号、名称、材质或厚度" value="{{searchKeyword}}" confirm-type="search" bindinput="onKeyword" bindconfirm="onSearch" />
+    <button class="btn secondary" bindtap="onSearch">搜索</button>
+    <view class="selected-box">{{selectedDrawingLabel}}</view>
+    <view wx:if="{{!searchKeyword}}" class="empty">输入型号、名称、材质或厚度搜索产品</view>
+    <view wx:elif="{{!filteredDrawings.length}}" class="empty">没有匹配的已确认图纸</view>
+    <view wx:for="{{filteredDrawings}}" wx:key="id" class="search-item" bindtap="selectDrawing" data-index="{{index}}">
+      <view class="name">{{item.product_code_text}}</view>
+      <view class="meta">{{item.version_text}}｜{{item.product_name_text}}｜{{item.material_text}}｜厚度 {{item.thickness_text}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">入库信息</view>
+    <input class="input" type="number" placeholder="数量" value="{{form.quantity}}" data-field="quantity" bindinput="onInput" />
+    <input class="input" placeholder="库位，例如 A-01" value="{{form.location}}" data-field="location" bindinput="onInput" />
+    <input class="input" placeholder="操作人" value="{{form.operator_name}}" data-field="operator_name" bindinput="onInput" />
+    <button class="btn" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">确认入库</button>
+  </view>
+</view>

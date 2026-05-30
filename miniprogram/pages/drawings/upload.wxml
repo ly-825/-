@@ -1,0 +1,8 @@
+<view class="container">
+  <view class="header"><view class="title">上传 DXF</view><view class="subtitle">从微信聊天记录中选择 .dxf 图纸，上传后自动识别。</view></view>
+  <view class="card">
+    <button class="btn secondary" bindtap="chooseFile">从聊天记录选择 DXF</button>
+    <view wx:if="{{fileName}}" class="meta">已选择：{{fileName}}</view>
+    <button class="btn" bindtap="upload" loading="{{loading}}">上传并识别</button>
+  </view>
+</view>

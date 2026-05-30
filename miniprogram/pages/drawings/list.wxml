@@ -1,0 +1,15 @@
+<view class="container">
+  <view class="header"><view class="title">{{title}}</view><view class="subtitle">查看图纸识别记录，进入详情后可确认字段。</view></view>
+  <view class="card">
+    <input class="input" placeholder="搜索产品编号、名称或材质" value="{{q}}" bindinput="onSearchInput" />
+    <button class="btn secondary" bindtap="load">搜索</button>
+  </view>
+  <view class="card">
+    <view wx:if="{{!items.length}}" class="empty">暂无图纸记录</view>
+    <view wx:for="{{items}}" wx:key="id" class="list-item" bindtap="goDetail" data-id="{{item.id}}">
+      <view class="row"><view class="name">{{item.product_code_text}}</view><view class="badge">{{item.version_text}} {{item.active_text}}</view></view>
+      <view class="meta">{{item.product_name_text}}｜{{item.material_text}}｜厚度 {{item.thickness_text}}</view>
+      <view class="meta">外径 {{item.max_outer_diameter_text}}｜{{item.confirmed_text}}</view>
+    </view>
+  </view>
+</view>

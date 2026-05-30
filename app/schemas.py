@@ -18,6 +18,7 @@ class InventoryBase(BaseModel):
     location: str | None = None
     status: str = "available"
     source_product_code: str | None = None
+    source_drawing_id: int | None = None
 
 
 class InventoryCreate(InventoryBase):
@@ -32,9 +33,15 @@ class InventoryOut(InventoryBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+
 class InventoryAdjust(BaseModel):
     transaction_type: str
     quantity: int
+    operator_name: str | None = None
+    remark: str | None = None
+
+
+class TransactionReverse(BaseModel):
     operator_name: str | None = None
     remark: str | None = None
 
@@ -46,6 +53,7 @@ class InventoryTransactionOut(BaseModel):
     quantity: int
     before_quantity: int
     after_quantity: int
+    reversed_transaction_id: int | None = None
     operator_name: str | None
     remark: str | None
     created_at: datetime
@@ -83,12 +91,21 @@ class DrawingConfirm(BaseModel):
 class DrawingOut(DrawingConfirm):
     id: int
     dxf_file_url: str
+    file_hash: str | None = None
     parse_result_json: dict[str, Any] | None = None
     parse_status: str
     confirmed: int
+    version: int
+    is_active: int
+    previous_drawing_id: int | None = None
+    replaced_by_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class DrawingUploadOut(BaseModel):
+    drawing: DrawingOut
+    duplicated: bool
 
