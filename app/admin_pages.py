@@ -523,7 +523,13 @@ def assistant_page() -> HTMLResponse:
         const body = data.rows.map(row => `<tr>${data.columns.map(column => `<td>${escapeHtml(row[column.prop])}</td>`).join('')}</tr>`).join('');
         return `
           <div style="margin-top:10px;background:white;border:1px solid var(--line);border-radius:14px;padding:12px">
-            <div class="top" style="margin-bottom:10px"><h3 style="margin:0">${escapeHtml(data.title || '分析结果')}</h3><button class="btn secondary" type="button">导出Excel</button></div>
+            <div class="top" style="margin-bottom:10px">
+              <h3 style="margin:0">${escapeHtml(data.title || '分析结果')}</h3>
+              <div class="actions">
+                <button class="btn secondary export-analysis" type="button">导出Excel</button>
+                <button class="btn secondary print-analysis" type="button">打印</button>
+              </div>
+            </div>
             <div class="table-scroll"><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${data.columns.length}">暂无分析数据。</td></tr>`}</tbody></table></div>
           </div>
         `;
@@ -536,12 +542,51 @@ def assistant_page() -> HTMLResponse:
         const block = document.createElement('div');
         block.style.margin = '0 0 12px';
         block.innerHTML = `<div class="muted">${role}</div><pre style="margin:6px 0 0;background:${role === '你' ? '#eef2ff' : '#0f172a'};color:${role === '你' ? '#172033' : '#dbeafe'}">${escapeHtml(text)}</pre>${renderAnalysisData(data)}${renderActions(actions)}`;
-        const exportButton = block.querySelector('button');
+        const exportButton = block.querySelector('.export-analysis');
         if (exportButton && data) {
           exportButton.addEventListener('click', () => exportAnalysisData(data));
         }
+        const printButton = block.querySelector('.print-analysis');
+        if (printButton && data) {
+          printButton.addEventListener('click', () => printAnalysisData(data));
+        }
         messages.appendChild(block);
         messages.scrollTop = messages.scrollHeight;
+      }
+      function printAnalysisData(data) {
+        const columns = Array.isArray(data.columns) ? data.columns : [];
+        const rows = Array.isArray(data.rows) ? data.rows : [];
+        const header = columns.map(column => `<th>${escapeHtml(column.label || column.prop)}</th>`).join('');
+        const body = rows.map(row => `<tr>${columns.map(column => `<td>${escapeHtml(row[column.prop])}</td>`).join('')}</tr>`).join('');
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+          alert('浏览器阻止了打印窗口，请允许弹出窗口后重试。');
+          return;
+        }
+        printWindow.document.write(`
+          <!doctype html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <title>${escapeHtml(data.title || '打印结果')}</title>
+            <style>
+              body { font-family: Arial, 'Microsoft YaHei', sans-serif; margin: 24px; color: #111827; }
+              h1 { font-size: 20px; margin: 0 0 14px; }
+              table { width: 100%; border-collapse: collapse; font-size: 12px; }
+              th, td { border: 1px solid #d1d5db; padding: 7px 8px; text-align: left; vertical-align: top; }
+              th { background: #eef2f7; font-weight: 700; }
+              @media print { body { margin: 12mm; } }
+            </style>
+          </head>
+          <body>
+            <h1>${escapeHtml(data.title || '打印结果')}</h1>
+            <table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${columns.length}">暂无数据。</td></tr>`}</tbody></table>
+          </body>
+          </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
       }
       async function exportAnalysisData(data) {
         const response = await fetch('/admin/assistant/analysis/export', {

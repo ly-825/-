@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from app.assistant.types import AssistantIntent
+from app.assistant.tools.drawing import detect_drawing_parameter
 from app.services.assistant_intent_parser import default_intent, fallback_parse_intent, serialize_intent_context
 
 
@@ -14,6 +15,14 @@ def parse_intent(message: str, context: str | dict | None = None) -> AssistantIn
         return _rule_intent("reverse", context)
     if "图纸" in text and re.search(r"(能不能|是否|可以|修改|删除|重新识别|改|删|规则)", text):
         return _rule_intent("drawing", context)
+    if "图纸" in text and (re.search(r"(按|根据|参数|列出|呈现|显示|打印)", text) or detect_drawing_parameter(text)):
+        intent = fallback_parse_intent(message, context)
+        intent["intent"] = "drawing_parameter_list"
+        intent["entity"] = "drawing"
+        intent["action"] = "query"
+        intent["safety"] = {"read_only": True, "requires_write": False}
+        intent["_message"] = text
+        return intent
     if "余料" in text and re.search(r"(怎么生成|如何生成|为什么|数量|产品入库|规则)", text):
         return _rule_intent("scrap_generation", context)
     if "库位" in text and re.search(r"(有什么|有哪些|查|查询|多少|库存)", text):

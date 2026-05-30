@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
+from app.assistant.tools.drawing import list_drawings_by_parameter
 from app.assistant.tools.inventory import query_drawings, query_inventory
 from app.assistant.tools.analysis import run_analysis_tool
 from app.assistant.tools.location import query_location
@@ -21,6 +22,7 @@ TOOLS: dict[str, Tool] = {
     "inventory_query": query_inventory,
     "inventory_summary": query_inventory,
     "drawing_query": query_drawings,
+    "drawing_parameter_list": list_drawings_by_parameter,
     "transaction_detail": query_transactions,
     "warning_list": warning_list,
     "warning_analysis": warning_list,
