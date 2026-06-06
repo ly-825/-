@@ -121,6 +121,59 @@ def safe_value(value: object) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
+def fmt_option(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)
+
+
+def select_options(values: list[object], selected: str = "", blank_label: str = "全部") -> str:
+    selected_text = selected.strip()
+    options = [f"<option value='' {'selected' if not selected_text else ''}>{html.escape(blank_label)}</option>"]
+    seen = set()
+    for value in values:
+        text = fmt_option(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        options.append(f"<option value='{safe_value(text)}' {'selected' if selected_text == text else ''}>{html.escape(text)}</option>")
+    return "".join(options)
+
+
+def datalist_options(values: list[object]) -> str:
+    options = []
+    seen = set()
+    for value in values:
+        text = fmt_option(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        options.append(f"<option value='{safe_value(text)}'></option>")
+    return "".join(options)
+
+
+def inventory_distinct_options(db: Session, inventory_type: str, field: str, quantity_positive: bool = False, status: str | None = None) -> list[object]:
+    column = getattr(MaterialInventory, field)
+    query = db.query(column).filter(MaterialInventory.inventory_type == inventory_type)
+    if quantity_positive:
+        query = query.filter(MaterialInventory.quantity > 0)
+    if status:
+        query = query.filter(MaterialInventory.status == status)
+    values = [row[0] for row in query.distinct().order_by(column.asc()).all()]
+    return [value for value in values if value not in ("", None)]
+
+
+def drawing_distinct_options(db: Session, field: str, confirmed_only: bool = True) -> list[object]:
+    column = getattr(ProductDrawing, field)
+    query = db.query(column)
+    if confirmed_only:
+        query = query.filter(ProductDrawing.confirmed == 1, ProductDrawing.is_active == 1)
+    values = [row[0] for row in query.distinct().order_by(column.asc()).all()]
+    return [value for value in values if value not in ("", None)]
+
+
 def scrub_internal_ids(value: object) -> object:
     if isinstance(value, dict):
         return {
@@ -320,7 +373,14 @@ def page(title: str, body: str) -> HTMLResponse:
     nav a {{ display:block; padding:12px 14px; border-radius:12px; color:rgba(255,255,255,.82); margin-bottom:8px; }}
     nav a:hover, nav a.active {{ background:rgba(255,255,255,.14); color:white; }}
     nav a.active {{ box-shadow:inset 3px 0 0 #93c5fd; }}
-    .nav-group {{ margin:18px 0 8px; padding:0 14px; color:rgba(255,255,255,.48); font-size:12px; font-weight:800; letter-spacing:.08em; }}
+    .nav-section {{ margin:10px 0; }}
+    .nav-section summary {{ list-style:none; display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-radius:12px; color:rgba(255,255,255,.56); font-size:12px; font-weight:800; letter-spacing:.08em; cursor:pointer; user-select:none; }}
+    .nav-section summary::-webkit-details-marker {{ display:none; }}
+    .nav-section summary::after {{ content:"⌄"; font-size:14px; color:rgba(255,255,255,.62); transition:transform .18s ease; }}
+    .nav-section:not([open]) summary::after {{ transform:rotate(-90deg); }}
+    .nav-section summary:hover {{ background:rgba(255,255,255,.08); color:rgba(255,255,255,.86); }}
+    .nav-section .nav-items {{ padding-top:4px; }}
+    .nav-root {{ margin-bottom:12px; }}
     main {{ padding:28px; }}
     .top {{ display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:22px; }}
     h1 {{ margin:0; font-size:28px; }}
@@ -355,32 +415,58 @@ def page(title: str, body: str) -> HTMLResponse:
     <aside id="admin-sidebar">
       <div class="brand">杭州特耐时</div>
       <nav>
-        <a href="/admin">后台首页</a>
-        <a href="/admin/assistant">智能助手</a>
-        <div class="nav-group">图纸管理</div>
-        <a href="/admin/drawings">图纸识别</a>
-        <a href="/admin/drawings/pending">待确认图纸</a>
-        <a href="/admin/drawings/confirmed">已确认图纸</a>
-        <div class="nav-group">原料管理</div>
-        <a href="/admin/raw-plate-specifications">板料规格</a>
-        <a href="/admin/raw-plates">板料库存</a>
-        <a href="/admin/raw-plates/inbound">板料入库</a>
-        <a href="/admin/raw-plates/outbound">板料出库</a>
-        <a href="/admin/raw-plates/transactions">板料流水</a>
-        <div class="nav-group">库存管理</div>
-        <a href="/admin/inventory">库存查询</a>
-        <a href="/admin/inventory/inbound">产品入库</a>
-        <a href="/admin/inventory/outbound">产品出库</a>
-        <a href="/admin/inventory/transactions">库存流水</a>
-        <div class="nav-group">余料管理</div>
-        <a href="/admin/scraps/pending">待入库余料</a>
-        <a href="/admin/scraps/outbound">余料出库</a>
-        <a href="/admin/scraps">余料记录</a>
-        <a href="/admin/scraps/transactions">余料流水</a>
-        <div class="nav-group">报表中心</div>
-        <a href="/admin/reports/outbound">出库统计</a>
-        <div class="nav-group">系统</div>
-        <a href="/admin/operation-logs">操作日志</a>
+        <div class="nav-root">
+          <a href="/admin">后台首页</a>
+          <a href="/admin/assistant">智能助手</a>
+        </div>
+        <details class="nav-section" data-nav-section="drawing" open>
+          <summary>图纸管理</summary>
+          <div class="nav-items">
+            <a href="/admin/drawings">图纸识别</a>
+            <a href="/admin/drawings/pending">待确认图纸</a>
+            <a href="/admin/drawings/confirmed">已确认图纸</a>
+          </div>
+        </details>
+        <details class="nav-section" data-nav-section="raw-plate" open>
+          <summary>原料管理</summary>
+          <div class="nav-items">
+            <a href="/admin/raw-plate-specifications">板料规格</a>
+            <a href="/admin/raw-plates">板料库存</a>
+            <a href="/admin/raw-plates/inbound">板料入库</a>
+            <a href="/admin/raw-plates/outbound">板料出库</a>
+            <a href="/admin/raw-plates/transactions">板料流水</a>
+          </div>
+        </details>
+        <details class="nav-section" data-nav-section="inventory" open>
+          <summary>库存管理</summary>
+          <div class="nav-items">
+            <a href="/admin/inventory">库存查询</a>
+            <a href="/admin/inventory/inbound">产品入库</a>
+            <a href="/admin/inventory/outbound">产品出库</a>
+            <a href="/admin/inventory/transactions">库存流水</a>
+          </div>
+        </details>
+        <details class="nav-section" data-nav-section="scrap" open>
+          <summary>余料管理</summary>
+          <div class="nav-items">
+            <a href="/admin/scraps/pending">待入库余料</a>
+            <a href="/admin/scraps/outbound">余料出库</a>
+            <a href="/admin/scraps">余料记录</a>
+            <a href="/admin/scraps/transactions">余料流水</a>
+          </div>
+        </details>
+        <details class="nav-section" data-nav-section="report" open>
+          <summary>报表中心</summary>
+          <div class="nav-items">
+            <a href="/admin/reports/outbound">出库统计</a>
+          </div>
+        </details>
+        <details class="nav-section" data-nav-section="system" open>
+          <summary>系统</summary>
+          <div class="nav-items">
+            <a href="/admin/operation-logs">操作日志</a>
+          </div>
+        </details>
       </nav>
     </aside>
     <main>{body}</main>
@@ -408,6 +494,16 @@ def page(title: str, body: str) -> HTMLResponse:
         }}
       }});
       if (bestLink) bestLink.classList.add('active');
+      document.querySelectorAll('.nav-section').forEach((section) => {{
+        const key = 'adminNavSection:' + (section.dataset.navSection || '');
+        const saved = localStorage.getItem(key);
+        const hasActiveLink = section.querySelector('a.active');
+        if (saved === 'closed' && !hasActiveLink) section.open = false;
+        if (hasActiveLink) section.open = true;
+        section.addEventListener('toggle', () => {{
+          localStorage.setItem(key, section.open ? 'open' : 'closed');
+        }});
+      }});
     }}
   </script>
 </body>
@@ -693,6 +789,7 @@ def inventory_page(
     status: str = "",
     material: str = "",
     thickness: str = "",
+    location: str = "",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     query = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "product")
@@ -715,6 +812,8 @@ def inventory_page(
     thickness_value = optional_float(thickness)
     if thickness_value is not None:
         query = query.filter(MaterialInventory.thickness == thickness_value)
+    if location.strip():
+        query = query.filter(MaterialInventory.location.ilike(f"%{location.strip()}%"))
     items = query.order_by(MaterialInventory.created_at.desc()).all()
     grouped = {}
     for item in items:
@@ -742,14 +841,21 @@ def inventory_page(
         """
         for group in grouped.values()
     )
+    product_codes = inventory_distinct_options(db, "product", "material_code", quantity_positive=True)
+    source_codes = inventory_distinct_options(db, "product", "source_product_code", quantity_positive=True)
+    product_code_options = select_options(product_codes + source_codes, keyword, "全部型号")
+    material_options = select_options(inventory_distinct_options(db, "product", "material", quantity_positive=True), material, "全部材质")
+    thickness_options = select_options(inventory_distinct_options(db, "product", "thickness", quantity_positive=True), thickness, "全部厚度")
+    location_options = select_options(inventory_distinct_options(db, "product", "location", quantity_positive=True), location, "全部库位")
     body = f"""
     <div class="top"><div><h1>库存查询</h1><p class="muted">只查询产品库存汇总；入库和出库请进入单独页面操作。</p></div><div class="actions"><a class="btn" href="/admin/inventory/inbound">产品入库</a><a class="btn secondary" href="/admin/inventory/outbound">产品出库</a><a class="btn secondary" href="/admin/inventory/transactions">库存流水</a><a class="btn secondary" href="{export_link('product_inventory', {'q': keyword, 'material': material.strip(), 'thickness': thickness.strip()})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/inventory" class="actions" style="justify-content:flex-start">
-        <input name="q" value="{html.escape(keyword)}" placeholder="搜索材料编号、材质、尺寸、库位、来源产品" style="max-width:380px">
+        <select name="q" style="width:220px">{product_code_options}</select>
         <input type="hidden" name="inventory_type" value="product">
-        <input name="material" value="{html.escape(material.strip())}" placeholder="材质" style="width:110px">
-        <input name="thickness" value="{html.escape(thickness.strip())}" placeholder="厚度" style="width:90px">
+        <select name="material" style="width:150px">{material_options}</select>
+        <select name="thickness" style="width:130px">{thickness_options}</select>
+        <select name="location" style="width:150px">{location_options}</select>
         <button class="btn" type="submit">搜索库存</button>
         <a class="btn secondary" href="/admin/inventory">清空</a>
       </form>
@@ -764,6 +870,9 @@ def raw_plates_page(
     q: str = "",
     material: str = "",
     thickness: str = "",
+    length: str = "",
+    width: str = "",
+    location: str = "",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     query = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "raw_plate")
@@ -778,9 +887,17 @@ def raw_plates_page(
         )
     if material.strip():
         query = query.filter(MaterialInventory.material.ilike(f"%{material.strip()}%"))
+    length_value = optional_float(length)
+    if length_value is not None:
+        query = query.filter(MaterialInventory.length == length_value)
+    width_value = optional_float(width)
+    if width_value is not None:
+        query = query.filter(MaterialInventory.width == width_value)
     thickness_value = optional_float(thickness)
     if thickness_value is not None:
         query = query.filter(MaterialInventory.thickness == thickness_value)
+    if location.strip():
+        query = query.filter(MaterialInventory.location.ilike(f"%{location.strip()}%"))
     items = query.order_by(MaterialInventory.created_at.desc()).all()
     summary = {}
     for item in items:
@@ -820,13 +937,22 @@ def raw_plates_page(
         """
         for item in items
     )
+    batch_options = select_options(inventory_distinct_options(db, "raw_plate", "material_code", quantity_positive=True), keyword, "全部批次")
+    material_options = select_options(inventory_distinct_options(db, "raw_plate", "material", quantity_positive=True), material, "全部材质")
+    length_options = select_options(inventory_distinct_options(db, "raw_plate", "length", quantity_positive=True), length, "全部长度")
+    width_options = select_options(inventory_distinct_options(db, "raw_plate", "width", quantity_positive=True), width, "全部宽度")
+    thickness_options = select_options(inventory_distinct_options(db, "raw_plate", "thickness", quantity_positive=True), thickness, "全部厚度")
+    location_options = select_options(inventory_distinct_options(db, "raw_plate", "location", quantity_positive=True), location, "全部库位")
     body = f"""
     <div class="top"><div><h1>板料库存</h1><p class="muted">查看按重量换算入库的原料钢板库存。</p></div><div class="actions"><a class="btn" href="/admin/raw-plates/inbound">板料入库</a><a class="btn secondary" href="/admin/raw-plates/outbound">板料出库</a><a class="btn secondary" href="{export_link('raw_plate_inventory', {'q': keyword, 'material': material.strip(), 'thickness': thickness.strip()})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/raw-plates" class="actions" style="justify-content:flex-start">
-        <input name="q" value="{html.escape(keyword)}" placeholder="搜索批次号、材质、规格、库位" style="max-width:320px">
-        <input name="material" value="{html.escape(material.strip())}" placeholder="材质" style="width:110px">
-        <input name="thickness" value="{html.escape(thickness.strip())}" placeholder="厚度" style="width:90px">
+        <select name="q" style="width:180px">{batch_options}</select>
+        <select name="material" style="width:150px">{material_options}</select>
+        <select name="length" style="width:130px">{length_options}</select>
+        <select name="width" style="width:130px">{width_options}</select>
+        <select name="thickness" style="width:130px">{thickness_options}</select>
+        <select name="location" style="width:150px">{location_options}</select>
         <button class="btn" type="submit">搜索板料</button>
         <a class="btn secondary" href="/admin/raw-plates">清空</a>
       </form>
@@ -1049,19 +1175,21 @@ def raw_plate_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
         f"<option value='{spec.id}' data-material='{html.escape(spec.material)}' data-length='{spec.length:g}' data-width='{spec.width:g}' data-thickness='{spec.thickness:g}' data-density='{spec.density:g}'>{html.escape(spec.spec_name)}｜{html.escape(spec.material)}｜{spec.length:g}×{spec.width:g}×{spec.thickness:g}</option>"
         for spec in specs
     )
+    material_candidates = datalist_options(inventory_distinct_options(db, "raw_plate", "material") + [spec.material for spec in specs])
+    location_candidates = datalist_options(inventory_distinct_options(db, "raw_plate", "location"))
     body = f"""
     <div class="top"><div><h1>板料入库</h1><p class="muted">选择常用板料规格或手动输入，总重量会按规格和密度换算入库块数。</p></div><div class="actions"><a class="btn secondary" href="/admin/raw-plate-specifications">维护板料规格</a><a class="btn secondary" href="/admin/raw-plates">返回板料库存</a></div></div>
     <section class="card">
       <form method="post" action="/admin/raw-plates/inbound" class="form-grid">
         <div><label>选择板料规格</label><select id="raw-plate-spec-select"><option value="">手动输入/临时规格</option>{spec_options}</select></div>
         <div><label>板料编号/批次号</label><input name="material_code" placeholder="例如 采购批次/炉号/自编号，不填自动生成"></div>
-        <div><label>材质</label><input id="raw-plate-material" name="material" placeholder="例如 45#钢 / Q235" required></div>
+        <div><label>材质</label><input id="raw-plate-material" name="material" list="raw-plate-material-options" placeholder="例如 45#钢 / Q235" required><datalist id="raw-plate-material-options">{material_candidates}</datalist></div>
         <div><label>总重量 吨</label><input name="total_weight_ton" type="number" step="0.001" min="0.001" required></div>
         <div><label>长度 mm</label><input id="raw-plate-length" name="length" type="number" step="0.01" min="0.01" required></div>
         <div><label>宽度 mm</label><input id="raw-plate-width" name="width" type="number" step="0.01" min="0.01" required></div>
         <div><label>厚度 mm</label><input id="raw-plate-thickness" name="thickness" type="number" step="0.01" min="0.01" required></div>
         <div><label>密度 g/cm³</label><input id="raw-plate-density" name="density" type="number" step="0.001" min="0.001" value="7.85" required></div>
-        <div><label>库位</label><input name="location" placeholder="例如 原料区-A01"></div>
+        <div><label>库位</label><input name="location" list="raw-plate-location-options" placeholder="例如 原料区-A01"><datalist id="raw-plate-location-options">{location_candidates}</datalist></div>
         <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
         <div><label>备注</label><input name="remark" placeholder="例如 采购入库"></div>
         <div style="align-self:end"><button class="btn" type="submit">计算并入库</button></div>
@@ -1201,15 +1329,21 @@ def raw_plate_outbound_page(
         f"<tr><td>{group['material']}</td><td>{group['length'] or '-'}</td><td>{group['width'] or '-'}</td><td>{group['thickness']}</td><td><strong>{group['quantity']}</strong></td><td>{group['batch_count']}</td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td><a class='btn secondary' href='/admin/raw-plates/outbound?material={quote(str(group['material']), safe='')}&length={quote(str(group['length'] or ''), safe='')}&width={quote(str(group['width'] or ''), safe='')}&thickness={quote(str(group['thickness'] or ''), safe='')}'>选择出库</a></td></tr>"
         for group in summary.values()
     )
+    material_options = select_options(inventory_distinct_options(db, "raw_plate", "material", quantity_positive=True), material, "全部材质")
+    length_options = select_options(inventory_distinct_options(db, "raw_plate", "length", quantity_positive=True), length, "全部长度")
+    width_options = select_options(inventory_distinct_options(db, "raw_plate", "width", quantity_positive=True), width, "全部宽度")
+    thickness_options = select_options(inventory_distinct_options(db, "raw_plate", "thickness", quantity_positive=True), thickness, "全部厚度")
+    location_options = select_options(inventory_distinct_options(db, "raw_plate", "location", quantity_positive=True), location, "全部库位")
+    location_candidates = datalist_options(inventory_distinct_options(db, "raw_plate", "location", quantity_positive=True))
     body = f"""
     <div class="top"><div><h1>板料出库</h1><p class="muted">按材质和长宽厚申请出库，系统自动按最早入库批次先进先出扣减。</p></div><div class="actions"><a class="btn secondary" href="/admin/raw-plates">返回板料库存</a><a class="btn secondary" href="/admin/raw-plates/transactions">板料流水</a></div></div>
     <section class="card">
       <form method="get" action="/admin/raw-plates/outbound" class="actions" style="justify-content:flex-start">
-        <input name="material" value="{html.escape(material.strip())}" placeholder="材质" style="width:110px">
-        <input name="length" value="{html.escape(length.strip())}" placeholder="长度" style="width:90px">
-        <input name="width" value="{html.escape(width.strip())}" placeholder="宽度" style="width:90px">
-        <input name="thickness" value="{html.escape(thickness.strip())}" placeholder="厚度" style="width:90px">
-        <input name="location" value="{html.escape(location.strip())}" placeholder="库位，可选" style="width:130px">
+        <select name="material" style="width:150px">{material_options}</select>
+        <select name="length" style="width:130px">{length_options}</select>
+        <select name="width" style="width:130px">{width_options}</select>
+        <select name="thickness" style="width:130px">{thickness_options}</select>
+        <select name="location" style="width:150px">{location_options}</select>
         <button class="btn" type="submit">查看可用规格</button>
         <a class="btn secondary" href="/admin/raw-plates/outbound">清空</a>
       </form>
@@ -1223,7 +1357,7 @@ def raw_plate_outbound_page(
         <div><label>宽度 mm</label><input name="width" type="number" step="0.01" min="0.01" value="{html.escape(width.strip())}" readonly required></div>
         <div><label>厚度 mm</label><input name="thickness" type="number" step="0.01" min="0.01" value="{html.escape(thickness.strip())}" readonly required></div>
         <div><label>出库块数</label><input name="quantity" type="number" min="1" value="1" required></div>
-        <div><label>指定库位，可选</label><input name="location" value="{html.escape(location.strip())}" placeholder="不填则所有库位FIFO"></div>
+        <div><label>指定库位，可选</label><input name="location" value="{html.escape(location.strip())}" list="raw-out-location-options" placeholder="不填则所有库位FIFO"><datalist id="raw-out-location-options">{location_candidates}</datalist></div>
         <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
         <div><label>备注</label><input name="remark" placeholder="例如 生产领料"></div>
         <div style="align-self:end"><button class="btn" type="submit">确认出库</button></div>
@@ -1315,8 +1449,11 @@ def outbound_raw_plate_from_page(
 
 
 @router.get("/admin/raw-plates/transactions", response_class=HTMLResponse)
-def raw_plate_transactions_page(db: Session = Depends(get_db)) -> HTMLResponse:
-    records = db.query(InventoryTransactionRecord).order_by(InventoryTransactionRecord.created_at.desc()).limit(500).all()
+def raw_plate_transactions_page(material: str = "", transaction_type: str = "", db: Session = Depends(get_db)) -> HTMLResponse:
+    records_query = db.query(InventoryTransactionRecord)
+    if transaction_type.strip():
+        records_query = records_query.filter(InventoryTransactionRecord.transaction_type == transaction_type.strip())
+    records = records_query.order_by(InventoryTransactionRecord.created_at.desc()).limit(500).all()
     inventory_ids = [record.inventory_id for record in records]
     inventory_map = {
         item.id: item
@@ -1326,6 +1463,8 @@ def raw_plate_transactions_page(db: Session = Depends(get_db)) -> HTMLResponse:
     for record in records:
         item = inventory_map.get(record.inventory_id)
         if not item or item.inventory_type != "raw_plate":
+            continue
+        if material.strip() and item.material != material.strip():
             continue
         reverse_form = "-"
         if record.transaction_type in ("in", "out") and record.reversed_transaction_id is None:
@@ -1337,8 +1476,21 @@ def raw_plate_transactions_page(db: Session = Depends(get_db)) -> HTMLResponse:
             </form>
             """
         rows += f"<tr><td>{item.material_code or '-'}</td><td>{item.material}</td><td>{item.usable_size or '-'}</td><td>{item.location or '-'}</td><td>{transaction_label(record.transaction_type)}</td><td>{record.quantity}</td><td>{record.before_quantity}</td><td>{record.after_quantity}</td><td>{record.operator_name or '-'}</td><td>{record.remark or '-'}</td><td>{record.created_at}</td><td>{reverse_form}</td></tr>"
+    material_options = select_options(inventory_distinct_options(db, "raw_plate", "material"), material, "全部材质")
+    type_options = "".join(
+        f"<option value='{value}' {'selected' if transaction_type == value else ''}>{label}</option>"
+        for value, label in (("", "全部类型"), ("in", "入库"), ("out", "出库"), ("confirm", "确认"))
+    )
     body = f"""
     <div class="top"><div><h1>板料流水</h1><p class="muted">查看原料板料的入库、出库流水和计算备注。</p></div><div class="actions"><a class="btn secondary" href="/admin/raw-plates">返回板料库存</a><a class="btn secondary" href="/admin/raw-plates/inbound">板料入库</a><a class="btn secondary" href="/admin/raw-plates/outbound">板料出库</a><a class="btn secondary" href="/admin/exports/raw_plate_transactions">导出Excel</a></div></div>
+    <section class="card">
+      <form method="get" action="/admin/raw-plates/transactions" class="actions" style="justify-content:flex-start">
+        <select name="material" style="width:150px">{material_options}</select>
+        <select name="transaction_type" style="width:130px">{type_options}</select>
+        <button class="btn" type="submit">查询流水</button>
+        <a class="btn secondary" href="/admin/raw-plates/transactions">清空</a>
+      </form>
+    </section>
     <section class="card"><table><thead><tr><th>批次编号</th><th>材质</th><th>尺寸</th><th>库位</th><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>操作人</th><th>备注</th><th>时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='12'>暂无板料流水。</td></tr>"}</tbody></table></section>
     """
     return page("板料流水", body)
@@ -1366,6 +1518,7 @@ def reverse_raw_plate_transaction_from_page(
 @router.get("/admin/inventory/inbound", response_class=HTMLResponse)
 def inventory_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
     drawing_options = confirmed_drawing_options(db)
+    location_candidates = datalist_options(inventory_distinct_options(db, "product", "location"))
     client_request_id = uuid4().hex
     body = f"""
     <div class="top"><div><h1>产品入库</h1><p class="muted">选择已确认图纸对应的产品型号，填写入库数量和库位。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回库存查询</a></div></div>
@@ -1374,7 +1527,7 @@ def inventory_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
         <input type="hidden" name="client_request_id" value="{client_request_id}">
         <div><label>选择产品型号</label><select name="drawing_id" required>{drawing_options}</select></div>
         <div><label>数量</label><input name="quantity" type="number" value="1" min="1" required></div>
-        <div><label>库位</label><input name="location" placeholder="例如 A-01"></div>
+        <div><label>库位</label><input name="location" list="product-in-location-options" placeholder="例如 A-01"><datalist id="product-in-location-options">{location_candidates}</datalist></div>
         <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
         <div style="align-self:end"><button class="btn" type="submit">确认入库</button></div>
       </form>
@@ -1454,14 +1607,21 @@ def inventory_outbound_page(
         """
         for group in grouped.values()
     )
+    product_codes = inventory_distinct_options(db, "product", "material_code", quantity_positive=True)
+    source_codes = inventory_distinct_options(db, "product", "source_product_code", quantity_positive=True)
+    product_code_options = select_options(product_codes + source_codes, keyword, "全部型号")
+    material_options = select_options(inventory_distinct_options(db, "product", "material", quantity_positive=True), material, "全部材质")
+    thickness_options = select_options(inventory_distinct_options(db, "product", "thickness", quantity_positive=True), thickness, "全部厚度")
+    location_options = select_options(inventory_distinct_options(db, "product", "location", quantity_positive=True), location, "全部库位")
+    location_candidates = datalist_options(inventory_distinct_options(db, "product", "location", quantity_positive=True))
     body = f"""
     <div class="top"><div><h1>产品出库</h1><p class="muted">在本页查看当前产品库存，并按产品型号填写出库数量；库位不填时按所有库位先进先出扣减。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回库存查询</a></div></div>
     <section class="card">
       <form method="get" action="/admin/inventory/outbound" class="actions" style="justify-content:flex-start;margin-bottom:14px">
-        <input name="q" value="{html.escape(keyword)}" placeholder="筛选产品型号、材质、库位" style="max-width:320px">
-        <input name="material" value="{html.escape(material.strip())}" placeholder="材质" style="width:110px">
-        <input name="thickness" value="{html.escape(thickness.strip())}" placeholder="厚度" style="width:90px">
-        <input name="location" value="{html.escape(location.strip())}" placeholder="库位" style="width:110px">
+        <select name="q" style="width:220px">{product_code_options}</select>
+        <select name="material" style="width:150px">{material_options}</select>
+        <select name="thickness" style="width:130px">{thickness_options}</select>
+        <select name="location" style="width:150px">{location_options}</select>
         <button class="btn secondary" type="submit">筛选</button>
         <a class="btn secondary" href="/admin/inventory/outbound">清空</a>
       </form>
@@ -1469,7 +1629,7 @@ def inventory_outbound_page(
         <input type="hidden" name="client_request_id" value="{client_request_id}">
         <div><label>选择产品型号</label><select name="drawing_id" required>{drawing_options}</select></div>
         <div><label>出库数量</label><input name="quantity" type="number" value="1" min="1" required></div>
-        <div><label>指定库位，可选</label><input name="location" value="{html.escape(location.strip())}" placeholder="不填则所有库位FIFO"></div>
+        <div><label>指定库位，可选</label><input name="location" value="{html.escape(location.strip())}" list="product-out-location-options" placeholder="不填则所有库位FIFO"><datalist id="product-out-location-options">{location_candidates}</datalist></div>
         <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
         <div><label>备注</label><input name="remark" placeholder="例如 发货/领用"></div>
         <div style="align-self:end"><button class="btn" type="submit">确认出库</button></div>
@@ -1850,8 +2010,12 @@ def outbound_report_page(period: str = "day", start_date: str = "", end_date: st
 
 
 @router.get("/admin/inventory/transactions", response_class=HTMLResponse)
-def inventory_transactions_page(db: Session = Depends(get_db)) -> HTMLResponse:
-    records = db.query(InventoryTransactionRecord).order_by(InventoryTransactionRecord.created_at.desc()).limit(500).all()
+def inventory_transactions_page(product_code: str = "", transaction_type: str = "", db: Session = Depends(get_db)) -> HTMLResponse:
+    product_filter = product_code.strip()
+    records_query = db.query(InventoryTransactionRecord)
+    if transaction_type.strip():
+        records_query = records_query.filter(InventoryTransactionRecord.transaction_type == transaction_type.strip())
+    records = records_query.order_by(InventoryTransactionRecord.created_at.desc()).limit(500).all()
     inventory_ids = [r.inventory_id for r in records]
     inventory_map = {
         item.id: item
@@ -1862,27 +2026,46 @@ def inventory_transactions_page(db: Session = Depends(get_db)) -> HTMLResponse:
         item = inventory_map.get(r.inventory_id)
         if not item or item.inventory_type != "product":
             continue
-        product_code = item.material_code or item.source_product_code if item else "-"
+        row_product_code = item.material_code or item.source_product_code if item else "-"
+        if product_filter and row_product_code != product_filter:
+            continue
         product_link = (
-            f"<a href='/admin/inventory/product/{quote(str(product_code), safe='')}'>{product_code}</a>"
-            if item and item.inventory_type == "product" and product_code != "-"
-            else product_code
+            f"<a href='/admin/inventory/product/{quote(str(row_product_code), safe='')}'>{row_product_code}</a>"
+            if item and item.inventory_type == "product" and row_product_code != "-"
+            else row_product_code
         )
         before_quantity = "-" if r.transaction_type == "confirm" else r.before_quantity
         after_quantity = "-" if r.transaction_type == "confirm" else r.after_quantity
         quantity_label = r.after_quantity if r.transaction_type == "confirm" and r.quantity == 0 else r.quantity
         reverse_action = "-" if r.transaction_type not in ("in", "out") or r.reversed_transaction_id else f"<form method='post' action='/admin/inventory/transactions/{r.id}/reverse' class='actions' style='margin:0;justify-content:flex-start' onsubmit=\"return confirm('确定撤销这条流水吗？系统会生成一条反向流水，不会删除原记录。')\"><input name='operator_name' placeholder='操作人' style='width:80px'><input name='remark' placeholder='撤销原因' required style='width:120px'><button class='btn secondary' type='submit'>撤销</button></form>"
         rows += f"<tr><td>{product_link}</td><td>{transaction_label(r.transaction_type)}</td><td>{quantity_label}</td><td>{before_quantity}</td><td>{after_quantity}</td><td>{r.operator_name or '-'}</td><td>{r.remark or '-'}</td><td>{r.created_at}</td><td>{reverse_action}</td></tr>"
+    product_codes = inventory_distinct_options(db, "product", "material_code") + inventory_distinct_options(db, "product", "source_product_code")
+    product_options = select_options(product_codes, product_filter, "全部型号")
+    type_options = "".join(
+        f"<option value='{value}' {'selected' if transaction_type == value else ''}>{label}</option>"
+        for value, label in (("", "全部类型"), ("in", "入库"), ("out", "出库"), ("confirm", "确认"))
+    )
     body = f"""
     <div class="top"><div><h1>库存流水</h1><p class="muted">只查看产品库存的入库/出库记录；余料记录请到余料流水查看。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回库存管理</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/exports/product_transactions">导出Excel</a></div></div>
+    <section class="card">
+      <form method="get" action="/admin/inventory/transactions" class="actions" style="justify-content:flex-start">
+        <select name="product_code" style="width:220px">{product_options}</select>
+        <select name="transaction_type" style="width:130px">{type_options}</select>
+        <button class="btn" type="submit">查询流水</button>
+        <a class="btn secondary" href="/admin/inventory/transactions">清空</a>
+      </form>
+    </section>
     <section class="card"><table><thead><tr><th>产品型号/来源</th><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>操作人</th><th>备注</th><th>时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无库存流水。</td></tr>"}</tbody></table></section>
     """
     return page("库存流水", body)
 
 
 @router.get("/admin/scraps/transactions", response_class=HTMLResponse)
-def scrap_transactions_page(db: Session = Depends(get_db)) -> HTMLResponse:
-    records = db.query(InventoryTransactionRecord).order_by(InventoryTransactionRecord.created_at.desc()).limit(500).all()
+def scrap_transactions_page(material: str = "", transaction_type: str = "", db: Session = Depends(get_db)) -> HTMLResponse:
+    records_query = db.query(InventoryTransactionRecord)
+    if transaction_type.strip():
+        records_query = records_query.filter(InventoryTransactionRecord.transaction_type == transaction_type.strip())
+    records = records_query.order_by(InventoryTransactionRecord.created_at.desc()).limit(500).all()
     inventory_ids = [r.inventory_id for r in records]
     inventory_map = {
         item.id: item
@@ -1893,13 +2076,28 @@ def scrap_transactions_page(db: Session = Depends(get_db)) -> HTMLResponse:
         item = inventory_map.get(r.inventory_id)
         if not item or item.inventory_type != "scrap":
             continue
+        if material.strip() and item.material != material.strip():
+            continue
         before_quantity = "-" if r.transaction_type == "confirm" else r.before_quantity
         after_quantity = "-" if r.transaction_type == "confirm" else r.after_quantity
         quantity_label = r.after_quantity if r.transaction_type == "confirm" and r.quantity == 0 else r.quantity
         reverse_action = "-" if r.transaction_type not in ("in", "out") or r.reversed_transaction_id else f"<form method='post' action='/admin/scraps/transactions/{r.id}/reverse' class='actions' style='margin:0;justify-content:flex-start' onsubmit=\"return confirm('确定撤销这条余料流水吗？系统会生成一条反向流水，不会删除原记录。')\"><input name='operator_name' placeholder='操作人' style='width:80px'><input name='remark' placeholder='撤销原因' required style='width:120px'><button class='btn secondary' type='submit'>撤销</button></form>"
         rows += f"<tr><td>{item.material}</td><td>{item.thickness}</td><td>{item.usable_size or '-'}</td><td>{scrap_location_label(item)}</td><td>{transaction_label(r.transaction_type)}</td><td>{quantity_label}</td><td>{before_quantity}</td><td>{after_quantity}</td><td>{r.operator_name or '-'}</td><td>{r.remark or '-'}</td><td>{r.created_at}</td><td>{reverse_action}</td></tr>"
+    material_options = select_options(inventory_distinct_options(db, "scrap", "material"), material, "全部材质")
+    type_options = "".join(
+        f"<option value='{value}' {'selected' if transaction_type == value else ''}>{label}</option>"
+        for value, label in (("", "全部类型"), ("in", "入库"), ("out", "出库"), ("confirm", "确认"))
+    )
     body = f"""
     <div class="top"><div><h1>余料流水</h1><p class="muted">查看余料确认入库、出库等流转记录。</p></div><div class="actions"><a class="btn secondary" href="/admin/scraps">返回余料记录</a><a class="btn secondary" href="/admin/inventory/transactions">库存流水</a><a class="btn secondary" href="/admin/exports/scrap_transactions">导出Excel</a></div></div>
+    <section class="card">
+      <form method="get" action="/admin/scraps/transactions" class="actions" style="justify-content:flex-start">
+        <select name="material" style="width:150px">{material_options}</select>
+        <select name="transaction_type" style="width:130px">{type_options}</select>
+        <button class="btn" type="submit">查询流水</button>
+        <a class="btn secondary" href="/admin/scraps/transactions">清空</a>
+      </form>
+    </section>
     <section class="card"><table><thead><tr><th>材质</th><th>厚度</th><th>可用尺寸</th><th>库位</th><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>操作人</th><th>备注</th><th>时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='12'>暂无余料流水。</td></tr>"}</tbody></table></section>
     """
     return page("余料流水", body)
@@ -1957,6 +2155,7 @@ def pending_scraps_page(db: Session = Depends(get_db)) -> HTMLResponse:
         .order_by(MaterialInventory.created_at.desc())
         .all()
     )
+    location_candidates = datalist_options(inventory_distinct_options(db, "scrap", "location"))
     rows = "".join(
         f"""
         <tr>
@@ -1965,7 +2164,7 @@ def pending_scraps_page(db: Session = Depends(get_db)) -> HTMLResponse:
             <form method='post' action='/admin/scraps/{item.id}/confirm' style='display:flex;gap:6px;align-items:center;margin:0'>
               <input name='actual_quantity' type='number' min='0' value='{item.quantity}' style='width:75px'>
               <input name='actual_diameter' type='number' step='0.01' value='{item.diameter or ''}' style='width:90px'>
-              <input name='location' value='{'' if item.location in ('待入库', '未入库') else item.location or ''}' placeholder='库位' style='width:100px' required>
+              <input name='location' value='{'' if item.location in ('待入库', '未入库') else item.location or ''}' list='pending-scrap-location-options' placeholder='库位' style='width:100px' required>
               <input name='operator_name' placeholder='确认人' style='width:90px'>
               <button class='btn secondary' type='submit' style='min-width:96px;white-space:nowrap'>确认入库</button>
             </form>
@@ -1977,6 +2176,7 @@ def pending_scraps_page(db: Session = Depends(get_db)) -> HTMLResponse:
     body = f"""
     <div class="top"><div><h1>待入库余料</h1><p class="muted">产品入库后自动生成的中心余料先进入待确认，测量实际尺寸和库位后再变为可用。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">库存管理</a><a class="btn secondary" href="/admin/scraps">余料记录</a></div></div>
     <section class="card"><table><thead><tr><th>来源产品</th><th>来源图纸</th><th>数量</th><th>材质</th><th>厚度</th><th>理论直径</th><th>可用尺寸</th><th>当前库位</th><th>确认入库</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无待入库余料。</td></tr>"}</tbody></table></section>
+    <datalist id="pending-scrap-location-options">{location_candidates}</datalist>
     """
     return page("待入库余料", body)
 
@@ -2099,15 +2299,19 @@ def scrap_outbound_page(
         f"<option value='{html.escape(group['key'])}'>{group['material']}｜厚度 {group['thickness']}｜{group['usable_size']}｜库位 {group['location']}｜总数量 {group['quantity']}</option>"
         for group in grouped.values()
     ) or "<option value='' disabled selected>请先查询匹配余料</option>"
+    material_options = select_options(inventory_distinct_options(db, "scrap", "material", quantity_positive=True, status="available"), material, "全部材质")
+    thickness_options = select_options(inventory_distinct_options(db, "scrap", "thickness", quantity_positive=True, status="available"), thickness, "全部厚度")
+    diameter_options = select_options(inventory_distinct_options(db, "scrap", "diameter", quantity_positive=True, status="available"), required_diameter, "全部直径")
+    location_options = select_options(inventory_distinct_options(db, "scrap", "location", quantity_positive=True, status="available"), location, "全部库位")
     body = f"""
     <div class="top"><div><h1>余料出库</h1><p class="muted">先查询可用余料，再按规格和库位汇总出库。</p></div><div class="actions"><a class="btn secondary" href="/admin/scraps">返回余料查询</a></div></div>
     <section class="card">
       <form method="get" action="/admin/scraps/outbound" class="actions" style="justify-content:flex-start">
         <select name="drawing_id">{confirmed_drawing_options(db, selected_id=int(drawing_id) if drawing_id.isdigit() else None, include_blank=True)}</select>
-        <input name="material" value="{html.escape(material.strip())}" placeholder="材质" style="width:110px">
-        <input name="thickness" value="{html.escape(thickness.strip())}" placeholder="厚度" style="width:90px">
-        <input name="required_diameter" value="{html.escape(required_diameter.strip())}" placeholder="所需直径" style="width:100px">
-        <input name="location" value="{html.escape(location.strip())}" placeholder="库位" style="width:110px">
+        <select name="material" style="width:150px">{material_options}</select>
+        <select name="thickness" style="width:130px">{thickness_options}</select>
+        <select name="required_diameter" style="width:140px">{diameter_options}</select>
+        <select name="location" style="width:150px">{location_options}</select>
         <button class="btn" type="submit">查询可出库余料</button>
         <a class="btn secondary" href="/admin/scraps/outbound">清空</a>
       </form>
@@ -2193,9 +2397,41 @@ def outbound_scrap_from_page(
 
 
 @router.get("/admin/drawings", response_class=HTMLResponse)
-def drawings_page(db: Session = Depends(get_db)) -> HTMLResponse:
-    drawings = db.query(ProductDrawing).order_by(ProductDrawing.created_at.desc()).all()
+def drawings_page(q: str = "", material: str = "", thickness: str = "", confirmed: str = "", db: Session = Depends(get_db)) -> HTMLResponse:
+    query = db.query(ProductDrawing)
+    keyword = q.strip()
+    if keyword:
+        like = f"%{keyword}%"
+        query = query.filter(
+            (ProductDrawing.product_code.ilike(like))
+            | (ProductDrawing.product_name.ilike(like))
+        )
+    if material.strip():
+        query = query.filter(ProductDrawing.material.ilike(f"%{material.strip()}%"))
+    thickness_value = optional_float(thickness)
+    if thickness_value is not None:
+        query = query.filter(
+            (ProductDrawing.thickness == thickness_value)
+            | (ProductDrawing.product_thickness == thickness_value)
+            | (ProductDrawing.plate_thickness == thickness_value)
+        )
+    if confirmed in ("0", "1"):
+        query = query.filter(ProductDrawing.confirmed == int(confirmed))
+    drawings = query.order_by(ProductDrawing.created_at.desc()).all()
     rows = drawing_rows(drawings)
+    product_code_options = select_options(drawing_distinct_options(db, "product_code", confirmed_only=False), keyword, "全部型号")
+    material_options = select_options(drawing_distinct_options(db, "material", confirmed_only=False), material, "全部材质")
+    thickness_options = select_options(
+        drawing_distinct_options(db, "plate_thickness", confirmed_only=False)
+        + drawing_distinct_options(db, "product_thickness", confirmed_only=False)
+        + drawing_distinct_options(db, "thickness", confirmed_only=False),
+        thickness,
+        "全部厚度",
+    )
+    confirmed_options = "".join(
+        f"<option value='{value}' {'selected' if confirmed == value else ''}>{label}</option>"
+        for value, label in (("", "全部状态"), ("1", "已确认"), ("0", "待确认"))
+    )
     body = f"""
     <div class="top"><div><h1>图纸识别</h1><p class="muted">上传DXF文件，自动识别产品用料信息。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a><a class="btn secondary" href="/admin/drawings/confirmed">已确认图纸</a></div></div>
     <section class="card">
@@ -2254,6 +2490,16 @@ def drawings_page(db: Session = Depends(get_db)) -> HTMLResponse:
         <button class="btn" type="submit">批量上传并识别</button>
       </form>
     </section>
+    <section class="card">
+      <form method="get" action="/admin/drawings" class="actions" style="justify-content:flex-start">
+        <select name="q" style="width:220px">{product_code_options}</select>
+        <select name="material" style="width:150px">{material_options}</select>
+        <select name="thickness" style="width:130px">{thickness_options}</select>
+        <select name="confirmed" style="width:140px">{confirmed_options}</select>
+        <button class="btn" type="submit">搜索图纸</button>
+        <a class="btn secondary" href="/admin/drawings">清空</a>
+      </form>
+    </section>
     <section class="card"><h2>图纸记录</h2><table><thead><tr><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>材质</th><th>厚度</th><th>最大外径</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table></section>
     """
     return page("图纸识别", body)
@@ -2268,7 +2514,7 @@ def drawing_rows(drawings: list[ProductDrawing], show_id: bool = True) -> str:
 
 
 @router.get("/admin/drawings/confirmed", response_class=HTMLResponse)
-def confirmed_drawings_page(q: str = "", db: Session = Depends(get_db)) -> HTMLResponse:
+def confirmed_drawings_page(q: str = "", material: str = "", thickness: str = "", db: Session = Depends(get_db)) -> HTMLResponse:
     query = db.query(ProductDrawing).filter(ProductDrawing.confirmed == 1, ProductDrawing.is_active == 1)
     keyword = q.strip()
     if keyword:
@@ -2276,14 +2522,31 @@ def confirmed_drawings_page(q: str = "", db: Session = Depends(get_db)) -> HTMLR
         query = query.filter(
             (ProductDrawing.product_code.ilike(like))
             | (ProductDrawing.product_name.ilike(like))
-            | (ProductDrawing.material.ilike(like))
+        )
+    if material.strip():
+        query = query.filter(ProductDrawing.material.ilike(f"%{material.strip()}%"))
+    thickness_value = optional_float(thickness)
+    if thickness_value is not None:
+        query = query.filter(
+            (ProductDrawing.thickness == thickness_value)
+            | (ProductDrawing.product_thickness == thickness_value)
+            | (ProductDrawing.plate_thickness == thickness_value)
         )
     drawings = query.order_by(ProductDrawing.updated_at.desc()).all()
+    product_code_options = select_options(drawing_distinct_options(db, "product_code"), keyword, "全部型号")
+    material_options = select_options(drawing_distinct_options(db, "material"), material, "全部材质")
+    thickness_options = select_options(
+        drawing_distinct_options(db, "plate_thickness") + drawing_distinct_options(db, "product_thickness") + drawing_distinct_options(db, "thickness"),
+        thickness,
+        "全部厚度",
+    )
     body = f"""
     <div class="top"><div><h1>已确认图纸</h1><p class="muted">这些图纸已经人工确认，可直接用于产品入库。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a></div></div>
     <section class="card">
       <form method="get" action="/admin/drawings/confirmed" class="actions" style="justify-content:flex-start;margin-bottom:14px">
-        <input name="q" value="{html.escape(keyword)}" placeholder="搜索产品编号、名称或材质" style="max-width:320px">
+        <select name="q" style="width:220px">{product_code_options}</select>
+        <select name="material" style="width:150px">{material_options}</select>
+        <select name="thickness" style="width:130px">{thickness_options}</select>
         <button class="btn" type="submit">搜索</button>
         <a class="btn secondary" href="/admin/drawings/confirmed">清空</a>
       </form>
@@ -2620,15 +2883,21 @@ def scraps_page(
         f"<tr><td>{r.source_product_code or '-'}</td><td>{drawing_version_label(db, r.source_drawing_id)}</td><td>{scrap_map.get(r.scrap_inventory_id).quantity if scrap_map.get(r.scrap_inventory_id) else '-'}</td><td>{scrap_map.get(r.scrap_inventory_id).status if scrap_map.get(r.scrap_inventory_id) else '-'}</td><td>{scrap_location_label(scrap_map.get(r.scrap_inventory_id))}</td><td>{scrap_map.get(r.scrap_inventory_id).usable_size if scrap_map.get(r.scrap_inventory_id) else '-'}</td><td>{r.theoretical_size or '-'}</td><td>{r.actual_size or '-'}</td><td>{r.operator_name or '-'}</td><td>{r.registered_at}</td></tr>"
         for r in filtered_records
     )
+    source_product_options = select_options([record.source_product_code for record in records], source_product_code, "全部来源产品")
+    material_options = select_options(inventory_distinct_options(db, "scrap", "material", quantity_positive=True, status="available"), material, "全部材质")
+    thickness_options = select_options(inventory_distinct_options(db, "scrap", "thickness", quantity_positive=True, status="available"), thickness, "全部厚度")
+    diameter_options = select_options(inventory_distinct_options(db, "scrap", "diameter", quantity_positive=True, status="available"), required_diameter, "全部直径")
+    location_options = select_options(inventory_distinct_options(db, "scrap", "location", quantity_positive=True, status="available"), location, "全部库位")
     body = f"""
     <div class='top'><div><h1>余料记录</h1><p class='muted'>查看切割后生成的新余料来源、数量与尺寸。</p></div><div class="actions"><a class="btn" href="/admin/scraps/outbound">余料出库</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/scraps/pending">待入库余料</a><a class="btn secondary" href="{export_link('scrap_inventory', {'material': material.strip(), 'thickness': thickness.strip(), 'location': location.strip()})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/scraps" class="actions" style="justify-content:flex-start">
+        <select name="source_product_code" style="width:180px">{source_product_options}</select>
         <select name="drawing_id">{confirmed_drawing_options(db, selected_id=int(drawing_id) if drawing_id.isdigit() else None, include_blank=True)}</select>
-        <input name="material" value="{html.escape(material.strip())}" placeholder="材质" style="width:110px">
-        <input name="thickness" value="{html.escape(thickness.strip())}" placeholder="厚度" style="width:90px">
-        <input name="required_diameter" value="{html.escape(required_diameter.strip())}" placeholder="所需直径" style="width:100px">
-        <input name="location" value="{html.escape(location.strip())}" placeholder="库位" style="width:110px">
+        <select name="material" style="width:150px">{material_options}</select>
+        <select name="thickness" style="width:130px">{thickness_options}</select>
+        <select name="required_diameter" style="width:140px">{diameter_options}</select>
+        <select name="location" style="width:150px">{location_options}</select>
         <button class="btn" type="submit">搜索余料</button>
         <a class="btn secondary" href="/admin/scraps">清空</a>
       </form>
