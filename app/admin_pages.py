@@ -369,18 +369,21 @@ def page(title: str, body: str) -> HTMLResponse:
     a {{ color:inherit; text-decoration:none; }}
     .layout {{ display:grid; grid-template-columns:220px 1fr; min-height:100vh; }}
     aside {{ background:#0f1f46; color:white; padding:20px 14px; max-height:100vh; overflow:auto; position:sticky; top:0; }}
-    .brand {{ font-size:18px; font-weight:800; margin:0 8px 20px; }}
-    nav a {{ display:block; padding:9px 12px; border-radius:10px; color:rgba(255,255,255,.76); margin-bottom:4px; font-size:14px; font-weight:600; line-height:1.35; }}
-    nav a:hover, nav a.active {{ background:rgba(255,255,255,.10); color:white; }}
+    .brand {{ font-size:17px; font-weight:800; margin:0 8px 12px; }}
+    .nav-current {{ margin:0 6px 14px; padding:10px 12px; border-radius:10px; background:rgba(147,197,253,.14); color:#dbeafe; border:1px solid rgba(147,197,253,.24); }}
+    .nav-current span {{ display:block; font-size:11px; color:rgba(219,234,254,.62); margin-bottom:4px; }}
+    .nav-current strong {{ display:block; font-size:13px; line-height:1.35; font-weight:800; }}
+    nav a {{ display:block; padding:8px 10px; border-radius:8px; color:rgba(255,255,255,.68); margin-bottom:3px; font-size:13px; font-weight:600; line-height:1.35; }}
+    nav a:hover, nav a.active {{ background:rgba(255,255,255,.08); color:white; }}
     nav a.active {{ box-shadow:inset 2px 0 0 #93c5fd; }}
     .nav-section {{ margin:6px 0; }}
-    .nav-section summary {{ list-style:none; display:flex; align-items:center; justify-content:space-between; min-height:38px; padding:8px 12px; border-radius:10px; color:rgba(255,255,255,.52); font-size:12px; font-weight:800; letter-spacing:.04em; cursor:pointer; user-select:none; }}
+    .nav-section summary {{ list-style:none; display:flex; align-items:center; justify-content:space-between; min-height:36px; padding:8px 10px; border-radius:9px; color:rgba(255,255,255,.58); font-size:12px; font-weight:800; letter-spacing:0; cursor:pointer; user-select:none; }}
     .nav-section summary::-webkit-details-marker {{ display:none; }}
     .nav-section summary::after {{ content:"⌄"; font-size:14px; color:rgba(255,255,255,.62); transition:transform .18s ease; }}
     .nav-section:not([open]) summary::after {{ transform:rotate(-90deg); }}
     .nav-section summary:hover {{ background:rgba(255,255,255,.08); color:rgba(255,255,255,.86); }}
-    .nav-section .nav-items {{ padding:2px 0 4px 10px; border-left:1px solid rgba(255,255,255,.10); margin-left:12px; }}
-    .nav-section .nav-items a {{ padding:8px 10px; font-size:13px; font-weight:600; color:rgba(255,255,255,.70); }}
+    .nav-section .nav-items {{ padding:2px 0 4px 8px; border-left:1px solid rgba(255,255,255,.10); margin-left:10px; }}
+    .nav-section .nav-items a {{ padding:7px 9px; font-size:12px; font-weight:600; color:rgba(255,255,255,.66); }}
     .nav-section .nav-items a.active {{ background:rgba(147,197,253,.18); color:white; }}
     .nav-root {{ margin-bottom:10px; }}
     main {{ padding:28px; }}
@@ -416,12 +419,13 @@ def page(title: str, body: str) -> HTMLResponse:
   <div class="layout">
     <aside id="admin-sidebar">
       <div class="brand">杭州特耐时</div>
+      <div id="nav-current" class="nav-current"><span>当前位置</span><strong>后台首页</strong></div>
       <nav>
         <div class="nav-root">
           <a href="/admin">后台首页</a>
           <a href="/admin/assistant">智能助手</a>
         </div>
-        <details class="nav-section" data-nav-section="drawing" open>
+        <details class="nav-section" data-nav-section="drawing">
           <summary>图纸管理</summary>
           <div class="nav-items">
             <a href="/admin/drawings">图纸识别</a>
@@ -429,7 +433,7 @@ def page(title: str, body: str) -> HTMLResponse:
             <a href="/admin/drawings/confirmed">已确认图纸</a>
           </div>
         </details>
-        <details class="nav-section" data-nav-section="raw-plate" open>
+        <details class="nav-section" data-nav-section="raw-plate">
           <summary>原料管理</summary>
           <div class="nav-items">
             <a href="/admin/raw-plate-specifications">板料规格</a>
@@ -439,7 +443,7 @@ def page(title: str, body: str) -> HTMLResponse:
             <a href="/admin/raw-plates/transactions">板料流水</a>
           </div>
         </details>
-        <details class="nav-section" data-nav-section="inventory" open>
+        <details class="nav-section" data-nav-section="inventory">
           <summary>库存管理</summary>
           <div class="nav-items">
             <a href="/admin/inventory">库存查询</a>
@@ -448,7 +452,7 @@ def page(title: str, body: str) -> HTMLResponse:
             <a href="/admin/inventory/transactions">库存流水</a>
           </div>
         </details>
-        <details class="nav-section" data-nav-section="scrap" open>
+        <details class="nav-section" data-nav-section="scrap">
           <summary>余料管理</summary>
           <div class="nav-items">
             <a href="/admin/scraps/pending">待入库余料</a>
@@ -457,13 +461,13 @@ def page(title: str, body: str) -> HTMLResponse:
             <a href="/admin/scraps/transactions">余料流水</a>
           </div>
         </details>
-        <details class="nav-section" data-nav-section="report" open>
+        <details class="nav-section" data-nav-section="report">
           <summary>报表中心</summary>
           <div class="nav-items">
             <a href="/admin/reports/outbound">出库统计</a>
           </div>
         </details>
-        <details class="nav-section" data-nav-section="system" open>
+        <details class="nav-section" data-nav-section="system">
           <summary>系统</summary>
           <div class="nav-items">
             <a href="/admin/operation-logs">操作日志</a>
@@ -496,19 +500,21 @@ def page(title: str, body: str) -> HTMLResponse:
         }}
       }});
       if (bestLink) bestLink.classList.add('active');
+      const currentBox = document.getElementById('nav-current');
+      if (currentBox && bestLink) {{
+        const section = bestLink.closest('.nav-section');
+        const groupName = section ? section.querySelector('summary').textContent.trim() : '常用';
+        currentBox.querySelector('strong').textContent = `${{groupName}} / ${{bestLink.textContent.trim()}}`;
+      }}
       document.querySelectorAll('.nav-section').forEach((section) => {{
-        const key = 'adminNavSection:' + (section.dataset.navSection || '');
-        const saved = localStorage.getItem(key);
         const hasActiveLink = section.querySelector('a.active');
-        if (saved === 'closed' && !hasActiveLink) section.open = false;
-        if (hasActiveLink) section.open = true;
+        section.open = Boolean(hasActiveLink);
         section.addEventListener('toggle', () => {{
           if (section.open) {{
             document.querySelectorAll('.nav-section').forEach((other) => {{
-              if (other !== section && !other.querySelector('a.active')) other.open = false;
+              if (other !== section) other.open = false;
             }});
           }}
-          localStorage.setItem(key, section.open ? 'open' : 'closed');
         }});
       }});
     }}
