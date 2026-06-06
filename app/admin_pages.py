@@ -367,20 +367,22 @@ def page(title: str, body: str) -> HTMLResponse:
     * {{ box-sizing:border-box; }}
     body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }}
     a {{ color:inherit; text-decoration:none; }}
-    .layout {{ display:grid; grid-template-columns:240px 1fr; min-height:100vh; }}
-    aside {{ background:#0f1f46; color:white; padding:24px 18px; max-height:100vh; overflow:auto; position:sticky; top:0; }}
-    .brand {{ font-size:20px; font-weight:800; margin-bottom:26px; }}
-    nav a {{ display:block; padding:12px 14px; border-radius:12px; color:rgba(255,255,255,.82); margin-bottom:8px; }}
-    nav a:hover, nav a.active {{ background:rgba(255,255,255,.14); color:white; }}
-    nav a.active {{ box-shadow:inset 3px 0 0 #93c5fd; }}
-    .nav-section {{ margin:10px 0; }}
-    .nav-section summary {{ list-style:none; display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-radius:12px; color:rgba(255,255,255,.56); font-size:12px; font-weight:800; letter-spacing:.08em; cursor:pointer; user-select:none; }}
+    .layout {{ display:grid; grid-template-columns:220px 1fr; min-height:100vh; }}
+    aside {{ background:#0f1f46; color:white; padding:20px 14px; max-height:100vh; overflow:auto; position:sticky; top:0; }}
+    .brand {{ font-size:18px; font-weight:800; margin:0 8px 20px; }}
+    nav a {{ display:block; padding:9px 12px; border-radius:10px; color:rgba(255,255,255,.76); margin-bottom:4px; font-size:14px; font-weight:600; line-height:1.35; }}
+    nav a:hover, nav a.active {{ background:rgba(255,255,255,.10); color:white; }}
+    nav a.active {{ box-shadow:inset 2px 0 0 #93c5fd; }}
+    .nav-section {{ margin:6px 0; }}
+    .nav-section summary {{ list-style:none; display:flex; align-items:center; justify-content:space-between; min-height:38px; padding:8px 12px; border-radius:10px; color:rgba(255,255,255,.52); font-size:12px; font-weight:800; letter-spacing:.04em; cursor:pointer; user-select:none; }}
     .nav-section summary::-webkit-details-marker {{ display:none; }}
     .nav-section summary::after {{ content:"⌄"; font-size:14px; color:rgba(255,255,255,.62); transition:transform .18s ease; }}
     .nav-section:not([open]) summary::after {{ transform:rotate(-90deg); }}
     .nav-section summary:hover {{ background:rgba(255,255,255,.08); color:rgba(255,255,255,.86); }}
-    .nav-section .nav-items {{ padding-top:4px; }}
-    .nav-root {{ margin-bottom:12px; }}
+    .nav-section .nav-items {{ padding:2px 0 4px 10px; border-left:1px solid rgba(255,255,255,.10); margin-left:12px; }}
+    .nav-section .nav-items a {{ padding:8px 10px; font-size:13px; font-weight:600; color:rgba(255,255,255,.70); }}
+    .nav-section .nav-items a.active {{ background:rgba(147,197,253,.18); color:white; }}
+    .nav-root {{ margin-bottom:10px; }}
     main {{ padding:28px; }}
     .top {{ display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:22px; }}
     h1 {{ margin:0; font-size:28px; }}
@@ -501,6 +503,11 @@ def page(title: str, body: str) -> HTMLResponse:
         if (saved === 'closed' && !hasActiveLink) section.open = false;
         if (hasActiveLink) section.open = true;
         section.addEventListener('toggle', () => {{
+          if (section.open) {{
+            document.querySelectorAll('.nav-section').forEach((other) => {{
+              if (other !== section && !other.querySelector('a.active')) other.open = false;
+            }});
+          }}
           localStorage.setItem(key, section.open ? 'open' : 'closed');
         }});
       }});
