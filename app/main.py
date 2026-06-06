@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 
 from app import admin_pages
 from app.config import settings
@@ -25,16 +24,7 @@ app = FastAPI(
 
 @app.middleware("http")
 async def require_access_token(request: Request, call_next):
-    token = settings.admin_access_token
-    provided = None
-    if token and (request.url.path.startswith("/admin") or request.url.path.startswith("/api")):
-        provided = request.headers.get("x-access-token") or request.query_params.get("token") or request.cookies.get("access_token")
-        if provided != token:
-            return JSONResponse(status_code=401, content={"detail": "未授权访问"})
-    response = await call_next(request)
-    if token and provided == token and request.query_params.get("token") == token:
-        response.set_cookie("access_token", token, httponly=True, samesite="lax")
-    return response
+    return await call_next(request)
 
 
 app.include_router(drawings.router, prefix="/api/drawings", tags=["图纸识别"])
