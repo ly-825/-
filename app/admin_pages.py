@@ -1,6 +1,7 @@
 import html
 import json
 import math
+import re
 from datetime import datetime, timedelta
 from uuid import uuid4
 from urllib.parse import quote
@@ -11,6 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.assistant.engine import run_assistant
+from app.config import settings
 from app.database import get_db
 from app.models import InventoryTransactionRecord, MaterialInventory, OperationLog, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 from app.services.dxf_parser import parse_dxf
@@ -172,6 +174,48 @@ def drawing_distinct_options(db: Session, field: str, confirmed_only: bool = Tru
         query = query.filter(ProductDrawing.confirmed == 1, ProductDrawing.is_active == 1)
     values = [row[0] for row in query.distinct().order_by(column.asc()).all()]
     return [value for value in values if value not in ("", None)]
+
+
+def effective_drawing_thickness(drawing: ProductDrawing | None) -> float | None:
+    if not drawing:
+        return None
+    return drawing.plate_thickness or drawing.product_thickness or drawing.thickness
+
+
+def material_is_compatible(required: str | None, candidate: str | None) -> bool:
+    if not required:
+        return True
+    if not candidate:
+        return False
+    required_text = required.replace(" ", "")
+    candidate_text = candidate.replace(" ", "")
+    if required_text in candidate_text or candidate_text in required_text:
+        return True
+    required_parts = [part for part in re.split(r"[/,，、+＋]", required_text) if part]
+    candidate_parts = [part for part in re.split(r"[/,，、+＋]", candidate_text) if part]
+    return bool(set(required_parts) & set(candidate_parts))
+
+
+def thickness_is_compatible(required: float | None, candidate: float | None) -> bool:
+    if required is None:
+        return True
+    if candidate is None:
+        return False
+    return abs(candidate - required) <= settings.thickness_tolerance
+
+
+def plan_product_options(db: Session, selected_id: int | None = None) -> str:
+    drawings = (
+        db.query(ProductDrawing)
+        .filter(ProductDrawing.confirmed == 1, ProductDrawing.is_active == 1)
+        .order_by(ProductDrawing.product_code.asc(), ProductDrawing.version.desc())
+        .all()
+    )
+    options = [f"<option value='' {'selected' if selected_id is None else ''}>请选择产品种类</option>"]
+    for drawing in drawings:
+        label = f"{drawing.product_code or '-'}｜{drawing.product_name or '-'}｜{drawing.material or '-'}｜厚度 {effective_drawing_thickness(drawing) or '-'}"
+        options.append(f"<option value='{drawing.id}' {'selected' if selected_id == drawing.id else ''}>{html.escape(label)}</option>")
+    return "".join(options)
 
 
 def scrub_internal_ids(value: object) -> object:
@@ -423,6 +467,7 @@ def page(title: str, body: str) -> HTMLResponse:
       <nav>
         <div class="nav-root">
           <a href="/admin">后台首页</a>
+          <a href="/admin/plans">计划管理</a>
           <a href="/admin/assistant">智能助手</a>
         </div>
         <details class="nav-section" data-nav-section="drawing">
@@ -433,28 +478,23 @@ def page(title: str, body: str) -> HTMLResponse:
             <a href="/admin/drawings/confirmed">已确认图纸</a>
           </div>
         </details>
-        <details class="nav-section" data-nav-section="raw-plate">
-          <summary>原料管理</summary>
+        <details class="nav-section" data-nav-section="finished-product">
+          <summary>成品管理</summary>
+          <div class="nav-items">
+            <a href="/admin/inventory">成品库存</a>
+            <a href="/admin/inventory/inbound">成品入库</a>
+            <a href="/admin/inventory/outbound">成品出库</a>
+            <a href="/admin/inventory/transactions">成品流水</a>
+          </div>
+        </details>
+        <details class="nav-section" data-nav-section="material">
+          <summary>材料管理</summary>
           <div class="nav-items">
             <a href="/admin/raw-plate-specifications">板料规格</a>
             <a href="/admin/raw-plates">板料库存</a>
             <a href="/admin/raw-plates/inbound">板料入库</a>
             <a href="/admin/raw-plates/outbound">板料出库</a>
             <a href="/admin/raw-plates/transactions">板料流水</a>
-          </div>
-        </details>
-        <details class="nav-section" data-nav-section="inventory">
-          <summary>库存管理</summary>
-          <div class="nav-items">
-            <a href="/admin/inventory">库存查询</a>
-            <a href="/admin/inventory/inbound">产品入库</a>
-            <a href="/admin/inventory/outbound">产品出库</a>
-            <a href="/admin/inventory/transactions">库存流水</a>
-          </div>
-        </details>
-        <details class="nav-section" data-nav-section="scrap">
-          <summary>余料管理</summary>
-          <div class="nav-items">
             <a href="/admin/scraps/pending">待入库余料</a>
             <a href="/admin/scraps/outbound">余料出库</a>
             <a href="/admin/scraps">余料记录</a>
@@ -547,6 +587,7 @@ def admin_home(db: Session = Depends(get_db)) -> HTMLResponse:
     <section class="grid">
       <div class="card stat"><span class="muted">待办：确认图纸</span><strong>{pending_drawing_count}</strong><a class="btn secondary" href="/admin/drawings/pending">处理图纸</a></div>
       <div class="card stat"><span class="muted">待办：余料入库</span><strong>{pending_scrap_count}</strong><a class="btn secondary" href="/admin/scraps/pending">确认余料</a></div>
+      <div class="card stat"><span class="muted">生产前检查</span><strong>计划</strong><a class="btn secondary" href="/admin/plans">查询物料</a></div>
     </section>
     <section class="card">
       <div class="top" style="margin-bottom:12px"><h2 style="margin:0">最近操作日志</h2><a class="btn secondary" href="/admin/operation-logs">查看全部</a></div>
@@ -554,6 +595,121 @@ def admin_home(db: Session = Depends(get_db)) -> HTMLResponse:
     </section>
     """
     return page("后台首页", body)
+
+
+@router.get("/admin/plans", response_class=HTMLResponse)
+def plans_page(customer: str = "", drawing_id: str = "", quantity: str = "1", db: Session = Depends(get_db)) -> HTMLResponse:
+    selected_id = int(drawing_id) if drawing_id.isdigit() else None
+    drawing = db.get(ProductDrawing, selected_id) if selected_id else None
+    quantity_value = optional_int(quantity) or 1
+    if quantity_value <= 0:
+        quantity_value = 1
+
+    product_rows = raw_rows = scrap_rows = ""
+    summary_html = """
+    <section class="card">
+      <p class="muted" style="margin:0">选择产品种类后，系统会自动查询成品库存、可用余料和可用板料。</p>
+    </section>
+    """
+    match_note = ""
+
+    if drawing:
+        product_code = drawing.product_code or ""
+        required_material = drawing.material
+        required_thickness = effective_drawing_thickness(drawing)
+        required_diameter = drawing.max_outer_diameter or max(drawing.bounding_length or 0, drawing.bounding_width or 0) or None
+        required_size_label = f"φ{required_diameter:g}" if required_diameter else "-"
+
+        product_items = (
+            db.query(MaterialInventory)
+            .filter(MaterialInventory.inventory_type == "product", MaterialInventory.quantity > 0)
+            .order_by(MaterialInventory.updated_at.desc())
+            .all()
+        )
+        product_items = [
+            item for item in product_items
+            if product_code and (item.material_code == product_code or item.source_product_code == product_code)
+        ]
+        product_total = sum(item.quantity for item in product_items)
+        product_status = "够用" if product_total >= quantity_value else ("有库存" if product_total > 0 else "无库存")
+        product_rows = "".join(
+            f"<tr><td>{item.material_code or item.source_product_code or '-'}</td><td>{item.quantity}</td><td>{item.material}</td><td>{item.thickness:g}</td><td>{item.location or '-'}</td><td>{item.updated_at or item.created_at}</td></tr>"
+            for item in product_items
+        )
+
+        raw_candidates = (
+            db.query(MaterialInventory)
+            .filter(MaterialInventory.inventory_type == "raw_plate", MaterialInventory.quantity > 0)
+            .order_by(MaterialInventory.created_at.asc())
+            .all()
+        )
+        raw_matches = [
+            item for item in raw_candidates
+            if material_is_compatible(required_material, item.material)
+            and thickness_is_compatible(required_thickness, item.thickness)
+        ]
+        raw_total = sum(item.quantity for item in raw_matches)
+        raw_rows = "".join(
+            f"<tr><td>{item.material_code or '-'}</td><td>{item.material}</td><td>{item.length or '-'}</td><td>{item.width or '-'}</td><td>{item.thickness:g}</td><td>{item.quantity}</td><td>{item.location or '-'}</td></tr>"
+            for item in raw_matches[:100]
+        )
+
+        scrap_candidates = (
+            db.query(MaterialInventory)
+            .filter(MaterialInventory.inventory_type == "scrap", MaterialInventory.status == "available", MaterialInventory.quantity > 0)
+            .order_by(MaterialInventory.diameter.asc(), MaterialInventory.created_at.asc())
+            .all()
+        )
+        scrap_required_diameter = required_diameter + settings.machining_margin if required_diameter else None
+        scrap_matches = [
+            item for item in scrap_candidates
+            if material_is_compatible(required_material, item.material)
+            and thickness_is_compatible(required_thickness, item.thickness)
+            and (scrap_required_diameter is None or (item.diameter is not None and item.diameter >= scrap_required_diameter))
+        ]
+        scrap_total = sum(item.quantity for item in scrap_matches)
+        scrap_rows = "".join(
+            f"<tr><td>{item.material}</td><td>{item.thickness:g}</td><td>{item.usable_size or '-'}</td><td>{item.quantity}</td><td>{scrap_location_label(item)}</td><td>{item.source_product_code or '-'}</td></tr>"
+            for item in scrap_matches[:100]
+        )
+
+        product_badge = "badge"
+        summary_html = f"""
+        <section class="grid">
+          <div class="card stat"><span class="muted">成品库存</span><strong>{product_total}</strong><span class="{product_badge}">{product_status}</span></div>
+          <div class="card stat"><span class="muted">匹配余料</span><strong>{scrap_total}</strong><span class="badge">{'有可用余料' if scrap_total else '暂无匹配'}</span></div>
+          <div class="card stat"><span class="muted">匹配板料</span><strong>{raw_total}</strong><span class="badge">{'有可用板料' if raw_total else '暂无匹配'}</span></div>
+        </section>
+        """
+        match_note = f"""
+        <section class="card">
+          <strong>匹配条件：</strong>
+          客户 {html.escape(customer.strip() or '-')}；
+          产品 {html.escape(product_code or '-')}；
+          材质 {html.escape(required_material or '-')}；
+          厚度 {required_thickness if required_thickness is not None else '-'}；
+          计划数量 {quantity_value}；
+          余料所需尺寸 {required_size_label} + 加工余量 {settings.machining_margin:g}
+        </section>
+        """
+
+    body = f"""
+    <div class="top"><div><h1>计划管理</h1><p class="muted">输入客户和产品种类，自动检查成品、余料、板料有没有可用库存。</p></div></div>
+    <section class="card">
+      <form method="get" action="/admin/plans" class="form-grid">
+        <div><label>客户</label><input name="customer" value="{html.escape(customer.strip())}" placeholder="例如 某某客户"></div>
+        <div><label>产品种类</label><select name="drawing_id" required>{plan_product_options(db, selected_id)}</select></div>
+        <div><label>计划数量</label><input name="quantity" type="number" min="1" value="{quantity_value}"></div>
+        <div style="align-self:end"><button class="btn" type="submit">查询有没有料</button></div>
+      </form>
+    </section>
+    {summary_html}
+    {match_note}
+    <section class="card"><h2>成品库存</h2><table><thead><tr><th>产品型号</th><th>数量</th><th>材质</th><th>厚度</th><th>库位</th><th>更新时间</th></tr></thead><tbody>{product_rows or "<tr><td colspan='6'>暂无匹配成品。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>可用余料</h2><table><thead><tr><th>材质</th><th>厚度</th><th>可用尺寸</th><th>数量</th><th>库位</th><th>来源产品</th></tr></thead><tbody>{scrap_rows or "<tr><td colspan='6'>暂无匹配余料。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>可用板料</h2><table><thead><tr><th>批次编号</th><th>材质</th><th>长mm</th><th>宽mm</th><th>厚mm</th><th>数量</th><th>库位</th></tr></thead><tbody>{raw_rows or "<tr><td colspan='7'>暂无匹配板料。</td></tr>"}</tbody></table></section>
+    """
+    return page("计划管理", body)
 
 
 @router.get("/admin/operation-logs", response_class=HTMLResponse)
@@ -600,7 +756,7 @@ def assistant_page() -> HTMLResponse:
     <section class="card">
       <div class="actions" style="margin-bottom:12px">
         <button class="btn secondary" type="button" onclick="askAssistant('查一下板料库存')">查板料库存</button>
-        <button class="btn secondary" type="button" onclick="askAssistant('查一下产品库存')">查产品库存</button>
+        <button class="btn secondary" type="button" onclick="askAssistant('查一下产品库存')">查成品库存</button>
         <button class="btn secondary" type="button" onclick="askAssistant('查一下余料库存')">查余料库存</button>
         <button class="btn secondary" type="button" onclick="askAssistant('今天出库统计')">今天出库统计</button>
         <button class="btn secondary" type="button" onclick="askAssistant('图纸能不能修改')">图纸修改规则</button>
@@ -861,7 +1017,7 @@ def inventory_page(
     thickness_options = select_options(inventory_distinct_options(db, "product", "thickness", quantity_positive=True), thickness, "全部厚度")
     location_options = select_options(inventory_distinct_options(db, "product", "location", quantity_positive=True), location, "全部库位")
     body = f"""
-    <div class="top"><div><h1>库存查询</h1><p class="muted">只查询产品库存汇总；入库和出库请进入单独页面操作。</p></div><div class="actions"><a class="btn" href="/admin/inventory/inbound">产品入库</a><a class="btn secondary" href="/admin/inventory/outbound">产品出库</a><a class="btn secondary" href="/admin/inventory/transactions">库存流水</a><a class="btn secondary" href="{export_link('product_inventory', {'q': keyword, 'material': material.strip(), 'thickness': thickness.strip()})}">导出Excel</a></div></div>
+    <div class="top"><div><h1>成品库存</h1><p class="muted">只查询成品库存汇总；入库和出库请进入单独页面操作。</p></div><div class="actions"><a class="btn" href="/admin/inventory/inbound">成品入库</a><a class="btn secondary" href="/admin/inventory/outbound">成品出库</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="{export_link('product_inventory', {'q': keyword, 'material': material.strip(), 'thickness': thickness.strip()})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/inventory" class="actions" style="justify-content:flex-start">
         <select name="q" style="width:220px">{product_code_options}</select>
@@ -873,9 +1029,9 @@ def inventory_page(
         <a class="btn secondary" href="/admin/inventory">清空</a>
       </form>
     </section>
-    <section class="card"><h2>库存汇总</h2><table><thead><tr><th>产品编号</th><th>材质</th><th>厚度</th><th>总数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='7'>暂无库存。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>成品汇总</h2><table><thead><tr><th>产品编号</th><th>材质</th><th>厚度</th><th>总数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='7'>暂无成品库存。</td></tr>"}</tbody></table></section>
     """
-    return page("库存管理", body)
+    return page("成品管理", body)
 
 
 @router.get("/admin/raw-plates", response_class=HTMLResponse)
@@ -1534,7 +1690,7 @@ def inventory_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
     location_candidates = datalist_options(inventory_distinct_options(db, "product", "location"))
     client_request_id = uuid4().hex
     body = f"""
-    <div class="top"><div><h1>产品入库</h1><p class="muted">选择已确认图纸对应的产品型号，填写入库数量和库位。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回库存查询</a></div></div>
+    <div class="top"><div><h1>成品入库</h1><p class="muted">选择已确认图纸对应的产品型号，填写入库数量和库位。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回成品库存</a></div></div>
     <section class="card">
       <form method="post" action="/admin/inventory" class="form-grid">
         <input type="hidden" name="client_request_id" value="{client_request_id}">
@@ -1546,7 +1702,7 @@ def inventory_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
       </form>
     </section>
     """
-    return page("产品入库", body)
+    return page("成品入库", body)
 
 
 @router.get("/admin/inventory/outbound", response_class=HTMLResponse)
@@ -1611,7 +1767,7 @@ def inventory_outbound_page(
         f"<option value='{drawing_map[code].id}'>{html.escape(code)}｜V{drawing_map[code].version or 1}｜{group['material']}｜厚度 {group['thickness']}｜库存 {group['quantity']}｜库位 {' / '.join(sorted(group['locations'])) or '-'}</option>"
         for code, group in grouped.items()
         if code in drawing_map
-    ) or "<option value='' disabled selected>暂无可出库产品库存</option>"
+    ) or "<option value='' disabled selected>暂无可出库成品库存</option>"
     rows = "".join(
         f"""
         <tr>
@@ -1628,7 +1784,7 @@ def inventory_outbound_page(
     location_options = select_options(inventory_distinct_options(db, "product", "location", quantity_positive=True), location, "全部库位")
     location_candidates = datalist_options(inventory_distinct_options(db, "product", "location", quantity_positive=True))
     body = f"""
-    <div class="top"><div><h1>产品出库</h1><p class="muted">在本页查看当前产品库存，并按产品型号填写出库数量；库位不填时按所有库位先进先出扣减。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回库存查询</a></div></div>
+    <div class="top"><div><h1>成品出库</h1><p class="muted">在本页查看当前成品库存，并按产品型号填写出库数量；库位不填时按所有库位先进先出扣减。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回成品库存</a></div></div>
     <section class="card">
       <form method="get" action="/admin/inventory/outbound" class="actions" style="justify-content:flex-start;margin-bottom:14px">
         <select name="q" style="width:220px">{product_code_options}</select>
@@ -1648,9 +1804,9 @@ def inventory_outbound_page(
         <div style="align-self:end"><button class="btn" type="submit">确认出库</button></div>
       </form>
     </section>
-    <section class="card"><h2>当前可出库产品库存</h2><table><thead><tr><th>产品编号</th><th>材质</th><th>厚度</th><th>可出库数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='7'>暂无可出库产品库存。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>当前可出库成品库存</h2><table><thead><tr><th>产品编号</th><th>材质</th><th>厚度</th><th>可出库数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='7'>暂无可出库成品库存。</td></tr>"}</tbody></table></section>
     """
-    return page("产品出库", body)
+    return page("成品出库", body)
 
 
 @router.post("/admin/inventory")
@@ -1815,8 +1971,8 @@ def inventory_product_detail_page(product_code: str, db: Session = Depends(get_d
         for record in records
     )
     body = f"""
-    <div class="top"><div><h1>库存明细：{html.escape(product_code)}</h1><p class="muted">当前总数量：<strong>{total_quantity}</strong></p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回库存汇总</a></div></div>
-    <section class="card"><h2>入库批次</h2><table><thead><tr><th>产品型号</th><th>数量</th><th>库位</th><th>材质</th><th>厚度</th><th>状态</th><th>创建时间</th><th>更新时间</th></tr></thead><tbody>{rows or "<tr><td colspan='8'>暂无该产品库存。</td></tr>"}</tbody></table></section>
+    <div class="top"><div><h1>成品明细：{html.escape(product_code)}</h1><p class="muted">当前总数量：<strong>{total_quantity}</strong></p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回成品汇总</a></div></div>
+    <section class="card"><h2>入库批次</h2><table><thead><tr><th>产品型号</th><th>数量</th><th>库位</th><th>材质</th><th>厚度</th><th>状态</th><th>创建时间</th><th>更新时间</th></tr></thead><tbody>{rows or "<tr><td colspan='8'>暂无该成品库存。</td></tr>"}</tbody></table></section>
     <section class="card"><h2>产品流水</h2><table><thead><tr><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>关联库位</th><th>操作人</th><th>备注</th><th>时间</th></tr></thead><tbody>{transaction_rows or "<tr><td colspan='8'>暂无该产品流水。</td></tr>"}</tbody></table></section>
     """
     return page("库存明细", body)
@@ -1888,7 +2044,7 @@ def inventory_detail_page(inventory_id: int, db: Session = Depends(get_db)) -> H
     )
     display_code = item.material_code or item.source_product_code or "-"
     body = f"""
-    <div class="top"><div><h1>库存详情：{display_code}</h1><p class="muted">查看该型号库存的基础信息和全部出入库流水。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回库存管理</a></div></div>
+    <div class="top"><div><h1>成品详情：{display_code}</h1><p class="muted">查看该型号成品库存的基础信息和全部出入库流水。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回成品管理</a></div></div>
     <section class="card">
       <h2>基础信息</h2>
       <div class="grid">
@@ -1907,7 +2063,7 @@ def inventory_detail_page(inventory_id: int, db: Session = Depends(get_db)) -> H
         <div><span class="muted">可用尺寸</span><strong>{item.usable_size or '-'}</strong></div>
       </div>
     </section>
-    <section class="card"><h2>该库存流水</h2><table><thead><tr><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>操作人</th><th>备注</th><th>时间</th></tr></thead><tbody>{rows or "<tr><td colspan='7'>暂无该库存流水。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>该成品流水</h2><table><thead><tr><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>操作人</th><th>备注</th><th>时间</th></tr></thead><tbody>{rows or "<tr><td colspan='7'>暂无该成品流水。</td></tr>"}</tbody></table></section>
     """
     return page("库存详情", body)
 
@@ -2000,7 +2156,7 @@ def outbound_report_page(period: str = "day", start_date: str = "", end_date: st
         for value, label in (("day", "今天"), ("month", "本月"), ("year", "本年"), ("custom", "自定义时间段"))
     )
     body = f"""
-    <div class="top"><div><h1>出库统计</h1><p class="muted">查询天、月、年或某个时间段内的产品、余料和板料出库情况。当前范围：{html.escape(range_label)}</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory/transactions">库存流水</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/raw-plates/transactions">板料流水</a><a class="btn secondary" href="{export_link('outbound_report', {'period': period, 'start_date': start_date.strip(), 'end_date': end_date.strip()})}">导出Excel</a></div></div>
+    <div class="top"><div><h1>出库统计</h1><p class="muted">查询天、月、年或某个时间段内的成品、余料和板料出库情况。当前范围：{html.escape(range_label)}</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/raw-plates/transactions">板料流水</a><a class="btn secondary" href="{export_link('outbound_report', {'period': period, 'start_date': start_date.strip(), 'end_date': end_date.strip()})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/reports/outbound" class="form-grid">
         <div><label>快捷时间</label><select name="period">{period_options}</select></div>
@@ -2011,11 +2167,11 @@ def outbound_report_page(period: str = "day", start_date: str = "", end_date: st
       <p class="muted">填写开始和结束日期时，优先按自定义时间段查询；不填日期时按快捷时间查询。</p>
     </section>
     <section class="grid">
-      <div class="card stat"><span class="muted">产品出库总数</span><strong>{product_total}</strong></div>
+      <div class="card stat"><span class="muted">成品出库总数</span><strong>{product_total}</strong></div>
       <div class="card stat"><span class="muted">余料出库总数</span><strong>{scrap_total}</strong></div>
       <div class="card stat"><span class="muted">板料出库总块数</span><strong>{raw_plate_total}</strong></div>
     </section>
-    <section class="card"><h2>产品出库明细汇总</h2><table><thead><tr><th>产品型号/来源</th><th>材质</th><th>规格</th><th>库位</th><th>出库数量</th></tr></thead><tbody>{product_rows or "<tr><td colspan='5'>该时间段暂无产品出库。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>成品出库明细汇总</h2><table><thead><tr><th>产品型号/来源</th><th>材质</th><th>规格</th><th>库位</th><th>出库数量</th></tr></thead><tbody>{product_rows or "<tr><td colspan='5'>该时间段暂无成品出库。</td></tr>"}</tbody></table></section>
     <section class="card"><h2>余料出库明细汇总</h2><table><thead><tr><th>材质</th><th>可用尺寸</th><th>规格</th><th>库位</th><th>出库数量</th></tr></thead><tbody>{scrap_rows or "<tr><td colspan='5'>该时间段暂无余料出库。</td></tr>"}</tbody></table></section>
     <section class="card"><h2>板料出库明细汇总</h2><table><thead><tr><th>材质</th><th>板料规格</th><th>尺寸</th><th>库位</th><th>出库块数</th></tr></thead><tbody>{raw_plate_rows or "<tr><td colspan='5'>该时间段暂无板料出库。</td></tr>"}</tbody></table></section>
     """
@@ -2059,7 +2215,7 @@ def inventory_transactions_page(product_code: str = "", transaction_type: str = 
         for value, label in (("", "全部类型"), ("in", "入库"), ("out", "出库"), ("confirm", "确认"))
     )
     body = f"""
-    <div class="top"><div><h1>库存流水</h1><p class="muted">只查看产品库存的入库/出库记录；余料记录请到余料流水查看。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回库存管理</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/exports/product_transactions">导出Excel</a></div></div>
+    <div class="top"><div><h1>成品流水</h1><p class="muted">只查看成品库存的入库/出库记录；余料记录请到余料流水查看。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回成品管理</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/exports/product_transactions">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/inventory/transactions" class="actions" style="justify-content:flex-start">
         <select name="product_code" style="width:220px">{product_options}</select>
@@ -2068,9 +2224,9 @@ def inventory_transactions_page(product_code: str = "", transaction_type: str = 
         <a class="btn secondary" href="/admin/inventory/transactions">清空</a>
       </form>
     </section>
-    <section class="card"><table><thead><tr><th>产品型号/来源</th><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>操作人</th><th>备注</th><th>时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无库存流水。</td></tr>"}</tbody></table></section>
+    <section class="card"><table><thead><tr><th>产品型号/来源</th><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>操作人</th><th>备注</th><th>时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无成品流水。</td></tr>"}</tbody></table></section>
     """
-    return page("库存流水", body)
+    return page("成品流水", body)
 
 
 @router.get("/admin/scraps/transactions", response_class=HTMLResponse)
@@ -2102,7 +2258,7 @@ def scrap_transactions_page(material: str = "", transaction_type: str = "", db: 
         for value, label in (("", "全部类型"), ("in", "入库"), ("out", "出库"), ("confirm", "确认"))
     )
     body = f"""
-    <div class="top"><div><h1>余料流水</h1><p class="muted">查看余料确认入库、出库等流转记录。</p></div><div class="actions"><a class="btn secondary" href="/admin/scraps">返回余料记录</a><a class="btn secondary" href="/admin/inventory/transactions">库存流水</a><a class="btn secondary" href="/admin/exports/scrap_transactions">导出Excel</a></div></div>
+    <div class="top"><div><h1>余料流水</h1><p class="muted">查看余料确认入库、出库等流转记录。</p></div><div class="actions"><a class="btn secondary" href="/admin/scraps">返回余料记录</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="/admin/exports/scrap_transactions">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/scraps/transactions" class="actions" style="justify-content:flex-start">
         <select name="material" style="width:150px">{material_options}</select>
@@ -2187,7 +2343,7 @@ def pending_scraps_page(db: Session = Depends(get_db)) -> HTMLResponse:
         for item in items
     )
     body = f"""
-    <div class="top"><div><h1>待入库余料</h1><p class="muted">产品入库后自动生成的中心余料先进入待确认，测量实际尺寸和库位后再变为可用。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">库存管理</a><a class="btn secondary" href="/admin/scraps">余料记录</a></div></div>
+    <div class="top"><div><h1>待入库余料</h1><p class="muted">成品入库后自动生成的中心余料先进入待确认，测量实际尺寸和库位后再变为可用。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">成品管理</a><a class="btn secondary" href="/admin/scraps">余料记录</a></div></div>
     <section class="card"><table><thead><tr><th>来源产品</th><th>来源图纸</th><th>数量</th><th>材质</th><th>厚度</th><th>理论直径</th><th>可用尺寸</th><th>当前库位</th><th>确认入库</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无待入库余料。</td></tr>"}</tbody></table></section>
     <datalist id="pending-scrap-location-options">{location_candidates}</datalist>
     """
@@ -2554,7 +2710,7 @@ def confirmed_drawings_page(q: str = "", material: str = "", thickness: str = ""
         "全部厚度",
     )
     body = f"""
-    <div class="top"><div><h1>已确认图纸</h1><p class="muted">这些图纸已经人工确认，可直接用于产品入库。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a></div></div>
+    <div class="top"><div><h1>已确认图纸</h1><p class="muted">这些图纸已经人工确认，可直接用于成品入库。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a></div></div>
     <section class="card">
       <form method="get" action="/admin/drawings/confirmed" class="actions" style="justify-content:flex-start;margin-bottom:14px">
         <select name="q" style="width:220px">{product_code_options}</select>
@@ -2655,7 +2811,7 @@ def drawing_detail_page(drawing_id: int, notice: str = "", db: Session = Depends
     parse_json_text = html.escape(json.dumps(drawing.parse_result_json or {}, ensure_ascii=True, default=str, indent=2), quote=False)
     body = f"""
     <div class="top">
-      <div><h1>图纸详情</h1><p class="muted">请人工确认识别结果，确认后可进行产品入库。</p></div>
+      <div><h1>图纸详情</h1><p class="muted">请人工确认识别结果，确认后可进行成品入库。</p></div>
       <div class="actions">
         <a class="btn secondary" href="/admin/drawings">返回列表</a>
         <a class="btn secondary" href="/admin/drawings/{drawing.id}/preview" target="_blank">查看图纸预览</a>
@@ -2665,7 +2821,7 @@ def drawing_detail_page(drawing_id: int, notice: str = "", db: Session = Depends
         <form method="post" action="/admin/drawings/{drawing.id}/delete" style="margin:0" onsubmit="return confirm('确定删除这张图纸吗？删除后如需更新可以重新上传。')">
           <button class="btn secondary" type="submit">删除图纸</button>
         </form>
-        <a class="btn secondary" href="/admin/inventory/inbound">产品入库</a>
+        <a class="btn secondary" href="/admin/inventory/inbound">成品入库</a>
       </div>
     </div>
     {notice_html}
