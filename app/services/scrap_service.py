@@ -1,18 +1,18 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.models import MaterialInventory, ProductDrawing, ScrapGenerationRecord
+from app.services.material_matching import (
+    effective_drawing_thickness,
+    material_is_compatible,
+    parse_diameter,
+    scrap_required_diameter,
+    thickness_is_compatible,
+)
 
 
 def parse_size_diameter(value: str | None) -> float | None:
-    if not value:
-        return None
-    cleaned = value.replace("φ", "").replace("Φ", "").strip()
-    try:
-        return float(cleaned.split()[0])
-    except (ValueError, IndexError):
-        return None
+    return parse_diameter(value)
 
 
 def create_center_scrap_from_drawing(
@@ -63,16 +63,13 @@ def scrap_location_label(item: MaterialInventory | None) -> str:
 
 
 def validate_scrap_for_drawing(item: MaterialInventory, drawing: ProductDrawing) -> None:
-    required_diameter = parse_size_diameter(drawing.expected_scrap_size) or drawing.min_inner_diameter or drawing.max_outer_diameter
-    required_thickness = drawing.plate_thickness or drawing.product_thickness or drawing.thickness
-    if drawing.material:
-        drawing_material = drawing.material.replace(" ", "")
-        item_material = item.material.replace(" ", "")
-        if drawing_material not in item_material and item_material not in drawing_material:
-            raise HTTPException(status_code=400, detail="余料材质不满足图纸要求")
-    if required_thickness is not None and abs(item.thickness - required_thickness) > settings.thickness_tolerance:
+    required_thickness = effective_drawing_thickness(drawing)
+    required_diameter = scrap_required_diameter(drawing)
+    if not material_is_compatible(drawing.material, item.material):
+        raise HTTPException(status_code=400, detail="余料材质不满足图纸要求")
+    if not thickness_is_compatible(required_thickness, item.thickness):
         raise HTTPException(status_code=400, detail="余料厚度不满足图纸要求")
-    if required_diameter is not None and (item.diameter is None or item.diameter < required_diameter + settings.machining_margin):
+    if required_diameter is not None and (item.diameter is None or item.diameter < required_diameter):
         raise HTTPException(status_code=400, detail="余料尺寸不满足图纸和加工余量要求")
 
 

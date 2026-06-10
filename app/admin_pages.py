@@ -1,7 +1,6 @@
 import html
 import json
 import math
-import re
 from datetime import datetime, timedelta
 from uuid import uuid4
 from urllib.parse import quote
@@ -20,6 +19,13 @@ from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_d
 from app.services.drawing_version import apply_drawing_version
 from app.services.excel_export import build_export_rows, content_disposition, export_filename, log_export, make_workbook_bytes
 from app.services.inventory_service import adjust_inventory_quantity, ensure_drawing_can_be_changed, inventory_write_lock, product_inbound_from_drawing, reject_direct_inventory_write, reverse_inventory_transaction
+from app.services.material_matching import (
+    drawing_required_diameter,
+    effective_drawing_thickness,
+    raw_plate_matches_drawing,
+    scrap_matches_drawing,
+    scrap_required_diameter,
+)
 from app.services.operation_log import drawing_snapshot, inventory_snapshot, record_operation_log
 from app.services.qwen_service import recognize_drawing
 from app.services.scrap_service import find_scrap_batches_for_outbound
@@ -81,16 +87,6 @@ def export_link(module: str, params: dict[str, str]) -> str:
         if value not in ("", None)
     )
     return f"/admin/exports/{module}{'?' + query if query else ''}"
-
-
-def parse_diameter_text(value: str | None) -> float | None:
-    if not value:
-        return None
-    cleaned = value.replace("φ", "").replace("Φ", "").strip()
-    try:
-        return float(cleaned.split()[0])
-    except (ValueError, IndexError):
-        return None
 
 
 def confirmed_drawing_options(db: Session, selected_id: int | None = None, include_blank: bool = False) -> str:
@@ -174,34 +170,6 @@ def drawing_distinct_options(db: Session, field: str, confirmed_only: bool = Tru
         query = query.filter(ProductDrawing.confirmed == 1, ProductDrawing.is_active == 1)
     values = [row[0] for row in query.distinct().order_by(column.asc()).all()]
     return [value for value in values if value not in ("", None)]
-
-
-def effective_drawing_thickness(drawing: ProductDrawing | None) -> float | None:
-    if not drawing:
-        return None
-    return drawing.plate_thickness or drawing.product_thickness or drawing.thickness
-
-
-def material_is_compatible(required: str | None, candidate: str | None) -> bool:
-    if not required:
-        return True
-    if not candidate:
-        return False
-    required_text = required.replace(" ", "")
-    candidate_text = candidate.replace(" ", "")
-    if required_text in candidate_text or candidate_text in required_text:
-        return True
-    required_parts = [part for part in re.split(r"[/,，、+＋]", required_text) if part]
-    candidate_parts = [part for part in re.split(r"[/,，、+＋]", candidate_text) if part]
-    return bool(set(required_parts) & set(candidate_parts))
-
-
-def thickness_is_compatible(required: float | None, candidate: float | None) -> bool:
-    if required is None:
-        return True
-    if candidate is None:
-        return False
-    return abs(candidate - required) <= settings.thickness_tolerance
 
 
 def plan_product_options(db: Session, selected_id: int | None = None) -> str:
@@ -612,12 +580,13 @@ def plans_page(customer: str = "", drawing_id: str = "", quantity: str = "1", db
     </section>
     """
     match_note = ""
+    suggestion_html = ""
 
     if drawing:
         product_code = drawing.product_code or ""
         required_material = drawing.material
         required_thickness = effective_drawing_thickness(drawing)
-        required_diameter = drawing.max_outer_diameter or max(drawing.bounding_length or 0, drawing.bounding_width or 0) or None
+        required_diameter = drawing_required_diameter(drawing)
         required_size_label = f"φ{required_diameter:g}" if required_diameter else "-"
 
         product_items = (
@@ -645,8 +614,7 @@ def plans_page(customer: str = "", drawing_id: str = "", quantity: str = "1", db
         )
         raw_matches = [
             item for item in raw_candidates
-            if material_is_compatible(required_material, item.material)
-            and thickness_is_compatible(required_thickness, item.thickness)
+            if raw_plate_matches_drawing(item, drawing)
         ]
         raw_total = sum(item.quantity for item in raw_matches)
         raw_rows = "".join(
@@ -660,12 +628,10 @@ def plans_page(customer: str = "", drawing_id: str = "", quantity: str = "1", db
             .order_by(MaterialInventory.diameter.asc(), MaterialInventory.created_at.asc())
             .all()
         )
-        scrap_required_diameter = required_diameter + settings.machining_margin if required_diameter else None
+        required_scrap_diameter = scrap_required_diameter(drawing)
         scrap_matches = [
             item for item in scrap_candidates
-            if material_is_compatible(required_material, item.material)
-            and thickness_is_compatible(required_thickness, item.thickness)
-            and (scrap_required_diameter is None or (item.diameter is not None and item.diameter >= scrap_required_diameter))
+            if scrap_matches_drawing(item, drawing)
         ]
         scrap_total = sum(item.quantity for item in scrap_matches)
         scrap_rows = "".join(
@@ -674,6 +640,20 @@ def plans_page(customer: str = "", drawing_id: str = "", quantity: str = "1", db
         )
 
         product_badge = "badge"
+        if product_total >= quantity_value:
+            suggestion = "建议优先使用成品库存，当前成品数量已满足计划。"
+        elif scrap_total >= quantity_value:
+            suggestion = "成品不足，建议优先使用匹配余料安排生产。"
+        elif raw_total > 0:
+            suggestion = "成品和余料不足，当前有匹配板料，可安排板料生产。"
+        else:
+            suggestion = "成品、余料和板料都未匹配到足够材料，建议先采购或入库。"
+        suggestion_html = f"""
+        <section class="card">
+          <h2 style="margin-top:0">系统建议</h2>
+          <p style="margin-bottom:0">{suggestion}</p>
+        </section>
+        """
         summary_html = f"""
         <section class="grid">
           <div class="card stat"><span class="muted">成品库存</span><strong>{product_total}</strong><span class="{product_badge}">{product_status}</span></div>
@@ -689,7 +669,8 @@ def plans_page(customer: str = "", drawing_id: str = "", quantity: str = "1", db
           材质 {html.escape(required_material or '-')}；
           厚度 {required_thickness if required_thickness is not None else '-'}；
           计划数量 {quantity_value}；
-          余料所需尺寸 {required_size_label} + 加工余量 {settings.machining_margin:g}
+          余料所需尺寸 {required_scrap_diameter if required_scrap_diameter is not None else required_size_label}；
+          板料所需尺寸按图纸外框/外径 + 加工余量 {settings.machining_margin:g} 判断
         </section>
         """
 
@@ -704,6 +685,7 @@ def plans_page(customer: str = "", drawing_id: str = "", quantity: str = "1", db
       </form>
     </section>
     {summary_html}
+    {suggestion_html}
     {match_note}
     <section class="card"><h2>成品库存</h2><table><thead><tr><th>产品型号</th><th>数量</th><th>材质</th><th>厚度</th><th>库位</th><th>更新时间</th></tr></thead><tbody>{product_rows or "<tr><td colspan='6'>暂无匹配成品。</td></tr>"}</tbody></table></section>
     <section class="card"><h2>可用余料</h2><table><thead><tr><th>材质</th><th>厚度</th><th>可用尺寸</th><th>数量</th><th>库位</th><th>来源产品</th></tr></thead><tbody>{scrap_rows or "<tr><td colspan='6'>暂无匹配余料。</td></tr>"}</tbody></table></section>
@@ -2416,11 +2398,13 @@ def scrap_outbound_page(
     has_filter = any([drawing_id.strip(), material.strip(), thickness.strip(), required_diameter.strip(), location.strip()])
     scraps = []
     selected_drawing = db.get(ProductDrawing, int(drawing_id)) if drawing_id.isdigit() else None
-    drawing_required_diameter = None
+    required_drawing_diameter = None
     drawing_required_thickness = None
+    required_scrap_diameter = None
     if selected_drawing:
-        drawing_required_diameter = parse_diameter_text(selected_drawing.expected_scrap_size) or selected_drawing.min_inner_diameter or selected_drawing.max_outer_diameter
-        drawing_required_thickness = selected_drawing.plate_thickness or selected_drawing.product_thickness or selected_drawing.thickness
+        required_drawing_diameter = drawing_required_diameter(selected_drawing)
+        drawing_required_thickness = effective_drawing_thickness(selected_drawing)
+        required_scrap_diameter = scrap_required_diameter(selected_drawing)
     if has_filter:
         query = (
             db.query(MaterialInventory)
@@ -2444,11 +2428,7 @@ def scrap_outbound_page(
         if selected_drawing:
             scraps = [
                 item for item in scraps
-                if (
-                    (not selected_drawing.material or selected_drawing.material.replace(" ", "") in item.material.replace(" ", "") or item.material.replace(" ", "") in selected_drawing.material.replace(" ", ""))
-                    and (drawing_required_thickness is None or abs(item.thickness - drawing_required_thickness) <= 0.05)
-                    and (drawing_required_diameter is None or (item.diameter is not None and item.diameter >= drawing_required_diameter + 2.0))
-                )
+                if scrap_matches_drawing(item, selected_drawing)
             ]
     grouped = {}
     for item in scraps:
@@ -2485,10 +2465,11 @@ def scrap_outbound_page(
         <a class="btn secondary" href="/admin/scraps/outbound">清空</a>
       </form>
     </section>
-    {f'<section class="card"><strong>当前按图纸匹配：</strong>{selected_drawing.product_code or "-"}，需要直径 ≥ {(drawing_required_diameter + 2.0):g}，厚度 {drawing_required_thickness or "-"}，材质 {selected_drawing.material or "-"}</section>' if selected_drawing and drawing_required_diameter is not None else ''}
+    {f'<section class="card"><strong>当前按图纸匹配：</strong>{selected_drawing.product_code or "-"}，图纸外径/外框 {required_drawing_diameter or "-"}，需要余料直径 ≥ {required_scrap_diameter:g}，厚度 {drawing_required_thickness or "-"}，材质 {selected_drawing.material or "-"}</section>' if selected_drawing and required_scrap_diameter is not None else ''}
     <section class="card">
       <form method="post" action="/admin/scraps/outbound" class="form-grid">
         <input type="hidden" name="client_request_id" value="{client_request_id}">
+        <input type="hidden" name="drawing_id" value="{html.escape(drawing_id.strip())}">
         <div><label>选择余料规格</label><select name="scrap_group_key" required>{options}</select></div>
         <div><label>出库数量</label><input name="quantity" type="number" value="1" min="1" required></div>
         <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
@@ -2507,6 +2488,7 @@ def outbound_scrap_from_page(
     operator_name: str = Form(""),
     remark: str = Form(""),
     client_request_id: str = Form(""),
+    drawing_id: str = Form(""),
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
@@ -2521,7 +2503,8 @@ def outbound_scrap_from_page(
     if len(parts) != 4:
         raise HTTPException(status_code=400, detail="余料规格参数错误")
     material_value = parts[0]
-    batches = find_scrap_batches_for_outbound(scrap_group_key, db)
+    selected_drawing = db.get(ProductDrawing, int(drawing_id)) if drawing_id.isdigit() else None
+    batches = find_scrap_batches_for_outbound(scrap_group_key, db, drawing=selected_drawing)
     before_quantity = sum(item.quantity for item in batches)
     if before_quantity < quantity:
         raise HTTPException(status_code=400, detail=f"余料数量不足，当前数量 {before_quantity}")
@@ -3008,11 +2991,13 @@ def scraps_page(
     thickness_value = optional_float(thickness)
     required_diameter_value = optional_float(required_diameter)
     selected_drawing = db.get(ProductDrawing, int(drawing_id)) if drawing_id.isdigit() else None
-    drawing_required_diameter = None
+    required_drawing_diameter = None
     drawing_required_thickness = None
+    required_scrap_diameter = None
     if selected_drawing:
-        drawing_required_diameter = parse_diameter_text(selected_drawing.expected_scrap_size) or selected_drawing.min_inner_diameter or selected_drawing.max_outer_diameter
-        drawing_required_thickness = selected_drawing.plate_thickness or selected_drawing.product_thickness or selected_drawing.thickness
+        required_drawing_diameter = drawing_required_diameter(selected_drawing)
+        drawing_required_thickness = effective_drawing_thickness(selected_drawing)
+        required_scrap_diameter = scrap_required_diameter(selected_drawing)
     for record in records:
         item = scrap_map.get(record.scrap_inventory_id)
         if source_product_code.strip() and source_product_code.strip() not in (record.source_product_code or ""):
@@ -3026,11 +3011,7 @@ def scraps_page(
         if item and required_diameter_value is not None and (item.diameter is None or item.diameter < required_diameter_value):
             continue
         if item and selected_drawing:
-            if selected_drawing.material and selected_drawing.material.replace(" ", "") not in item.material.replace(" ", "") and item.material.replace(" ", "") not in selected_drawing.material.replace(" ", ""):
-                continue
-            if drawing_required_thickness is not None and abs(item.thickness - drawing_required_thickness) > 0.05:
-                continue
-            if drawing_required_diameter is not None and (item.diameter is None or item.diameter < drawing_required_diameter + 2.0):
+            if not scrap_matches_drawing(item, selected_drawing):
                 continue
         if item and location.strip() and location.strip() not in (item.location or ""):
             continue
@@ -3071,7 +3052,7 @@ def scraps_page(
         <a class="btn secondary" href="/admin/scraps">清空</a>
       </form>
     </section>
-    {f'<section class="card"><strong>当前按图纸匹配：</strong>{selected_drawing.product_code or "-"}，需要直径 ≥ {(drawing_required_diameter + 2.0):g}，厚度 {drawing_required_thickness or "-"}，材质 {selected_drawing.material or "-"}</section>' if selected_drawing and drawing_required_diameter is not None else ''}
+    {f'<section class="card"><strong>当前按图纸匹配：</strong>{selected_drawing.product_code or "-"}，图纸外径/外框 {required_drawing_diameter or "-"}，需要余料直径 ≥ {required_scrap_diameter:g}，厚度 {drawing_required_thickness or "-"}，材质 {selected_drawing.material or "-"}</section>' if selected_drawing and required_scrap_diameter is not None else ''}
     <section class='card'><h2>按规格汇总</h2><table><thead><tr><th>材质</th><th>厚度</th><th>可用尺寸</th><th>库位</th><th>总数量</th></tr></thead><tbody>{spec_rows or "<tr><td colspan='5'>暂无余料。</td></tr>"}</tbody></table></section>
     <section class='card'><h2>余料明细</h2><table><thead><tr><th>来源产品</th><th>来源图纸</th><th>数量</th><th>状态</th><th>库位</th><th>可用尺寸</th><th>理论尺寸</th><th>实际尺寸</th><th>登记人</th><th>时间</th></tr></thead><tbody>{rows or "<tr><td colspan='10'>暂无余料记录。</td></tr>"}</tbody></table></section>
     """
