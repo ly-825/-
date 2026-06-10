@@ -566,7 +566,7 @@ def admin_home(db: Session = Depends(get_db)) -> HTMLResponse:
 
 
 @router.get("/admin/plans", response_class=HTMLResponse)
-def plans_page(customer: str = "", drawing_id: str = "", quantity: str = "1", db: Session = Depends(get_db)) -> HTMLResponse:
+def plans_page(drawing_id: str = "", quantity: str = "1", db: Session = Depends(get_db)) -> HTMLResponse:
     selected_id = int(drawing_id) if drawing_id.isdigit() else None
     drawing = db.get(ProductDrawing, selected_id) if selected_id else None
     quantity_value = optional_int(quantity) or 1
@@ -664,7 +664,6 @@ def plans_page(customer: str = "", drawing_id: str = "", quantity: str = "1", db
         match_note = f"""
         <section class="card">
           <strong>匹配条件：</strong>
-          客户 {html.escape(customer.strip() or '-')}；
           产品 {html.escape(product_code or '-')}；
           材质 {html.escape(required_material or '-')}；
           厚度 {required_thickness if required_thickness is not None else '-'}；
@@ -675,10 +674,9 @@ def plans_page(customer: str = "", drawing_id: str = "", quantity: str = "1", db
         """
 
     body = f"""
-    <div class="top"><div><h1>计划管理</h1><p class="muted">输入客户和产品种类，自动检查成品、余料、板料有没有可用库存。</p></div></div>
+    <div class="top"><div><h1>计划管理</h1><p class="muted">选择产品种类和计划数量，自动检查成品、余料、板料有没有可用库存。</p></div></div>
     <section class="card">
       <form method="get" action="/admin/plans" class="form-grid">
-        <div><label>客户</label><input name="customer" value="{html.escape(customer.strip())}" placeholder="例如 某某客户"></div>
         <div><label>产品种类</label><select name="drawing_id" required>{plan_product_options(db, selected_id)}</select></div>
         <div><label>计划数量</label><input name="quantity" type="number" min="1" value="{quantity_value}"></div>
         <div style="align-self:end"><button class="btn" type="submit">查询有没有料</button></div>
