@@ -19,6 +19,8 @@ def drawing_snapshot(drawing: ProductDrawing | None) -> dict[str, Any] | None:
         "id": drawing.id,
         "product_code": drawing.product_code,
         "product_name": drawing.product_name,
+        "product_category": drawing.product_category,
+        "remark": drawing.remark,
         "material": drawing.material,
         "thickness": drawing.thickness,
         "product_thickness": drawing.product_thickness,

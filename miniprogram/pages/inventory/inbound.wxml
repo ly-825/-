@@ -14,7 +14,7 @@
     <view wx:elif="{{!filteredDrawings.length}}" class="empty">没有匹配的已确认图纸</view>
     <view wx:for="{{filteredDrawings}}" wx:key="id" class="search-item" bindtap="selectDrawing" data-index="{{index}}">
       <view class="name">{{item.product_code_text}}</view>
-      <view class="meta">{{item.version_text}}｜{{item.product_name_text}}｜{{item.material_text}}｜厚度 {{item.thickness_text}}</view>
+      <view class="meta">{{item.product_category_text}}｜{{item.version_text}}｜{{item.product_name_text}}｜{{item.material_text}}｜厚度 {{item.thickness_text}}</view>
     </view>
   </view>
 

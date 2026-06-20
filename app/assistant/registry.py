@@ -8,6 +8,7 @@ from app.assistant.tools.drawing import list_drawings_by_parameter
 from app.assistant.tools.inventory import query_drawings, query_inventory
 from app.assistant.tools.analysis import run_analysis_tool
 from app.assistant.tools.location import query_location
+from app.assistant.tools.plan import check_plan_material
 from app.assistant.tools.rules import explain_rule
 from app.assistant.tools.transaction import query_transactions
 from app.assistant.tools.warning import warning_list
@@ -26,6 +27,7 @@ TOOLS: dict[str, Tool] = {
     "transaction_detail": query_transactions,
     "warning_list": warning_list,
     "warning_analysis": warning_list,
+    "plan_material_check": check_plan_material,
 }
 
 

@@ -28,6 +28,8 @@ def query_drawings(intent: AssistantIntent, db: Session) -> AssistantResponse:
         query = query.filter(
             (ProductDrawing.product_code.ilike(like))
             | (ProductDrawing.product_name.ilike(like))
+            | (ProductDrawing.product_category.ilike(like))
+            | (ProductDrawing.remark.ilike(like))
             | (ProductDrawing.material.ilike(like))
         )
     drawings = query.order_by(ProductDrawing.updated_at.desc()).limit(50).all()
@@ -38,7 +40,9 @@ def query_drawings(intent: AssistantIntent, db: Session) -> AssistantResponse:
             {
                 "id": drawing.id,
                 "product_code": drawing.product_code or "-",
-                "version": f"V{drawing.version or 1}",
+                "product_category": drawing.product_category or "-",
+                "remark": drawing.remark or "-",
+                "version": f"A{drawing.version or 1}",
                 "material": drawing.material or "-",
                 "status": "已确认" if drawing.confirmed else "待确认",
                 "active": "当前版本" if drawing.is_active else "历史版本",
@@ -52,6 +56,8 @@ def query_drawings(intent: AssistantIntent, db: Session) -> AssistantResponse:
             [
                 {"prop": "id", "label": "ID"},
                 {"prop": "product_code", "label": "产品型号"},
+                {"prop": "product_category", "label": "产品分类"},
+                {"prop": "remark", "label": "备注"},
                 {"prop": "version", "label": "版本"},
                 {"prop": "material", "label": "材质"},
                 {"prop": "status", "label": "状态"},

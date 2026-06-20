@@ -3,11 +3,21 @@
   <view class="card">
     <input class="input" placeholder="产品型号" value="{{form.product_code}}" data-field="product_code" bindinput="onInput" />
     <input class="input" placeholder="产品名称" value="{{form.product_name}}" data-field="product_name" bindinput="onInput" />
+    <input class="input" placeholder="产品分类，例如 汽车 / 摩托车" value="{{form.product_category}}" data-field="product_category" bindinput="onInput" />
+    <textarea class="input" style="height: 150rpx; padding-top: 22rpx;" placeholder="备注，例如客户要求、加工说明" value="{{form.remark}}" data-field="remark" bindinput="onInput" />
     <input class="input" placeholder="材质" value="{{form.material}}" data-field="material" bindinput="onInput" />
     <input class="input" type="digit" placeholder="外径" value="{{form.max_outer_diameter}}" data-field="max_outer_diameter" bindinput="onInput" />
     <input class="input" type="digit" placeholder="内径" value="{{form.min_inner_diameter}}" data-field="min_inner_diameter" bindinput="onInput" />
     <input class="input" type="digit" placeholder="产品厚度" value="{{form.product_thickness}}" data-field="product_thickness" bindinput="onInput" />
     <input class="input" type="digit" placeholder="钢板厚度" value="{{form.plate_thickness}}" data-field="plate_thickness" bindinput="onInput" />
+    <input class="input" type="number" placeholder="齿数 z" value="{{form.teeth_count}}" data-field="teeth_count" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="模数 m" value="{{form.module}}" data-field="module" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="压力角 α" value="{{form.pressure_angle}}" data-field="pressure_angle" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="变位系数 x" value="{{form.profile_shift_coefficient}}" data-field="profile_shift_coefficient" bindinput="onInput" />
+    <input class="input" type="number" placeholder="跨齿数 n" value="{{form.span_teeth_count}}" data-field="span_teeth_count" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="公法线长度 L" value="{{form.common_normal_length}}" data-field="common_normal_length" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="量棒直径 dp" value="{{form.pin_diameter}}" data-field="pin_diameter" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="棒间距 M" value="{{form.pin_span}}" data-field="pin_span" bindinput="onInput" />
     <input class="input" placeholder="中心余料尺寸，例如 φ77.5" value="{{form.expected_scrap_size}}" data-field="expected_scrap_size" bindinput="onInput" />
     <button class="btn" bindtap="confirm">保存确认结果</button>
     <button class="btn secondary" bindtap="rerun">重新识别当前图纸</button>

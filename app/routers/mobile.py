@@ -9,6 +9,7 @@ from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_d
 from app.services.drawing_version import apply_drawing_version
 from app.services.inventory_service import ensure_drawing_can_be_changed, inventory_write_lock, product_inbound_from_drawing, reverse_inventory_transaction
 from app.services.operation_log import drawing_snapshot, inventory_snapshot, record_operation_log
+from app.services.product_outbound_analysis import normalize_outbound_purpose
 from app.services.scrap_service import find_scrap_batches_for_outbound
 
 
@@ -28,6 +29,8 @@ class ProductOutboundPayload(BaseModel):
     quantity: int
     location: str | None = None
     operator_name: str | None = None
+    customer_name: str | None = None
+    outbound_purpose: str | None = "sales"
     remark: str | None = None
     client_request_id: str | None = None
 
@@ -48,6 +51,7 @@ class ScrapOutboundPayload(BaseModel):
     scrap_group_key: str
     quantity: int
     operator_name: str | None = None
+    customer_name: str | None = None
     remark: str | None = None
     client_request_id: str | None = None
 
@@ -94,6 +98,8 @@ class TransactionOut(BaseModel):
     after_quantity: int
     reversed_transaction_id: int | None = None
     operator_name: str | None
+    customer_name: str | None = None
+    outbound_purpose: str | None = None
     remark: str | None
     created_at: str
 
@@ -138,6 +144,87 @@ def _optional_float(value: str | float | None) -> float | None:
         return float(text)
     except ValueError:
         return None
+
+
+def _optional_int(value: str | int | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
+def _float_between_filter(column, value: float, tolerance: float = 0.001):
+    return column.between(value - tolerance, value + tolerance)
+
+
+def _apply_drawing_filters(
+    query,
+    q: str = "",
+    product_category: str = "",
+    material: str = "",
+    thickness: str = "",
+    outer_diameter: str = "",
+    inner_diameter: str = "",
+    teeth_count: str = "",
+    module: str = "",
+    pressure_angle: str = "",
+    common_normal_length: str = "",
+    pin_diameter: str = "",
+    pin_span: str = "",
+):
+    keyword = q.strip()
+    if keyword:
+        like = f"%{keyword}%"
+        query = query.filter(
+            (ProductDrawing.product_code.ilike(like))
+            | (ProductDrawing.product_name.ilike(like))
+            | (ProductDrawing.product_category.ilike(like))
+            | (ProductDrawing.remark.ilike(like))
+            | (ProductDrawing.material.ilike(like))
+        )
+    if product_category.strip():
+        query = query.filter(ProductDrawing.product_category.ilike(f"%{product_category.strip()}%"))
+    if material.strip():
+        query = query.filter(ProductDrawing.material.ilike(f"%{material.strip()}%"))
+    thickness_value = _optional_float(thickness)
+    if thickness_value is not None:
+        query = query.filter(
+            _float_between_filter(ProductDrawing.thickness, thickness_value)
+            | _float_between_filter(ProductDrawing.product_thickness, thickness_value)
+            | _float_between_filter(ProductDrawing.plate_thickness, thickness_value)
+        )
+    outer_value = _optional_float(outer_diameter)
+    if outer_value is not None:
+        query = query.filter(_float_between_filter(ProductDrawing.max_outer_diameter, outer_value))
+    inner_value = _optional_float(inner_diameter)
+    if inner_value is not None:
+        query = query.filter(_float_between_filter(ProductDrawing.min_inner_diameter, inner_value))
+    teeth_value = _optional_int(teeth_count)
+    if teeth_value is not None:
+        query = query.filter(ProductDrawing.teeth_count == teeth_value)
+    module_value = _optional_float(module)
+    if module_value is not None:
+        query = query.filter(_float_between_filter(ProductDrawing.module, module_value))
+    pressure_angle_value = _optional_float(pressure_angle)
+    if pressure_angle_value is not None:
+        query = query.filter(_float_between_filter(ProductDrawing.pressure_angle, pressure_angle_value))
+    common_normal_length_value = _optional_float(common_normal_length)
+    if common_normal_length_value is not None:
+        query = query.filter(_float_between_filter(ProductDrawing.common_normal_length, common_normal_length_value))
+    pin_diameter_value = _optional_float(pin_diameter)
+    if pin_diameter_value is not None:
+        query = query.filter(_float_between_filter(ProductDrawing.pin_diameter, pin_diameter_value))
+    pin_span_value = _optional_float(pin_span)
+    if pin_span_value is not None:
+        query = query.filter(_float_between_filter(ProductDrawing.pin_span, pin_span_value))
+    return query
 
 
 def _scrap_location_label(item: MaterialInventory | None) -> str:
@@ -211,6 +298,8 @@ def _transaction_rows(records: list[InventoryTransactionRecord], inventory_type:
                 after_quantity=record.after_quantity,
                 reversed_transaction_id=record.reversed_transaction_id,
                 operator_name=record.operator_name,
+                customer_name=record.customer_name,
+                outbound_purpose=record.outbound_purpose,
                 remark=record.remark,
                 created_at=record.created_at.isoformat(),
             )
@@ -252,16 +341,42 @@ def upload_drawing(file: UploadFile = File(...), db: Session = Depends(get_db)) 
 
 
 @router.get("/drawings", response_model=list[DrawingOut])
-def drawings(status: str | None = None, q: str = "", db: Session = Depends(get_db)) -> list[ProductDrawing]:
+def drawings(
+    status: str | None = None,
+    q: str = "",
+    product_category: str = "",
+    material: str = "",
+    thickness: str = "",
+    outer_diameter: str = "",
+    inner_diameter: str = "",
+    teeth_count: str = "",
+    module: str = "",
+    pressure_angle: str = "",
+    common_normal_length: str = "",
+    pin_diameter: str = "",
+    pin_span: str = "",
+    db: Session = Depends(get_db),
+) -> list[ProductDrawing]:
     query = db.query(ProductDrawing)
     if status == "pending":
         query = query.filter(ProductDrawing.confirmed == 0)
     elif status == "confirmed":
         query = query.filter(ProductDrawing.confirmed == 1, ProductDrawing.is_active == 1)
-    keyword = q.strip()
-    if keyword:
-        like = f"%{keyword}%"
-        query = query.filter((ProductDrawing.product_code.ilike(like)) | (ProductDrawing.product_name.ilike(like)) | (ProductDrawing.material.ilike(like)))
+    query = _apply_drawing_filters(
+        query,
+        q=q,
+        product_category=product_category,
+        material=material,
+        thickness=thickness,
+        outer_diameter=outer_diameter,
+        inner_diameter=inner_diameter,
+        teeth_count=teeth_count,
+        module=module,
+        pressure_angle=pressure_angle,
+        common_normal_length=common_normal_length,
+        pin_diameter=pin_diameter,
+        pin_span=pin_span,
+    )
     return query.order_by(ProductDrawing.created_at.desc()).all()
 
 
@@ -271,8 +386,37 @@ def pending_drawings(db: Session = Depends(get_db)) -> list[ProductDrawing]:
 
 
 @router.get("/drawings/confirmed", response_model=list[DrawingOut])
-def confirmed_drawings(q: str = "", db: Session = Depends(get_db)) -> list[ProductDrawing]:
-    return drawings(status="confirmed", q=q, db=db)
+def confirmed_drawings(
+    q: str = "",
+    product_category: str = "",
+    material: str = "",
+    thickness: str = "",
+    outer_diameter: str = "",
+    inner_diameter: str = "",
+    teeth_count: str = "",
+    module: str = "",
+    pressure_angle: str = "",
+    common_normal_length: str = "",
+    pin_diameter: str = "",
+    pin_span: str = "",
+    db: Session = Depends(get_db),
+) -> list[ProductDrawing]:
+    return drawings(
+        status="confirmed",
+        q=q,
+        product_category=product_category,
+        material=material,
+        thickness=thickness,
+        outer_diameter=outer_diameter,
+        inner_diameter=inner_diameter,
+        teeth_count=teeth_count,
+        module=module,
+        pressure_angle=pressure_angle,
+        common_normal_length=common_normal_length,
+        pin_diameter=pin_diameter,
+        pin_span=pin_span,
+        db=db,
+    )
 
 
 @router.get("/drawings/{drawing_id}", response_model=DrawingOut)
@@ -289,6 +433,7 @@ def delete_drawing(drawing_id: int, db: Session = Depends(get_db)) -> dict[str, 
     if not drawing:
         raise HTTPException(status_code=404, detail="图纸不存在")
     ensure_drawing_can_be_changed(drawing, db)
+    was_confirmed = drawing.confirmed == 1
     before_data = drawing_snapshot(drawing)
     delete_uploaded_drawing(drawing_id, db)
     record_operation_log(db, "drawing_delete", "drawing", drawing_id, None, "小程序删除图纸", before_data=before_data)
@@ -302,12 +447,13 @@ def confirm_drawing(drawing_id: int, payload: DrawingConfirm, db: Session = Depe
     if not drawing:
         raise HTTPException(status_code=404, detail="图纸不存在")
     ensure_drawing_can_be_changed(drawing, db)
+    was_confirmed = drawing.confirmed == 1
     before_data = drawing_snapshot(drawing)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(drawing, key, value)
     drawing.thickness = drawing.product_thickness or drawing.plate_thickness or drawing.thickness
     drawing.confirmed = 1
-    apply_drawing_version(drawing, db)
+    apply_drawing_version(drawing, db, force_increment=was_confirmed)
     record_operation_log(db, "drawing_confirm", "drawing", drawing.id, None, "小程序确认图纸", before_data=before_data, after_data=drawing_snapshot(drawing))
     db.commit()
     db.refresh(drawing)
@@ -425,7 +571,7 @@ def product_outbound(payload: ProductOutboundPayload, db: Session = Depends(get_
             item.status = "used" if item.quantity <= 0 else "available"
             affected_items.append((item, deduction, item_before_quantity, item.quantity))
         for index, (item, deduction, item_before_quantity, item_after_quantity) in enumerate(affected_items):
-            db.add(InventoryTransactionRecord(inventory_id=item.id, transaction_type="out", quantity=deduction, before_quantity=item_before_quantity, after_quantity=item_after_quantity, idempotency_key=idempotency_key if index == 0 else None, operator_name=payload.operator_name or None, remark=payload.remark or "产品出库"))
+            db.add(InventoryTransactionRecord(inventory_id=item.id, transaction_type="out", quantity=deduction, before_quantity=item_before_quantity, after_quantity=item_after_quantity, idempotency_key=idempotency_key if index == 0 else None, operator_name=payload.operator_name or None, customer_name=(payload.customer_name or "").strip() or None, outbound_purpose=normalize_outbound_purpose(payload.outbound_purpose), remark=payload.remark or "产品出库"))
         record_operation_log(
             db,
             "product_outbound",
@@ -561,7 +707,7 @@ def scrap_outbound(payload: ScrapOutboundPayload, db: Session = Depends(get_db))
                 item.status = "used"
             affected_items.append((item, deduction, item_before_quantity, item.quantity))
         for index, (item, deduction, item_before_quantity, item_after_quantity) in enumerate(affected_items):
-            db.add(InventoryTransactionRecord(inventory_id=item.id, transaction_type="out", quantity=deduction, before_quantity=item_before_quantity, after_quantity=item_after_quantity, idempotency_key=idempotency_key if index == 0 else None, operator_name=payload.operator_name or None, remark=payload.remark or "余料出库"))
+            db.add(InventoryTransactionRecord(inventory_id=item.id, transaction_type="out", quantity=deduction, before_quantity=item_before_quantity, after_quantity=item_after_quantity, idempotency_key=idempotency_key if index == 0 else None, operator_name=payload.operator_name or None, customer_name=(payload.customer_name or "").strip() or None, remark=payload.remark or "余料出库"))
         record_operation_log(
             db,
             "scrap_outbound",

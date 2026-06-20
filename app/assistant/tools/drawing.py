@@ -14,6 +14,8 @@ from app.services.inventory_service import drawing_has_inventory_references
 DRAWING_PARAMETERS: dict[str, dict] = {
     "product_code": {"label": "产品型号", "aliases": ("产品型号", "产品编号", "型号", "编号", "product_code"), "kind": "text"},
     "product_name": {"label": "产品名称", "aliases": ("产品名称", "名称", "product_name"), "kind": "text"},
+    "product_category": {"label": "产品分类", "aliases": ("产品分类", "分类", "汽车", "摩托车", "product_category"), "kind": "text"},
+    "remark": {"label": "备注", "aliases": ("备注", "备注信息", "说明", "remark"), "kind": "text"},
     "material": {"label": "材质", "aliases": ("材质", "材料", "material"), "kind": "text"},
     "thickness": {"label": "厚度", "aliases": ("厚度", "总厚", "thickness"), "kind": "number"},
     "product_thickness": {"label": "产品厚度", "aliases": ("产品厚度", "总厚度", "复合厚度", "product_thickness"), "kind": "number"},
@@ -44,6 +46,11 @@ def list_drawings_by_parameter(intent: AssistantIntent, db: Session) -> Assistan
     field = detect_drawing_parameter(message) or "product_code"
     meta = DRAWING_PARAMETERS[field]
     value_keyword = _extract_value_keyword(message, meta["aliases"])
+    if field == "product_category":
+        for category in ("汽车", "摩托车"):
+            if category in message:
+                value_keyword = category
+                break
 
     query = db.query(ProductDrawing)
     if value_keyword:
@@ -66,9 +73,11 @@ def list_drawings_by_parameter(intent: AssistantIntent, db: Session) -> Assistan
                 "parameter": meta["label"],
                 "value": _display_value(_drawing_value(drawing, field), meta["kind"]),
                 "product_code": drawing.product_code or "-",
+                "product_category": drawing.product_category or "-",
                 "product_name": drawing.product_name or "-",
+                "remark": drawing.remark or "-",
                 "material": drawing.material or "-",
-                "version": f"V{drawing.version or 1}",
+                "version": f"A{drawing.version or 1}",
                 "status": "已确认" if drawing.confirmed else "待确认",
                 "editable": "不可直接修改" if locked else "可修改",
                 "drawing_id": drawing.id,
@@ -84,7 +93,9 @@ def list_drawings_by_parameter(intent: AssistantIntent, db: Session) -> Assistan
                 {"prop": "parameter", "label": "参数"},
                 {"prop": "value", "label": "参数值"},
                 {"prop": "product_code", "label": "产品型号"},
+                {"prop": "product_category", "label": "产品分类"},
                 {"prop": "product_name", "label": "产品名称"},
+                {"prop": "remark", "label": "备注"},
                 {"prop": "material", "label": "材质"},
                 {"prop": "version", "label": "版本"},
                 {"prop": "status", "label": "确认状态"},

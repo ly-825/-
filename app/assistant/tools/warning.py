@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.assistant.render import table
 from app.assistant.types import AssistantAction, AssistantIntent, AssistantResponse
 from app.models import MaterialInventory, ProductDrawing
+from app.time_utils import china_now
 
 
 def warning_list(intent: AssistantIntent, db: Session) -> AssistantResponse:
@@ -58,7 +59,7 @@ def _low_product_rows(db: Session) -> list[dict]:
 
 
 def _pending_scrap_rows(db: Session) -> list[dict]:
-    deadline = datetime.now() - timedelta(days=3)
+    deadline = china_now() - timedelta(days=3)
     items = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "scrap", MaterialInventory.status == "pending").all()
     rows = []
     for item in items:
@@ -77,7 +78,7 @@ def _pending_scrap_rows(db: Session) -> list[dict]:
 
 
 def _idle_inventory_rows(db: Session) -> list[dict]:
-    deadline = datetime.now() - timedelta(days=90)
+    deadline = china_now() - timedelta(days=90)
     items = (
         db.query(MaterialInventory)
         .filter(MaterialInventory.quantity > 0, MaterialInventory.updated_at <= deadline)
@@ -121,4 +122,3 @@ def _confirmed_without_inventory_rows(db: Session) -> list[dict]:
                 }
             )
     return rows
-

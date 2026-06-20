@@ -242,13 +242,12 @@ IP 要换成实际 Windows 电脑的 IPv4 地址。
 每天使用时：
 
 ```text
-1. 打开 PowerShell 或 CMD
-2. 进入项目目录
-3. 启动后端服务
-4. 打开后台或小程序
+1. 打开项目文件夹
+2. 双击 启动后台服务.bat
+3. 打开后台或小程序
 ```
 
-命令：
+如果需要手动启动，也可以用命令：
 
 ```bat
 cd 杭州特耐时-backend
@@ -279,7 +278,34 @@ Ctrl + C
 
 停止服务。
 
-### 方式一：使用 Git Bash 自动更新，推荐
+### 方式一：双击一键更新，推荐
+
+打开项目文件夹，双击：
+
+```text
+一键更新程序.bat
+```
+
+脚本会自动：
+
+```text
+1. 检查 Git 和 Python
+2. 备份 data/app.db 和 data/uploads/
+3. 检查本地代码是否有未保存改动
+4. 拉取最新代码
+5. 更新 Python 依赖
+6. 询问是否立即启动后端服务
+```
+
+如果脚本最后询问是否启动后台服务，输入：
+
+```text
+Y
+```
+
+即可自动打开新的后台服务窗口。
+
+### 方式二：使用 Git Bash 自动更新
 
 右键项目目录，选择：
 
@@ -293,24 +319,13 @@ Git Bash Here
 bash scripts/update.sh
 ```
 
-脚本会自动：
+更新完成后，双击：
 
 ```text
-1. 检查 Git 和 Python
-2. 检查本地代码是否有未保存改动
-3. 备份 data/app.db 和 data/uploads/
-4. 拉取最新代码
-5. 更新 Python 依赖
-6. 提示重启后端服务
+启动后台服务.bat
 ```
 
-更新完成后，重新启动：
-
-```bat
-.venv\Scripts\python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-### 方式二：手动更新
+### 方式三：手动更新
 
 进入项目目录：
 
@@ -484,8 +499,8 @@ Your local changes would be overwritten
 
 ```text
 维护者推送新版本
-使用者执行 bash scripts/update.sh
-重启后端服务
+使用者双击 一键更新程序.bat
+按提示启动后端服务
 检查数据是否正常
 ```
 
@@ -497,4 +512,3 @@ data/
 .venv/
 backups/
 ```
-

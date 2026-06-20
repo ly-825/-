@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing
 from app.services.inventory_service import drawing_has_inventory_references
+from app.time_utils import china_now
 
 
 @dataclass
@@ -188,21 +189,27 @@ def search_drawings(intent: AssistantIntent, db: Session) -> str:
     query = db.query(ProductDrawing)
     if keyword:
         like = f"%{keyword}%"
-        query = query.filter((ProductDrawing.product_code.ilike(like)) | (ProductDrawing.product_name.ilike(like)) | (ProductDrawing.material.ilike(like)))
+        query = query.filter(
+            (ProductDrawing.product_code.ilike(like))
+            | (ProductDrawing.product_name.ilike(like))
+            | (ProductDrawing.product_category.ilike(like))
+            | (ProductDrawing.remark.ilike(like))
+            | (ProductDrawing.material.ilike(like))
+        )
     drawings = query.order_by(ProductDrawing.updated_at.desc()).limit(10).all()
     if not drawings:
         return f"没有查到与“{keyword}”相关的图纸。"
     lines = [f"查到 {len(drawings)} 张图纸："]
     for drawing in drawings:
         locked = drawing_has_inventory_references(drawing.id, db)
-        lines.append(f"- ID {drawing.id}｜{drawing.product_code or '-'}｜V{drawing.version or 1}｜{'已确认' if drawing.confirmed else '未确认'}｜{'已使用，不可直接修改' if locked else '未使用，可修改/重识别/删除'}")
+        lines.append(f"- ID {drawing.id}｜{drawing.product_code or '-'}｜{drawing.product_category or '-'}｜A{drawing.version or 1}｜备注：{drawing.remark or '-'}｜{'已确认' if drawing.confirmed else '未确认'}｜{'已使用，不可直接修改' if locked else '未使用，可修改/重识别/删除'}")
     return "\n".join(lines)
 
 
 def outbound_statistics(intent: AssistantIntent, db: Session) -> str:
     transaction_type = intent.flow or "out"
     action_label = "入库" if transaction_type == "in" else "出库"
-    now = datetime.now()
+    now = china_now()
     start = datetime(now.year, now.month, now.day)
     label = "今天"
     if intent.period == "month":
@@ -238,7 +245,7 @@ def outbound_details(intent: AssistantIntent, db: Session) -> str:
     transaction_type = intent.flow or "out"
     action_label = "入库" if transaction_type == "in" else "出库"
     start_label_intent = AssistantIntent("outbound_statistics", domain=intent.domain, period=intent.period)
-    now = datetime.now()
+    now = china_now()
     if start_label_intent.period == "month":
         start, label = datetime(now.year, now.month, 1), "本月"
     elif start_label_intent.period == "year":

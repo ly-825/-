@@ -18,12 +18,14 @@ Page({
       const items = (await api.drawings({ status: this.data.status, q: this.data.q })).map((item) => ({
         ...item,
         product_code_text: item.product_code || '未识别编号',
+        product_category_text: item.product_category || '-',
         product_name_text: item.product_name || '-',
+        remark_text: item.remark || '',
         material_text: item.material || '-',
         thickness_text: item.thickness || '-',
         max_outer_diameter_text: item.max_outer_diameter || '-',
         confirmed_text: item.confirmed ? '已确认' : '待确认',
-        version_text: `V${item.version || 1}`,
+        version_text: `A${item.version || 1}`,
         active_text: item.is_active ? '当前' : '历史'
       }))
       this.setData({ items })

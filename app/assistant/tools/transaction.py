@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.assistant.render import table
 from app.assistant.types import AssistantAction, AssistantIntent, AssistantResponse
 from app.models import InventoryTransactionRecord, MaterialInventory
+from app.time_utils import china_now
 
 
 def query_transactions(intent: AssistantIntent, db: Session) -> AssistantResponse:
@@ -92,7 +93,7 @@ def _date_range(intent: AssistantIntent) -> tuple[datetime, datetime, str]:
         start = datetime.strptime(start_date, "%Y-%m-%d")
         end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
         return start, end, f"{start_date} 至 {end_date}"
-    now = datetime.now()
+    now = china_now()
     range_type = time_range.get("type")
     if range_type == "this_year":
         return datetime(now.year, 1, 1), now + timedelta(days=1), "本年"
@@ -125,4 +126,3 @@ def _actions(entity: str | None) -> list[AssistantAction]:
     if entity == "scrap":
         return [AssistantAction("余料流水", "/admin/scraps/transactions"), AssistantAction("余料记录", "/admin/scraps")]
     return [AssistantAction("库存流水", "/admin/inventory/transactions"), AssistantAction("产品库存", "/admin/inventory")]
-

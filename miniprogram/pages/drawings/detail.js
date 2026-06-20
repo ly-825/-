@@ -3,19 +3,37 @@ const api = require('../../utils/api')
 const confirmFields = [
   'product_code',
   'product_name',
+  'product_category',
+  'remark',
   'material',
   'max_outer_diameter',
   'min_inner_diameter',
   'expected_scrap_size',
   'product_thickness',
-  'plate_thickness'
+  'plate_thickness',
+  'teeth_count',
+  'module',
+  'pressure_angle',
+  'profile_shift_coefficient',
+  'span_teeth_count',
+  'common_normal_length',
+  'pin_diameter',
+  'pin_span'
 ]
 
 const numericFields = [
   'max_outer_diameter',
   'min_inner_diameter',
   'product_thickness',
-  'plate_thickness'
+  'plate_thickness',
+  'teeth_count',
+  'module',
+  'pressure_angle',
+  'profile_shift_coefficient',
+  'span_teeth_count',
+  'common_normal_length',
+  'pin_diameter',
+  'pin_span'
 ]
 
 Page({

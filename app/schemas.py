@@ -55,6 +55,8 @@ class InventoryTransactionOut(BaseModel):
     after_quantity: int
     reversed_transaction_id: int | None = None
     operator_name: str | None
+    customer_name: str | None = None
+    outbound_purpose: str | None = None
     remark: str | None
     created_at: datetime
 
@@ -64,6 +66,8 @@ class InventoryTransactionOut(BaseModel):
 class DrawingConfirm(BaseModel):
     product_code: str | None = None
     product_name: str | None = None
+    product_category: str | None = None
+    remark: str | None = None
     material: str | None = None
     thickness: float | None = None
     max_outer_diameter: float | None = None
@@ -108,4 +112,3 @@ class DrawingOut(DrawingConfirm):
 class DrawingUploadOut(BaseModel):
     drawing: DrawingOut
     duplicated: bool
-

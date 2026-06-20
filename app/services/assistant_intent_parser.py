@@ -8,6 +8,7 @@ from typing import Any
 import requests
 
 from app.config import settings
+from app.time_utils import china_today
 
 
 ALLOWED_INTENTS = {
@@ -227,7 +228,7 @@ def detect_entity(message: str, fallback: str | None = None) -> str | None:
 
 
 def parse_time_range(message: str, today: date | None = None, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
-    current = today or date.today()
+    current = today or china_today()
     base = {"type": None, "start_date": None, "end_date": None, "days": None}
     if fallback:
         base.update({key: fallback.get(key) for key in base if fallback.get(key) is not None})
@@ -384,7 +385,7 @@ def call_llm_intent_parser(message: str, context: dict[str, Any]) -> dict[str, A
         "model": settings.qwen_model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": json.dumps({"current_date": date.today().isoformat(), "message": message, "conversation_context": context, "json_schema": INTENT_SCHEMA}, ensure_ascii=False)},
+            {"role": "user", "content": json.dumps({"current_date": china_today().isoformat(), "message": message, "conversation_context": context, "json_schema": INTENT_SCHEMA}, ensure_ascii=False)},
         ],
         "response_format": {"type": "json_object"},
         "temperature": 0,

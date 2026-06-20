@@ -8,7 +8,8 @@
     <view wx:if="{{!items.length}}" class="empty">暂无图纸记录</view>
     <view wx:for="{{items}}" wx:key="id" class="list-item" bindtap="goDetail" data-id="{{item.id}}">
       <view class="row"><view class="name">{{item.product_code_text}}</view><view class="badge">{{item.version_text}} {{item.active_text}}</view></view>
-      <view class="meta">{{item.product_name_text}}｜{{item.material_text}}｜厚度 {{item.thickness_text}}</view>
+      <view class="meta">{{item.product_category_text}}｜{{item.product_name_text}}｜{{item.material_text}}｜厚度 {{item.thickness_text}}</view>
+      <view wx:if="{{item.remark_text}}" class="meta">备注：{{item.remark_text}}</view>
       <view class="meta">外径 {{item.max_outer_diameter_text}}｜{{item.confirmed_text}}</view>
     </view>
   </view>

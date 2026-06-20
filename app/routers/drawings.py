@@ -56,13 +56,13 @@ def confirm_drawing(drawing_id: int, payload: DrawingConfirm, db: Session = Depe
         raise HTTPException(status_code=404, detail="图纸不存在")
     ensure_drawing_can_be_changed(drawing, db)
 
+    was_confirmed = drawing.confirmed == 1
     before_data = drawing_snapshot(drawing)
     for key, value in payload.model_dump().items():
         setattr(drawing, key, value)
     drawing.confirmed = 1
-    apply_drawing_version(drawing, db)
+    apply_drawing_version(drawing, db, force_increment=was_confirmed)
     record_operation_log(db, "drawing_confirm", "drawing", drawing.id, None, "API确认图纸", before_data=before_data, after_data=drawing_snapshot(drawing))
     db.commit()
     db.refresh(drawing)
     return drawing
-
