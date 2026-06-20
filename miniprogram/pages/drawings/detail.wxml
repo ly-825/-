@@ -8,7 +8,7 @@
     <input class="input" placeholder="材质" value="{{form.material}}" data-field="material" bindinput="onInput" />
     <input class="input" type="digit" placeholder="外径" value="{{form.max_outer_diameter}}" data-field="max_outer_diameter" bindinput="onInput" />
     <input class="input" type="digit" placeholder="内径" value="{{form.min_inner_diameter}}" data-field="min_inner_diameter" bindinput="onInput" />
-    <input class="input" type="digit" placeholder="产品厚度" value="{{form.product_thickness}}" data-field="product_thickness" bindinput="onInput" />
+    <input class="input" type="digit" placeholder="总成品厚度" value="{{form.product_thickness}}" data-field="product_thickness" bindinput="onInput" />
     <input class="input" type="digit" placeholder="钢板厚度" value="{{form.plate_thickness}}" data-field="plate_thickness" bindinput="onInput" />
     <input class="input" type="number" placeholder="齿数 z" value="{{form.teeth_count}}" data-field="teeth_count" bindinput="onInput" />
     <input class="input" type="digit" placeholder="模数 m" value="{{form.module}}" data-field="module" bindinput="onInput" />

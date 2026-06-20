@@ -170,6 +170,8 @@ def _apply_drawing_filters(
     product_category: str = "",
     material: str = "",
     thickness: str = "",
+    product_thickness: str = "",
+    plate_thickness: str = "",
     outer_diameter: str = "",
     inner_diameter: str = "",
     teeth_count: str = "",
@@ -182,13 +184,14 @@ def _apply_drawing_filters(
     keyword = q.strip()
     if keyword:
         like = f"%{keyword}%"
-        query = query.filter(
+        keyword_filter = (
             (ProductDrawing.product_code.ilike(like))
             | (ProductDrawing.product_name.ilike(like))
             | (ProductDrawing.product_category.ilike(like))
             | (ProductDrawing.remark.ilike(like))
             | (ProductDrawing.material.ilike(like))
         )
+        query = query.filter(keyword_filter)
     if product_category.strip():
         query = query.filter(ProductDrawing.product_category.ilike(f"%{product_category.strip()}%"))
     if material.strip():
@@ -200,6 +203,12 @@ def _apply_drawing_filters(
             | _float_between_filter(ProductDrawing.product_thickness, thickness_value)
             | _float_between_filter(ProductDrawing.plate_thickness, thickness_value)
         )
+    product_thickness_value = _optional_float(product_thickness)
+    if product_thickness_value is not None:
+        query = query.filter(_float_between_filter(ProductDrawing.product_thickness, product_thickness_value))
+    plate_thickness_value = _optional_float(plate_thickness)
+    if plate_thickness_value is not None:
+        query = query.filter(_float_between_filter(ProductDrawing.plate_thickness, plate_thickness_value))
     outer_value = _optional_float(outer_diameter)
     if outer_value is not None:
         query = query.filter(_float_between_filter(ProductDrawing.max_outer_diameter, outer_value))
@@ -347,6 +356,8 @@ def drawings(
     product_category: str = "",
     material: str = "",
     thickness: str = "",
+    product_thickness: str = "",
+    plate_thickness: str = "",
     outer_diameter: str = "",
     inner_diameter: str = "",
     teeth_count: str = "",
@@ -368,6 +379,8 @@ def drawings(
         product_category=product_category,
         material=material,
         thickness=thickness,
+        product_thickness=product_thickness,
+        plate_thickness=plate_thickness,
         outer_diameter=outer_diameter,
         inner_diameter=inner_diameter,
         teeth_count=teeth_count,
@@ -391,6 +404,8 @@ def confirmed_drawings(
     product_category: str = "",
     material: str = "",
     thickness: str = "",
+    product_thickness: str = "",
+    plate_thickness: str = "",
     outer_diameter: str = "",
     inner_diameter: str = "",
     teeth_count: str = "",
@@ -407,6 +422,8 @@ def confirmed_drawings(
         product_category=product_category,
         material=material,
         thickness=thickness,
+        product_thickness=product_thickness,
+        plate_thickness=plate_thickness,
         outer_diameter=outer_diameter,
         inner_diameter=inner_diameter,
         teeth_count=teeth_count,

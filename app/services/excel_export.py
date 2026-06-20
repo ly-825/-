@@ -206,13 +206,14 @@ def _apply_drawing_filters(query, filters: dict):
     keyword = (filters.get("q") or "").strip()
     if keyword:
         like = f"%{keyword}%"
-        query = query.filter(
+        keyword_filter = (
             (ProductDrawing.product_code.ilike(like))
             | (ProductDrawing.product_name.ilike(like))
             | (ProductDrawing.product_category.ilike(like))
             | (ProductDrawing.remark.ilike(like))
             | (ProductDrawing.material.ilike(like))
         )
+        query = query.filter(keyword_filter)
     product_category = (filters.get("product_category") or "").strip()
     if product_category:
         query = query.filter(ProductDrawing.product_category.ilike(f"%{product_category}%"))
@@ -226,6 +227,12 @@ def _apply_drawing_filters(query, filters: dict):
             | _float_between_filter(ProductDrawing.product_thickness, thickness)
             | _float_between_filter(ProductDrawing.plate_thickness, thickness)
         )
+    product_thickness = _optional_float(filters.get("product_thickness"))
+    if product_thickness is not None:
+        query = query.filter(_float_between_filter(ProductDrawing.product_thickness, product_thickness))
+    plate_thickness = _optional_float(filters.get("plate_thickness"))
+    if plate_thickness is not None:
+        query = query.filter(_float_between_filter(ProductDrawing.plate_thickness, plate_thickness))
     outer_diameter = _optional_float(filters.get("outer_diameter"))
     if outer_diameter is not None:
         query = query.filter(_float_between_filter(ProductDrawing.max_outer_diameter, outer_diameter))

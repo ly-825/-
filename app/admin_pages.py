@@ -207,6 +207,8 @@ def apply_drawing_filters(
     product_category: str = "",
     material: str = "",
     thickness: str = "",
+    product_thickness: str = "",
+    plate_thickness: str = "",
     outer_diameter: str = "",
     inner_diameter: str = "",
     teeth_count: str = "",
@@ -219,13 +221,14 @@ def apply_drawing_filters(
     keyword = q.strip()
     if keyword:
         like = f"%{keyword}%"
-        query = query.filter(
+        keyword_filter = (
             (ProductDrawing.product_code.ilike(like))
             | (ProductDrawing.product_name.ilike(like))
             | (ProductDrawing.product_category.ilike(like))
             | (ProductDrawing.remark.ilike(like))
             | (ProductDrawing.material.ilike(like))
         )
+        query = query.filter(keyword_filter)
     if product_category.strip():
         query = query.filter(ProductDrawing.product_category.ilike(f"%{product_category.strip()}%"))
     if material.strip():
@@ -237,6 +240,12 @@ def apply_drawing_filters(
             | float_between_filter(ProductDrawing.product_thickness, thickness_value)
             | float_between_filter(ProductDrawing.plate_thickness, thickness_value)
         )
+    product_thickness_value = optional_float(product_thickness)
+    if product_thickness_value is not None:
+        query = query.filter(float_between_filter(ProductDrawing.product_thickness, product_thickness_value))
+    plate_thickness_value = optional_float(plate_thickness)
+    if plate_thickness_value is not None:
+        query = query.filter(float_between_filter(ProductDrawing.plate_thickness, plate_thickness_value))
     outer_value = optional_float(outer_diameter)
     if outer_value is not None:
         query = query.filter(float_between_filter(ProductDrawing.max_outer_diameter, outer_value))
@@ -3687,6 +3696,8 @@ def drawings_page(
     product_category: str = "",
     material: str = "",
     thickness: str = "",
+    product_thickness: str = "",
+    plate_thickness: str = "",
     outer_diameter: str = "",
     inner_diameter: str = "",
     teeth_count: str = "",
@@ -3706,6 +3717,8 @@ def drawings_page(
         product_category=product_category,
         material=material,
         thickness=thickness,
+        product_thickness=product_thickness,
+        plate_thickness=plate_thickness,
         outer_diameter=outer_diameter,
         inner_diameter=inner_diameter,
         teeth_count=teeth_count,
@@ -3722,11 +3735,8 @@ def drawings_page(
     product_code_options = datalist_options(drawing_distinct_options(db, "product_code", confirmed_only=False))
     product_category_options = datalist_options(drawing_distinct_options(db, "product_category", confirmed_only=False) + ["汽车", "摩托车"])
     material_options = datalist_options(drawing_distinct_options(db, "material", confirmed_only=False))
-    thickness_options = datalist_options(
-        drawing_distinct_options(db, "plate_thickness", confirmed_only=False)
-        + drawing_distinct_options(db, "product_thickness", confirmed_only=False)
-        + drawing_distinct_options(db, "thickness", confirmed_only=False)
-    )
+    product_thickness_options = datalist_options(drawing_distinct_options(db, "product_thickness", confirmed_only=False))
+    plate_thickness_options = datalist_options(drawing_distinct_options(db, "plate_thickness", confirmed_only=False))
     outer_options = datalist_options(drawing_distinct_options(db, "max_outer_diameter", confirmed_only=False))
     inner_options = datalist_options(drawing_distinct_options(db, "min_inner_diameter", confirmed_only=False))
     teeth_options = datalist_options(drawing_distinct_options(db, "teeth_count", confirmed_only=False))
@@ -3794,10 +3804,11 @@ def drawings_page(
     </section>
     <section class="card">
       <form method="get" action="/admin/drawings" class="actions" style="justify-content:flex-start">
-        <input name="q" value="{safe_value(keyword)}" list="drawing-code-options" placeholder="输入型号/名称筛选" style="width:220px"><datalist id="drawing-code-options">{product_code_options}</datalist>
+        <input name="q" value="{safe_value(keyword)}" list="drawing-code-options" placeholder="型号/名称/材质筛选" style="width:220px"><datalist id="drawing-code-options">{product_code_options}</datalist>
         <input name="product_category" value="{safe_value(product_category.strip())}" list="drawing-category-options" placeholder="产品分类" style="width:150px"><datalist id="drawing-category-options">{product_category_options}</datalist>
         <input name="material" value="{safe_value(material.strip())}" list="drawing-material-options" placeholder="材质" style="width:130px"><datalist id="drawing-material-options">{material_options}</datalist>
-        <input name="thickness" value="{safe_value(thickness.strip())}" list="drawing-thickness-options" placeholder="厚度" style="width:120px"><datalist id="drawing-thickness-options">{thickness_options}</datalist>
+        <input name="product_thickness" value="{safe_value(product_thickness.strip())}" list="drawing-product-thickness-options" placeholder="总成品厚度" style="width:130px"><datalist id="drawing-product-thickness-options">{product_thickness_options}</datalist>
+        <input name="plate_thickness" value="{safe_value(plate_thickness.strip())}" list="drawing-plate-thickness-options" placeholder="钢板厚度" style="width:120px"><datalist id="drawing-plate-thickness-options">{plate_thickness_options}</datalist>
         <input name="outer_diameter" value="{safe_value(outer_diameter.strip())}" list="drawing-outer-options" placeholder="外径" style="width:110px"><datalist id="drawing-outer-options">{outer_options}</datalist>
         <input name="inner_diameter" value="{safe_value(inner_diameter.strip())}" list="drawing-inner-options" placeholder="内径" style="width:110px"><datalist id="drawing-inner-options">{inner_options}</datalist>
         <input name="teeth_count" value="{safe_value(teeth_count.strip())}" list="drawing-teeth-options" placeholder="齿数" style="width:110px"><datalist id="drawing-teeth-options">{teeth_options}</datalist>
@@ -3809,17 +3820,17 @@ def drawings_page(
         <a class="btn secondary" href="/admin/drawings">清空</a>
       </form>
     </section>
-    <section class="card"><h2>图纸记录</h2><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table></section>
+    <section class="card"><h2>图纸记录</h2><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table></section>
     """
     return page("图纸识别", body)
 
 
 def drawing_rows(drawings: list[ProductDrawing], show_id: bool = True) -> str:
     rows = "".join(
-        f"<tr><td>{html.escape(d.product_category or '-')}</td><td>{html.escape(d.product_code or '-')}</td><td>{drawing_version_code(d)}</td><td>{'当前' if d.is_active else '历史'}</td><td>{html.escape(d.product_name or '-')}</td><td>{html.escape(d.remark or '-')}</td><td>{html.escape(d.material or '-')}</td><td>{effective_drawing_thickness(d) or '-'}</td><td>{d.max_outer_diameter or '-'}</td><td>{d.min_inner_diameter or '-'}</td><td>{d.teeth_count or '-'}</td><td>{'已确认' if d.confirmed else '待确认'}</td><td><a class='btn secondary' href='/admin/drawings/{d.id}'>查看</a></td></tr>"
+        f"<tr><td>{html.escape(d.product_category or '-')}</td><td>{html.escape(d.product_code or '-')}</td><td>{drawing_version_code(d)}</td><td>{'当前' if d.is_active else '历史'}</td><td>{html.escape(d.product_name or '-')}</td><td>{html.escape(d.remark or '-')}</td><td>{html.escape(d.material or '-')}</td><td>{fmt_option(d.product_thickness) or '-'}</td><td>{fmt_option(d.plate_thickness) or '-'}</td><td>{d.max_outer_diameter or '-'}</td><td>{d.min_inner_diameter or '-'}</td><td>{d.teeth_count or '-'}</td><td>{'已确认' if d.confirmed else '待确认'}</td><td><a class='btn secondary' href='/admin/drawings/{d.id}'>查看</a></td></tr>"
         for d in drawings
     )
-    return rows or "<tr><td colspan='13'>暂无图纸记录。</td></tr>"
+    return rows or "<tr><td colspan='14'>暂无图纸记录。</td></tr>"
 
 
 @router.get("/admin/drawings/confirmed", response_class=HTMLResponse)
@@ -3828,6 +3839,8 @@ def confirmed_drawings_page(
     product_category: str = "",
     material: str = "",
     thickness: str = "",
+    product_thickness: str = "",
+    plate_thickness: str = "",
     outer_diameter: str = "",
     inner_diameter: str = "",
     teeth_count: str = "",
@@ -3846,6 +3859,8 @@ def confirmed_drawings_page(
         product_category=product_category,
         material=material,
         thickness=thickness,
+        product_thickness=product_thickness,
+        plate_thickness=plate_thickness,
         outer_diameter=outer_diameter,
         inner_diameter=inner_diameter,
         teeth_count=teeth_count,
@@ -3859,9 +3874,8 @@ def confirmed_drawings_page(
     product_code_options = datalist_options(drawing_distinct_options(db, "product_code"))
     product_category_options = datalist_options(drawing_distinct_options(db, "product_category") + ["汽车", "摩托车"])
     material_options = datalist_options(drawing_distinct_options(db, "material"))
-    thickness_options = datalist_options(
-        drawing_distinct_options(db, "plate_thickness") + drawing_distinct_options(db, "product_thickness") + drawing_distinct_options(db, "thickness")
-    )
+    product_thickness_options = datalist_options(drawing_distinct_options(db, "product_thickness"))
+    plate_thickness_options = datalist_options(drawing_distinct_options(db, "plate_thickness"))
     outer_options = datalist_options(drawing_distinct_options(db, "max_outer_diameter"))
     inner_options = datalist_options(drawing_distinct_options(db, "min_inner_diameter"))
     teeth_options = datalist_options(drawing_distinct_options(db, "teeth_count"))
@@ -3870,6 +3884,8 @@ def confirmed_drawings_page(
         "product_category": product_category.strip(),
         "material": material.strip(),
         "thickness": thickness.strip(),
+        "product_thickness": product_thickness.strip(),
+        "plate_thickness": plate_thickness.strip(),
         "outer_diameter": outer_diameter.strip(),
         "inner_diameter": inner_diameter.strip(),
         "teeth_count": teeth_count.strip(),
@@ -3883,10 +3899,11 @@ def confirmed_drawings_page(
     <div class="top"><div><h1>已确认图纸</h1><p class="muted">这些图纸已经人工确认，可直接用于成品入库，也可按分类和参数导出给客户确认。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a><a class="btn secondary" href="{export_link('product_catalog', export_params)}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/drawings/confirmed" class="actions" style="justify-content:flex-start;margin-bottom:14px">
-        <input name="q" value="{safe_value(keyword)}" list="confirmed-drawing-code-options" placeholder="输入型号/名称筛选" style="width:220px"><datalist id="confirmed-drawing-code-options">{product_code_options}</datalist>
+        <input name="q" value="{safe_value(keyword)}" list="confirmed-drawing-code-options" placeholder="型号/名称/材质筛选" style="width:220px"><datalist id="confirmed-drawing-code-options">{product_code_options}</datalist>
         <input name="product_category" value="{safe_value(product_category.strip())}" list="confirmed-drawing-category-options" placeholder="产品分类" style="width:150px"><datalist id="confirmed-drawing-category-options">{product_category_options}</datalist>
         <input name="material" value="{safe_value(material.strip())}" list="confirmed-drawing-material-options" placeholder="材质" style="width:130px"><datalist id="confirmed-drawing-material-options">{material_options}</datalist>
-        <input name="thickness" value="{safe_value(thickness.strip())}" list="confirmed-drawing-thickness-options" placeholder="厚度" style="width:120px"><datalist id="confirmed-drawing-thickness-options">{thickness_options}</datalist>
+        <input name="product_thickness" value="{safe_value(product_thickness.strip())}" list="confirmed-drawing-product-thickness-options" placeholder="总成品厚度" style="width:130px"><datalist id="confirmed-drawing-product-thickness-options">{product_thickness_options}</datalist>
+        <input name="plate_thickness" value="{safe_value(plate_thickness.strip())}" list="confirmed-drawing-plate-thickness-options" placeholder="钢板厚度" style="width:120px"><datalist id="confirmed-drawing-plate-thickness-options">{plate_thickness_options}</datalist>
         <input name="outer_diameter" value="{safe_value(outer_diameter.strip())}" list="confirmed-drawing-outer-options" placeholder="外径" style="width:110px"><datalist id="confirmed-drawing-outer-options">{outer_options}</datalist>
         <input name="inner_diameter" value="{safe_value(inner_diameter.strip())}" list="confirmed-drawing-inner-options" placeholder="内径" style="width:110px"><datalist id="confirmed-drawing-inner-options">{inner_options}</datalist>
         <input name="teeth_count" value="{safe_value(teeth_count.strip())}" list="confirmed-drawing-teeth-options" placeholder="齿数" style="width:110px"><datalist id="confirmed-drawing-teeth-options">{teeth_options}</datalist>
@@ -3896,7 +3913,7 @@ def confirmed_drawings_page(
         <button class="btn" type="submit">搜索</button>
         <a class="btn secondary" href="/admin/drawings/confirmed">清空</a>
       </form>
-      <table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings, show_id=False)}</tbody></table>
+      <table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings, show_id=False)}</tbody></table>
     </section>
     """
     return page("已确认图纸", body)
@@ -3907,7 +3924,7 @@ def pending_drawings_page(db: Session = Depends(get_db)) -> HTMLResponse:
     drawings = db.query(ProductDrawing).filter(ProductDrawing.confirmed == 0).order_by(ProductDrawing.created_at.desc()).all()
     body = f"""
     <div class="top"><div><h1>待确认图纸</h1><p class="muted">这些图纸需要人工检查并保存确认结果。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/confirmed">已确认图纸</a></div></div>
-    <section class="card"><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table></section>
+    <section class="card"><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table></section>
     """
     return page("待确认图纸", body)
 
@@ -4012,7 +4029,7 @@ def drawing_detail_page(drawing_id: int, notice: str = "", db: Session = Depends
         <div><label>材质</label><input name="material" value="{safe_value(drawing.material)}" placeholder="例如 50#"></div>
         <div><label>外径</label><input name="max_outer_diameter" type="number" step="0.01" value="{safe_value(drawing.max_outer_diameter)}" placeholder="mm"></div>
         <div><label>内径</label><input name="min_inner_diameter" type="number" step="0.01" value="{safe_value(drawing.min_inner_diameter)}" placeholder="mm"></div>
-        <div><label>产品厚度</label><input name="product_thickness" type="number" step="0.001" value="{safe_value(drawing.product_thickness)}" placeholder="含复合材料总厚"></div>
+        <div><label>总成品厚度</label><input name="product_thickness" type="number" step="0.001" value="{safe_value(drawing.product_thickness)}" placeholder="含复合材料总厚"></div>
         <div><label>钢板厚度</label><input name="plate_thickness" type="number" step="0.001" value="{safe_value(drawing.plate_thickness)}" placeholder="基板厚度"></div>
         <div><label>齿数 z</label><input name="teeth_count" type="number" value="{safe_value(drawing.teeth_count)}"></div>
         <div><label>模数 m</label><input name="module" type="number" step="0.001" value="{safe_value(drawing.module)}"></div>
