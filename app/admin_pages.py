@@ -1,6 +1,7 @@
 import html
 import json
 import math
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -38,6 +39,63 @@ from app.services.scrap_service import find_scrap_batches_for_outbound
 from app.time_utils import china_now
 
 router = APIRouter()
+TOOTH_TYPES = ("IT", "IL", "IR", "OT", "OL", "OR")
+
+
+def clean_text_value(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def normalize_tooth_type(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = (value or "").strip().upper()
+    return text if text in TOOTH_TYPES else None
+
+
+def tooth_type_options(selected: str | None = None) -> str:
+    selected_value = normalize_tooth_type(selected) or ""
+    options = [f"<option value='' {'selected' if not selected_value else ''}>未选择</option>"]
+    options.extend(
+        f"<option value='{value}' {'selected' if value == selected_value else ''}>{value}</option>"
+        for value in TOOTH_TYPES
+    )
+    return "".join(options)
+
+
+def first_int_value(value: str | None) -> int | None:
+    text = value or ""
+    match = re.search(r"\d+", text)
+    return int(match.group()) if match else None
+
+
+def display_teeth_count(drawing: ProductDrawing) -> str:
+    value = drawing.teeth_count_text or (str(drawing.teeth_count) if drawing.teeth_count is not None else "")
+    return f"{drawing.tooth_type or ''}{value}" if value else (drawing.tooth_type or "-")
+
+
+def display_module(drawing: ProductDrawing) -> str:
+    return drawing.module_text or fmt_option(drawing.module) or "-"
+
+
+def display_common_normal_length(drawing: ProductDrawing) -> str:
+    return drawing.common_normal_length_text or fmt_option(drawing.common_normal_length) or "-"
+
+
+def common_normal_value_from_text(value: str | None, tooth_type: str | None) -> float | None:
+    text = value or ""
+    numbers = [float(item) for item in re.findall(r"\d+(?:\.\d+)?", text)]
+    if not numbers:
+        return None
+    if len(numbers) == 1:
+        return numbers[0]
+    normalized_type = normalize_tooth_type(tooth_type) or ""
+    if normalized_type.startswith("O"):
+        return max(numbers)
+    if normalized_type.startswith("I"):
+        return min(numbers)
+    return numbers[0]
 
 
 def drawing_version_code(value: ProductDrawing | int | None) -> str:
@@ -66,11 +124,20 @@ def apply_recognition_to_drawing(drawing: ProductDrawing) -> None:
     drawing.product_thickness = recognized.get("product_thickness") or gear.get("product_thickness")
     drawing.plate_thickness = recognized.get("plate_thickness") or gear.get("plate_thickness")
     drawing.teeth_count = recognized.get("teeth_count") or gear.get("teeth_count")
+    drawing.tooth_type = normalize_tooth_type(recognized.get("tooth_type") or gear.get("tooth_type"))
+    drawing.teeth_count_text = clean_text_value(recognized.get("teeth_count_text") or gear.get("teeth_count_text") or drawing.teeth_count)
     drawing.module = recognized.get("module") or gear.get("module")
+    drawing.module_text = clean_text_value(recognized.get("module_text") or gear.get("module_text") or drawing.module)
     drawing.pressure_angle = recognized.get("pressure_angle") or gear.get("pressure_angle")
     drawing.profile_shift_coefficient = recognized.get("profile_shift_coefficient") or gear.get("profile_shift_coefficient")
     drawing.span_teeth_count = recognized.get("span_teeth_count") or gear.get("span_teeth_count")
     drawing.common_normal_length = recognized.get("common_normal_length") or gear.get("common_normal_length")
+    drawing.common_normal_length_text = clean_text_value(
+        recognized.get("common_normal_length_text")
+        or gear.get("common_normal_length_text")
+        or drawing.common_normal_length
+    )
+    drawing.common_normal_length = common_normal_value_from_text(drawing.common_normal_length_text, drawing.tooth_type) or drawing.common_normal_length
     drawing.pin_diameter = recognized.get("pin_diameter") or gear.get("pin_diameter")
     drawing.pin_span = recognized.get("pin_span") or gear.get("pin_span")
     drawing.parse_result_json = {"candidates": candidates, "recognized": recognized}
@@ -232,6 +299,10 @@ def apply_drawing_filters(
             | (ProductDrawing.product_category.ilike(like))
             | (ProductDrawing.remark.ilike(like))
             | (ProductDrawing.material.ilike(like))
+            | (ProductDrawing.tooth_type.ilike(like))
+            | (ProductDrawing.teeth_count_text.ilike(like))
+            | (ProductDrawing.module_text.ilike(like))
+            | (ProductDrawing.common_normal_length_text.ilike(like))
         )
         query = query.filter(keyword_filter)
     if product_category.strip():
@@ -257,18 +328,33 @@ def apply_drawing_filters(
     inner_value = optional_float(inner_diameter)
     if inner_value is not None:
         query = query.filter(float_between_filter(ProductDrawing.min_inner_diameter, inner_value))
-    teeth_value = optional_int(teeth_count)
-    if teeth_value is not None:
-        query = query.filter(ProductDrawing.teeth_count == teeth_value)
-    module_value = optional_float(module)
-    if module_value is not None:
-        query = query.filter(float_between_filter(ProductDrawing.module, module_value))
+    teeth_text = teeth_count.strip()
+    if teeth_text:
+        teeth_value = optional_int(teeth_text)
+        like = f"%{teeth_text}%"
+        if teeth_value is not None:
+            query = query.filter((ProductDrawing.teeth_count == teeth_value) | (ProductDrawing.teeth_count_text.ilike(like)))
+        else:
+            query = query.filter((ProductDrawing.teeth_count_text.ilike(like)) | (ProductDrawing.tooth_type.ilike(like)))
+    module_text = module.strip()
+    if module_text:
+        module_value = optional_float(module_text)
+        like = f"%{module_text}%"
+        if module_value is not None:
+            query = query.filter(float_between_filter(ProductDrawing.module, module_value) | ProductDrawing.module_text.ilike(like))
+        else:
+            query = query.filter(ProductDrawing.module_text.ilike(like))
     pressure_angle_value = optional_float(pressure_angle)
     if pressure_angle_value is not None:
         query = query.filter(float_between_filter(ProductDrawing.pressure_angle, pressure_angle_value))
-    common_normal_length_value = optional_float(common_normal_length)
-    if common_normal_length_value is not None:
-        query = query.filter(float_between_filter(ProductDrawing.common_normal_length, common_normal_length_value))
+    common_normal_length_text = common_normal_length.strip()
+    if common_normal_length_text:
+        common_normal_length_value = optional_float(common_normal_length_text)
+        like = f"%{common_normal_length_text}%"
+        if common_normal_length_value is not None:
+            query = query.filter(float_between_filter(ProductDrawing.common_normal_length, common_normal_length_value) | ProductDrawing.common_normal_length_text.ilike(like))
+        else:
+            query = query.filter(ProductDrawing.common_normal_length_text.ilike(like))
     pin_diameter_value = optional_float(pin_diameter)
     if pin_diameter_value is not None:
         query = query.filter(float_between_filter(ProductDrawing.pin_diameter, pin_diameter_value))
@@ -1667,6 +1753,7 @@ def inventory_page(
             | (MaterialInventory.material.ilike(like))
             | (MaterialInventory.usable_size.ilike(like))
             | (MaterialInventory.location.ilike(like))
+            | (MaterialInventory.paper_material.ilike(like))
             | (MaterialInventory.source_product_code.ilike(like))
         )
     if inventory_type:
@@ -1691,18 +1778,21 @@ def inventory_page(
                 "thickness": item.thickness,
                 "quantity": 0,
                 "locations": set(),
+                "paper_materials": set(),
                 "latest": item.updated_at or item.created_at,
             }
         grouped[code]["quantity"] += item.quantity
         if item.location:
             grouped[code]["locations"].add(item.location)
+        if item.paper_material:
+            grouped[code]["paper_materials"].add(item.paper_material)
         item_time = item.updated_at or item.created_at
         if item_time and item_time > grouped[code]["latest"]:
             grouped[code]["latest"] = item_time
     rows = "".join(
         f"""
         <tr>
-          <td>{group['code']}</td><td>{group['material']}</td><td>{group['thickness']}</td><td><strong>{group['quantity']}</strong></td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td>{group['latest'] or '-'}</td><td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe="")}'>查看明细</a></td>
+          <td>{group['code']}</td><td>{group['material']}</td><td>{group['thickness']}</td><td>{' / '.join(sorted(group['paper_materials'])) or '-'}</td><td><strong>{group['quantity']}</strong></td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td>{group['latest'] or '-'}</td><td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe="")}'>查看明细</a></td>
         </tr>
         """
         for group in grouped.values()
@@ -1726,7 +1816,7 @@ def inventory_page(
         <a class="btn secondary" href="/admin/inventory">清空</a>
       </form>
     </section>
-    <section class="card"><h2>成品汇总</h2><table><thead><tr><th>产品编号</th><th>材质</th><th>厚度</th><th>总数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='7'>暂无成品库存。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>成品汇总</h2><table><thead><tr><th>产品编号</th><th>材质</th><th>厚度</th><th>纸材质</th><th>总数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='8'>暂无成品库存。</td></tr>"}</tbody></table></section>
     """
     return page("成品管理", body)
 
@@ -2499,6 +2589,7 @@ def inventory_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
         <div><label>选择产品型号</label><select id="product-inbound-drawing-select" name="drawing_id" required>{drawing_options}</select></div>
         <div><label>数量</label><input name="quantity" type="number" value="1" min="1" required></div>
         <div><label>库位</label><input name="location" list="product-in-location-options" placeholder="例如 A-01"><datalist id="product-in-location-options">{location_candidates}</datalist></div>
+        <div><label>纸材质/颜色</label><input name="paper_material" placeholder="例如 蓝色纸 / 黄色纸"></div>
         <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
         <p class="confirm-hint">提交前会先核对产品型号、数量、库位和操作人，确认无误后才会入库。</p>
         <div style="align-self:end"><button class="btn" type="submit">确认入库</button></div>
@@ -2528,6 +2619,7 @@ def inventory_outbound_page(
             (MaterialInventory.material_code.ilike(like))
             | (MaterialInventory.material.ilike(like))
             | (MaterialInventory.location.ilike(like))
+            | (MaterialInventory.paper_material.ilike(like))
             | (MaterialInventory.source_product_code.ilike(like))
         )
     if material.strip():
@@ -2548,11 +2640,14 @@ def inventory_outbound_page(
                 "thickness": item.thickness,
                 "quantity": 0,
                 "locations": set(),
+                "paper_materials": set(),
                 "latest": item.updated_at or item.created_at,
             }
         grouped[code]["quantity"] += item.quantity
         if item.location:
             grouped[code]["locations"].add(item.location)
+        if item.paper_material:
+            grouped[code]["paper_materials"].add(item.paper_material)
         item_time = item.updated_at or item.created_at
         if item_time and item_time > grouped[code]["latest"]:
             grouped[code]["latest"] = item_time
@@ -2567,14 +2662,14 @@ def inventory_outbound_page(
         if drawing.product_code and drawing.product_code not in drawing_map:
             drawing_map[drawing.product_code] = drawing
     drawing_options = "".join(
-        f"<option value='{drawing_map[code].id}'>{html.escape(code)}｜{html.escape(drawing_map[code].product_category or '-')}｜{drawing_version_code(drawing_map[code])}｜{html.escape(str(group['material']))}｜厚度 {group['thickness']}｜库存 {group['quantity']}｜库位 {' / '.join(sorted(group['locations'])) or '-'}</option>"
+        f"<option value='{drawing_map[code].id}'>{html.escape(code)}｜{html.escape(drawing_map[code].product_category or '-')}｜{drawing_version_code(drawing_map[code])}｜{html.escape(str(group['material']))}｜厚度 {group['thickness']}｜纸材质 {' / '.join(sorted(group['paper_materials'])) or '-'}｜库存 {group['quantity']}｜库位 {' / '.join(sorted(group['locations'])) or '-'}</option>"
         for code, group in grouped.items()
         if code in drawing_map
     ) or "<option value='' disabled selected>暂无可出库成品库存</option>"
     rows = "".join(
         f"""
         <tr>
-          <td>{html.escape(str(group['code']))}</td><td>{group['material']}</td><td>{group['thickness']}</td><td><strong>{group['quantity']}</strong></td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td>{group['latest'] or '-'}</td><td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe="")}'>查看明细</a></td>
+          <td>{html.escape(str(group['code']))}</td><td>{group['material']}</td><td>{group['thickness']}</td><td>{' / '.join(sorted(group['paper_materials'])) or '-'}</td><td><strong>{group['quantity']}</strong></td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td>{group['latest'] or '-'}</td><td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe="")}'>查看明细</a></td>
         </tr>
         """
         for group in grouped.values()
@@ -2604,7 +2699,7 @@ def inventory_outbound_page(
       </form>
       <form method="post" action="/admin/inventory/product/out" class="form-grid" data-confirm-flow="true" data-confirm-title="确认成品出库" data-confirm-note="库位为空时，系统会按所有库位的最早入库批次 FIFO 扣减，并生成成品出库流水。">
         <input type="hidden" name="client_request_id" value="{client_request_id}">
-        <div><label>筛选产品型号</label><input type="search" data-select-filter="product-outbound-drawing-select" placeholder="输入型号、分类、材质、厚度、库存或库位"></div>
+        <div><label>筛选产品型号</label><input type="search" data-select-filter="product-outbound-drawing-select" placeholder="输入型号、分类、材质、纸材质、厚度、库存或库位"></div>
         <div><label>选择产品型号</label><select id="product-outbound-drawing-select" name="drawing_id" required>{drawing_options}</select></div>
         <div><label>出库数量</label><input name="quantity" type="number" value="1" min="1" required></div>
         <div><label>指定库位，可选</label><input name="location" value="{html.escape(location.strip())}" list="product-out-location-options" placeholder="不填则所有库位FIFO"><datalist id="product-out-location-options">{location_candidates}</datalist></div>
@@ -2616,7 +2711,7 @@ def inventory_outbound_page(
         <div style="align-self:end"><button class="btn" type="submit">确认出库</button></div>
       </form>
     </section>
-    <section class="card"><h2>当前可出库成品库存</h2><table><thead><tr><th>产品编号</th><th>材质</th><th>厚度</th><th>可出库数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='7'>暂无可出库成品库存。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>当前可出库成品库存</h2><table><thead><tr><th>产品编号</th><th>材质</th><th>厚度</th><th>纸材质</th><th>可出库数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='8'>暂无可出库成品库存。</td></tr>"}</tbody></table></section>
     """
     return page("成品出库", body)
 
@@ -2626,12 +2721,14 @@ def create_inventory_from_page(
     drawing_id: int = Form(...),
     quantity: int = Form(1),
     location: str = Form(""),
+    paper_material: str = Form(""),
     operator_name: str = Form(""),
     client_request_id: str = Form(""),
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    idempotency_key = f"admin_product_inbound:{client_request_id.strip()}" if client_request_id.strip() else None
+    client_request_value = client_request_id.strip() if isinstance(client_request_id, str) else ""
+    idempotency_key = f"admin_product_inbound:{client_request_value}" if client_request_value else None
     drawing = db.get(ProductDrawing, drawing_id)
     if not drawing or drawing.confirmed != 1 or drawing.is_active != 1:
         raise HTTPException(status_code=404, detail="已确认图纸不存在")
@@ -2639,6 +2736,7 @@ def create_inventory_from_page(
         drawing=drawing,
         quantity=quantity,
         location=location,
+        paper_material=paper_material,
         operator_name=operator_name or None,
         db=db,
         idempotency_key=idempotency_key,
@@ -2767,6 +2865,7 @@ def inventory_product_detail_page(product_code: str, db: Session = Depends(get_d
           <td>{item.material_code or product_code}</td>
           <td>{item.quantity}</td>
           <td>{item.location or '-'}</td>
+          <td>{item.paper_material or '-'}</td>
           <td>{item.material}</td>
           <td>{item.thickness}</td>
           <td>{item.status}</td>
@@ -2794,7 +2893,7 @@ def inventory_product_detail_page(product_code: str, db: Session = Depends(get_d
     )
     body = f"""
     <div class="top"><div><h1>成品明细：{html.escape(product_code)}</h1><p class="muted">当前总数量：<strong>{total_quantity}</strong></p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回成品汇总</a></div></div>
-    <section class="card"><h2>入库批次</h2><table><thead><tr><th>产品型号</th><th>数量</th><th>库位</th><th>材质</th><th>厚度</th><th>状态</th><th>创建时间</th><th>更新时间</th></tr></thead><tbody>{rows or "<tr><td colspan='8'>暂无该成品库存。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>入库批次</h2><table><thead><tr><th>产品型号</th><th>数量</th><th>库位</th><th>纸材质</th><th>材质</th><th>厚度</th><th>状态</th><th>创建时间</th><th>更新时间</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无该成品库存。</td></tr>"}</tbody></table></section>
     <section class="card"><h2>产品流水</h2><table><thead><tr><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>关联库位</th><th>客户/去向</th><th>操作人</th><th>备注</th><th>时间</th></tr></thead><tbody>{transaction_rows or "<tr><td colspan='9'>暂无该产品流水。</td></tr>"}</tbody></table></section>
     """
     return page("库存明细", body)
@@ -2879,6 +2978,7 @@ def inventory_detail_page(inventory_id: int, db: Session = Depends(get_db)) -> H
         <div><span class="muted">长宽</span><strong>{item.length or '-'} × {item.width or '-'}</strong></div>
         <div><span class="muted">数量</span><strong>{item.quantity}</strong></div>
         <div><span class="muted">库位</span><strong>{item.location or '-'}</strong></div>
+        <div><span class="muted">纸材质</span><strong>{item.paper_material or '-'}</strong></div>
         <div><span class="muted">状态</span><strong>{item.status}</strong></div>
         <div><span class="muted">来源产品</span><strong>{item.source_product_code or '-'}</strong></div>
         <div><span class="muted">来源图纸</span><strong>{drawing_version_label(db, item.source_drawing_id)}</strong></div>
@@ -3673,17 +3773,17 @@ def drawings_page(
         <a class="btn secondary" href="/admin/drawings">清空</a>
       </form>
     </section>
-    <section class="card"><h2>图纸记录</h2><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table></section>
+    <section class="card"><h2>图纸记录</h2><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>模数</th><th>公法线</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table></section>
     """
     return page("图纸识别", body)
 
 
 def drawing_rows(drawings: list[ProductDrawing], show_id: bool = True) -> str:
     rows = "".join(
-        f"<tr><td>{html.escape(d.product_category or '-')}</td><td>{html.escape(d.product_code or '-')}</td><td>{drawing_version_code(d)}</td><td>{'当前' if d.is_active else '历史'}</td><td>{html.escape(d.product_name or '-')}</td><td>{html.escape(d.remark or '-')}</td><td>{html.escape(d.material or '-')}</td><td>{fmt_option(d.product_thickness) or '-'}</td><td>{fmt_option(d.plate_thickness) or '-'}</td><td>{d.max_outer_diameter or '-'}</td><td>{d.min_inner_diameter or '-'}</td><td>{d.teeth_count or '-'}</td><td>{'已确认' if d.confirmed else '待确认'}</td><td><a class='btn secondary' href='/admin/drawings/{d.id}'>查看</a></td></tr>"
+        f"<tr><td>{html.escape(d.product_category or '-')}</td><td>{html.escape(d.product_code or '-')}</td><td>{drawing_version_code(d)}</td><td>{'当前' if d.is_active else '历史'}</td><td>{html.escape(d.product_name or '-')}</td><td>{html.escape(d.remark or '-')}</td><td>{html.escape(d.material or '-')}</td><td>{fmt_option(d.product_thickness) or '-'}</td><td>{fmt_option(d.plate_thickness) or '-'}</td><td>{d.max_outer_diameter or '-'}</td><td>{d.min_inner_diameter or '-'}</td><td>{html.escape(display_teeth_count(d))}</td><td>{html.escape(display_module(d))}</td><td>{html.escape(display_common_normal_length(d))}</td><td>{'已确认' if d.confirmed else '待确认'}</td><td><a class='btn secondary' href='/admin/drawings/{d.id}'>查看</a></td></tr>"
         for d in drawings
     )
-    return rows or "<tr><td colspan='14'>暂无图纸记录。</td></tr>"
+    return rows or "<tr><td colspan='16'>暂无图纸记录。</td></tr>"
 
 
 @router.get("/admin/drawings/confirmed", response_class=HTMLResponse)
@@ -3766,7 +3866,7 @@ def confirmed_drawings_page(
         <button class="btn" type="submit">搜索</button>
         <a class="btn secondary" href="/admin/drawings/confirmed">清空</a>
       </form>
-      <table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings, show_id=False)}</tbody></table>
+      <table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>模数</th><th>公法线</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings, show_id=False)}</tbody></table>
     </section>
     """
     return page("已确认图纸", body)
@@ -3777,7 +3877,7 @@ def pending_drawings_page(db: Session = Depends(get_db)) -> HTMLResponse:
     drawings = db.query(ProductDrawing).filter(ProductDrawing.confirmed == 0).order_by(ProductDrawing.created_at.desc()).all()
     body = f"""
     <div class="top"><div><h1>待确认图纸</h1><p class="muted">这些图纸需要人工检查并保存确认结果。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/confirmed">已确认图纸</a></div></div>
-    <section class="card"><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table></section>
+    <section class="card"><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>模数</th><th>公法线</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table></section>
     """
     return page("待确认图纸", body)
 
@@ -3922,11 +4022,12 @@ def drawing_detail_page(drawing_id: int, notice: str = "", db: Session = Depends
         <div><label>内径</label><input name="min_inner_diameter" type="number" step="0.01" value="{safe_value(drawing.min_inner_diameter)}" placeholder="mm"></div>
         <div><label>总成品厚度</label><input name="product_thickness" type="number" step="0.001" value="{safe_value(drawing.product_thickness)}" placeholder="含复合材料总厚"></div>
         <div><label>钢板厚度</label><input name="plate_thickness" type="number" step="0.001" value="{safe_value(drawing.plate_thickness)}" placeholder="基板厚度"></div>
-        <div><label>齿数 z</label><input name="teeth_count" type="number" value="{safe_value(drawing.teeth_count)}"></div>
-        <div><label>模数 m</label><input name="module" type="number" step="0.001" value="{safe_value(drawing.module)}"></div>
+        <div><label>齿型</label><select name="tooth_type">{tooth_type_options(drawing.tooth_type)}</select></div>
+        <div><label>齿数 z</label><input name="teeth_count" value="{safe_value(drawing.teeth_count_text or drawing.teeth_count)}" placeholder="例如 41 / 48(52)"></div>
+        <div><label>模数 m</label><input name="module" value="{safe_value(drawing.module_text or drawing.module)}" placeholder="公制数字或英制字母"></div>
         <div><label>压力角 α</label><input name="pressure_angle" type="number" step="0.01" value="{safe_value(drawing.pressure_angle)}" placeholder="常见20°"></div>
         <div><label>变位系数 x</label><input name="profile_shift_coefficient" type="number" step="0.001" value="{safe_value(drawing.profile_shift_coefficient)}"></div>
-        <div><label>公法线长度 L</label><input name="common_normal_length" type="number" step="0.001" value="{safe_value(drawing.common_normal_length)}" placeholder="mm"></div>
+        <div><label>公法线长度 L</label><input name="common_normal_length" value="{safe_value(drawing.common_normal_length_text or drawing.common_normal_length)}" placeholder="可填范围，例如 58.26-58.14"></div>
         <div><label>跨齿数 n</label><input name="span_teeth_count" type="number" value="{safe_value(drawing.span_teeth_count)}"></div>
         <div><label>量棒直径 dp</label><input name="pin_diameter" type="number" step="0.001" value="{safe_value(drawing.pin_diameter)}" placeholder="mm"></div>
         <div><label>棒间距 M</label><input name="pin_span" type="number" step="0.001" value="{safe_value(drawing.pin_span)}" placeholder="mm"></div>
@@ -4090,6 +4191,7 @@ def confirm_drawing_from_page(
     min_inner_diameter: str = Form(""),
     product_thickness: str = Form(""),
     plate_thickness: str = Form(""),
+    tooth_type: str = Form(""),
     teeth_count: str = Form(""),
     module: str = Form(""),
     pressure_angle: str = Form(""),
@@ -4104,19 +4206,22 @@ def confirm_drawing_from_page(
     drawing = db.get(ProductDrawing, drawing_id)
     if not drawing:
         raise HTTPException(status_code=404, detail="图纸不存在")
-    ensure_drawing_can_be_changed(drawing, db)
     was_confirmed = drawing.confirmed == 1
     before_data = drawing_snapshot(drawing)
     max_outer_diameter_value = optional_float(max_outer_diameter)
     min_inner_diameter_value = optional_float(min_inner_diameter)
     product_thickness_value = optional_float(product_thickness)
     plate_thickness_value = optional_float(plate_thickness)
-    teeth_count_value = optional_int(teeth_count)
-    module_value = optional_float(module)
+    tooth_type_value = normalize_tooth_type(tooth_type)
+    teeth_count_text = clean_text_value(teeth_count)
+    teeth_count_value = first_int_value(teeth_count_text)
+    module_text = clean_text_value(module)
+    module_value = optional_float(module) if module_text else None
     pressure_angle_value = optional_float(pressure_angle)
     profile_shift_coefficient_value = optional_float(profile_shift_coefficient)
     span_teeth_count_value = optional_int(span_teeth_count)
-    common_normal_length_value = optional_float(common_normal_length)
+    common_normal_length_text = clean_text_value(common_normal_length)
+    common_normal_length_value = common_normal_value_from_text(common_normal_length_text, tooth_type_value)
     pin_diameter_value = optional_float(pin_diameter)
     pin_span_value = optional_float(pin_span)
     drawing.product_code = product_code or None
@@ -4129,12 +4234,16 @@ def confirm_drawing_from_page(
     drawing.min_inner_diameter = min_inner_diameter_value
     drawing.product_thickness = product_thickness_value
     drawing.plate_thickness = plate_thickness_value
+    drawing.tooth_type = tooth_type_value
     drawing.teeth_count = teeth_count_value
+    drawing.teeth_count_text = teeth_count_text
     drawing.module = module_value
+    drawing.module_text = module_text
     drawing.pressure_angle = pressure_angle_value
     drawing.profile_shift_coefficient = profile_shift_coefficient_value
     drawing.span_teeth_count = span_teeth_count_value
     drawing.common_normal_length = common_normal_length_value
+    drawing.common_normal_length_text = common_normal_length_text
     drawing.pin_diameter = pin_diameter_value
     drawing.pin_span = pin_span_value
     drawing.expected_scrap_size = expected_scrap_size or None

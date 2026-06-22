@@ -25,6 +25,7 @@ DRAWING_PARAMETERS: dict[str, dict] = {
     "bounding_length": {"label": "外框长度", "aliases": ("外框长度", "包围长度", "长度", "bounding_length"), "kind": "number"},
     "bounding_width": {"label": "外框宽度", "aliases": ("外框宽度", "包围宽度", "宽度", "bounding_width"), "kind": "number"},
     "expected_scrap_size": {"label": "中心余料尺寸", "aliases": ("中心余料", "余料尺寸", "中心余料尺寸", "expected_scrap_size"), "kind": "text"},
+    "tooth_type": {"label": "齿型", "aliases": ("齿型", "齿形", "tooth_type", "IT", "IL", "IR", "OT", "OL", "OR"), "kind": "text"},
     "teeth_count": {"label": "齿数", "aliases": ("齿数", "齿", "z", "teeth_count"), "kind": "number"},
     "module": {"label": "模数", "aliases": ("模数", "m", "module"), "kind": "number"},
     "pressure_angle": {"label": "压力角", "aliases": ("压力角", "α", "pressure_angle"), "kind": "number"},
@@ -79,7 +80,7 @@ def list_drawings_by_parameter(intent: AssistantIntent, db: Session) -> Assistan
                 "material": drawing.material or "-",
                 "version": f"A{drawing.version or 1}",
                 "status": "已确认" if drawing.confirmed else "待确认",
-                "editable": "不可直接修改" if locked else "可修改",
+                "editable": "参数可修正；不可删除/重识别" if locked else "可修改/重识别/删除",
                 "drawing_id": drawing.id,
             }
         )
@@ -123,6 +124,22 @@ def detect_drawing_parameter(message: str) -> str | None:
 
 def _apply_value_filter(query, field: str, keyword: str, kind: str):
     if kind == "number":
+        like = f"%{keyword}%"
+        if field == "teeth_count":
+            number = _extract_number(keyword)
+            if number is not None:
+                return query.filter((ProductDrawing.teeth_count == int(number)) | ProductDrawing.teeth_count_text.ilike(like))
+            return query.filter(ProductDrawing.teeth_count_text.ilike(like) | ProductDrawing.tooth_type.ilike(like))
+        if field == "module":
+            number = _extract_number(keyword)
+            if number is not None:
+                return query.filter(_number_clause(ProductDrawing.module, number) | ProductDrawing.module_text.ilike(like))
+            return query.filter(ProductDrawing.module_text.ilike(like))
+        if field == "common_normal_length":
+            number = _extract_number(keyword)
+            if number is not None:
+                return query.filter(_number_clause(ProductDrawing.common_normal_length, number) | ProductDrawing.common_normal_length_text.ilike(like))
+            return query.filter(ProductDrawing.common_normal_length_text.ilike(like))
         number = _extract_number(keyword)
         if number is not None:
             if field == "thickness":
@@ -152,7 +169,7 @@ def _extract_value_keyword(message: str, aliases: tuple[str, ...]) -> str:
         text = text.replace(phrase, " ")
     for alias in aliases:
         text = text.replace(str(alias), " ")
-    match = re.search(r"(?:为|是|等于|=|大于|小于)\s*([A-Za-z0-9#.\-]+)", message)
+    match = re.search(r"(?:为|是|等于|=|大于|小于)\s*([A-Za-z0-9#.\-()]+)", message)
     if match:
         return match.group(1).strip()
     return " ".join(part.strip(" ，,。？?：:") for part in text.split() if part.strip(" ，,。？?：:"))
@@ -186,4 +203,11 @@ def _number_clause(column, value: float | int):
 def _drawing_value(drawing: ProductDrawing, field: str):
     if field == "thickness":
         return drawing.plate_thickness or drawing.product_thickness or drawing.thickness
+    if field == "teeth_count":
+        value = drawing.teeth_count_text or drawing.teeth_count
+        return f"{drawing.tooth_type or ''}{value}" if value else drawing.tooth_type
+    if field == "module":
+        return drawing.module_text or drawing.module
+    if field == "common_normal_length":
+        return drawing.common_normal_length_text or drawing.common_normal_length
     return getattr(drawing, field)

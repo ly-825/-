@@ -42,6 +42,18 @@ def _drawing_version_code(value) -> str:
     return f"A{value or 1}"
 
 
+def _display_teeth_count(drawing: ProductDrawing) -> object:
+    return drawing.teeth_count_text or drawing.teeth_count or ""
+
+
+def _display_module(drawing: ProductDrawing) -> object:
+    return drawing.module_text or drawing.module or ""
+
+
+def _display_common_normal_length(drawing: ProductDrawing) -> object:
+    return drawing.common_normal_length_text or drawing.common_normal_length or ""
+
+
 def _optional_float(value: str | None) -> float | None:
     try:
         return float(value) if value and value.strip() else None
@@ -75,6 +87,7 @@ def _apply_inventory_filters(query, filters: dict, inventory_type: str):
             | (MaterialInventory.location.ilike(like))
             | (MaterialInventory.usable_size.ilike(like))
             | (MaterialInventory.source_product_code.ilike(like))
+            | (MaterialInventory.paper_material.ilike(like))
         )
     material = (filters.get("material") or "").strip()
     if material:
@@ -212,6 +225,10 @@ def _apply_drawing_filters(query, filters: dict):
             | (ProductDrawing.product_category.ilike(like))
             | (ProductDrawing.remark.ilike(like))
             | (ProductDrawing.material.ilike(like))
+            | (ProductDrawing.tooth_type.ilike(like))
+            | (ProductDrawing.teeth_count_text.ilike(like))
+            | (ProductDrawing.module_text.ilike(like))
+            | (ProductDrawing.common_normal_length_text.ilike(like))
         )
         query = query.filter(keyword_filter)
     product_category = (filters.get("product_category") or "").strip()
@@ -239,18 +256,33 @@ def _apply_drawing_filters(query, filters: dict):
     inner_diameter = _optional_float(filters.get("inner_diameter"))
     if inner_diameter is not None:
         query = query.filter(_float_between_filter(ProductDrawing.min_inner_diameter, inner_diameter))
-    teeth_count = _optional_int(filters.get("teeth_count"))
-    if teeth_count is not None:
-        query = query.filter(ProductDrawing.teeth_count == teeth_count)
-    module = _optional_float(filters.get("module"))
-    if module is not None:
-        query = query.filter(_float_between_filter(ProductDrawing.module, module))
+    teeth_count_text = (filters.get("teeth_count") or "").strip()
+    if teeth_count_text:
+        teeth_count = _optional_int(teeth_count_text)
+        like = f"%{teeth_count_text}%"
+        if teeth_count is not None:
+            query = query.filter((ProductDrawing.teeth_count == teeth_count) | ProductDrawing.teeth_count_text.ilike(like))
+        else:
+            query = query.filter((ProductDrawing.teeth_count_text.ilike(like)) | ProductDrawing.tooth_type.ilike(like))
+    module_text = (filters.get("module") or "").strip()
+    if module_text:
+        module = _optional_float(module_text)
+        like = f"%{module_text}%"
+        if module is not None:
+            query = query.filter(_float_between_filter(ProductDrawing.module, module) | ProductDrawing.module_text.ilike(like))
+        else:
+            query = query.filter(ProductDrawing.module_text.ilike(like))
     pressure_angle = _optional_float(filters.get("pressure_angle"))
     if pressure_angle is not None:
         query = query.filter(_float_between_filter(ProductDrawing.pressure_angle, pressure_angle))
-    common_normal_length = _optional_float(filters.get("common_normal_length"))
-    if common_normal_length is not None:
-        query = query.filter(_float_between_filter(ProductDrawing.common_normal_length, common_normal_length))
+    common_normal_length_text = (filters.get("common_normal_length") or "").strip()
+    if common_normal_length_text:
+        common_normal_length = _optional_float(common_normal_length_text)
+        like = f"%{common_normal_length_text}%"
+        if common_normal_length is not None:
+            query = query.filter(_float_between_filter(ProductDrawing.common_normal_length, common_normal_length) | ProductDrawing.common_normal_length_text.ilike(like))
+        else:
+            query = query.filter(ProductDrawing.common_normal_length_text.ilike(like))
     pin_diameter = _optional_float(filters.get("pin_diameter"))
     if pin_diameter is not None:
         query = query.filter(_float_between_filter(ProductDrawing.pin_diameter, pin_diameter))
@@ -272,6 +304,7 @@ def _product_catalog_rows(db: Session, filters: dict) -> tuple[list[str], list[l
         "钢板厚度",
         "外径",
         "内径",
+        "齿型",
         "齿数",
         "模数",
         "压力角",
@@ -295,12 +328,13 @@ def _product_catalog_rows(db: Session, filters: dict) -> tuple[list[str], list[l
             _fmt_num(drawing.plate_thickness),
             _fmt_num(drawing.max_outer_diameter),
             _fmt_num(drawing.min_inner_diameter),
-            drawing.teeth_count or "",
-            _fmt_num(drawing.module),
+            drawing.tooth_type or "",
+            _display_teeth_count(drawing),
+            _display_module(drawing),
             _fmt_num(drawing.pressure_angle),
             _fmt_num(drawing.profile_shift_coefficient),
             drawing.span_teeth_count or "",
-            _fmt_num(drawing.common_normal_length),
+            _display_common_normal_length(drawing),
             _fmt_num(drawing.pin_diameter),
             _fmt_num(drawing.pin_span),
             drawing.expected_scrap_size or "",
@@ -320,8 +354,8 @@ def build_export_rows(module: str, filters: dict, db: Session) -> tuple[str, lis
         return EXPORT_MODULES[module], *_product_catalog_rows(db, filters)
     if module == "product_inventory":
         items = _apply_inventory_filters(db.query(MaterialInventory), filters, "product").order_by(MaterialInventory.created_at.desc()).all()
-        rows = [[item.material_code or item.source_product_code or "", item.quantity, item.material, _fmt_num(item.thickness), item.location or "", item.source_drawing_id or "", _fmt_time(item.created_at)] for item in items]
-        return EXPORT_MODULES[module], ["产品型号", "库存数量", "材质", "厚度", "库位", "来源图纸", "创建时间"], rows
+        rows = [[item.material_code or item.source_product_code or "", item.quantity, item.material, _fmt_num(item.thickness), item.paper_material or "", item.location or "", item.source_drawing_id or "", _fmt_time(item.created_at)] for item in items]
+        return EXPORT_MODULES[module], ["产品型号", "库存数量", "材质", "厚度", "纸材质", "库位", "来源图纸", "创建时间"], rows
     if module == "raw_plate_inventory":
         items = _apply_inventory_filters(db.query(MaterialInventory), filters, "raw_plate").order_by(MaterialInventory.created_at.desc()).all()
         rows = [[item.material, _fmt_num(item.length), _fmt_num(item.width), _fmt_num(item.thickness), item.quantity, item.material_code or "", item.location or "", _fmt_time(item.created_at)] for item in items]

@@ -16,6 +16,7 @@ class InventoryBase(BaseModel):
     usable_size: str | None = None
     quantity: int = 1
     location: str | None = None
+    paper_material: str | None = None
     status: str = "available"
     source_product_code: str | None = None
     source_drawing_id: int | None = None
@@ -78,11 +79,15 @@ class DrawingConfirm(BaseModel):
     product_thickness: float | None = None
     plate_thickness: float | None = None
     teeth_count: int | None = None
+    teeth_count_text: str | None = None
+    tooth_type: str | None = None
     module: float | None = None
+    module_text: str | None = None
     pressure_angle: float | None = None
     profile_shift_coefficient: float | None = None
     span_teeth_count: int | None = None
     common_normal_length: float | None = None
+    common_normal_length_text: str | None = None
     pin_diameter: float | None = None
     pin_span: float | None = None
 

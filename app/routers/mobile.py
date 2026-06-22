@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing
 from app.schemas import DrawingConfirm, DrawingOut, DrawingUploadOut
+from app.services.drawing_parameters import common_normal_value_from_text, first_int_value, normalize_tooth_type, plain_float_value
 from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_drawing
 from app.services.drawing_version import apply_drawing_version
 from app.services.inventory_service import ensure_drawing_can_be_changed, inventory_write_lock, product_inbound_from_drawing, reverse_inventory_transaction
@@ -20,6 +21,7 @@ class ProductInboundPayload(BaseModel):
     drawing_id: int
     quantity: int = 1
     location: str | None = None
+    paper_material: str | None = None
     operator_name: str | None = None
     client_request_id: str | None = None
 
@@ -70,6 +72,7 @@ class ProductInventoryGroupOut(BaseModel):
     thickness: float | None
     quantity: int
     locations: list[str]
+    paper_materials: list[str] = []
     latest: str | None
 
 
@@ -117,6 +120,7 @@ class InventoryItemOut(BaseModel):
     usable_size: str | None
     quantity: int
     location: str | None
+    paper_material: str | None = None
     status: str
     source_product_code: str | None
 
@@ -190,6 +194,10 @@ def _apply_drawing_filters(
             | (ProductDrawing.product_category.ilike(like))
             | (ProductDrawing.remark.ilike(like))
             | (ProductDrawing.material.ilike(like))
+            | (ProductDrawing.tooth_type.ilike(like))
+            | (ProductDrawing.teeth_count_text.ilike(like))
+            | (ProductDrawing.module_text.ilike(like))
+            | (ProductDrawing.common_normal_length_text.ilike(like))
         )
         query = query.filter(keyword_filter)
     if product_category.strip():
@@ -215,18 +223,33 @@ def _apply_drawing_filters(
     inner_value = _optional_float(inner_diameter)
     if inner_value is not None:
         query = query.filter(_float_between_filter(ProductDrawing.min_inner_diameter, inner_value))
-    teeth_value = _optional_int(teeth_count)
-    if teeth_value is not None:
-        query = query.filter(ProductDrawing.teeth_count == teeth_value)
-    module_value = _optional_float(module)
-    if module_value is not None:
-        query = query.filter(_float_between_filter(ProductDrawing.module, module_value))
+    teeth_text = teeth_count.strip()
+    if teeth_text:
+        teeth_value = _optional_int(teeth_text)
+        like = f"%{teeth_text}%"
+        if teeth_value is not None:
+            query = query.filter((ProductDrawing.teeth_count == teeth_value) | ProductDrawing.teeth_count_text.ilike(like))
+        else:
+            query = query.filter(ProductDrawing.teeth_count_text.ilike(like) | ProductDrawing.tooth_type.ilike(like))
+    module_text = module.strip()
+    if module_text:
+        module_value = _optional_float(module_text)
+        like = f"%{module_text}%"
+        if module_value is not None:
+            query = query.filter(_float_between_filter(ProductDrawing.module, module_value) | ProductDrawing.module_text.ilike(like))
+        else:
+            query = query.filter(ProductDrawing.module_text.ilike(like))
     pressure_angle_value = _optional_float(pressure_angle)
     if pressure_angle_value is not None:
         query = query.filter(_float_between_filter(ProductDrawing.pressure_angle, pressure_angle_value))
-    common_normal_length_value = _optional_float(common_normal_length)
-    if common_normal_length_value is not None:
-        query = query.filter(_float_between_filter(ProductDrawing.common_normal_length, common_normal_length_value))
+    common_normal_length_text = common_normal_length.strip()
+    if common_normal_length_text:
+        common_normal_length_value = _optional_float(common_normal_length_text)
+        like = f"%{common_normal_length_text}%"
+        if common_normal_length_value is not None:
+            query = query.filter(_float_between_filter(ProductDrawing.common_normal_length, common_normal_length_value) | ProductDrawing.common_normal_length_text.ilike(like))
+        else:
+            query = query.filter(ProductDrawing.common_normal_length_text.ilike(like))
     pin_diameter_value = _optional_float(pin_diameter)
     if pin_diameter_value is not None:
         query = query.filter(_float_between_filter(ProductDrawing.pin_diameter, pin_diameter_value))
@@ -255,11 +278,14 @@ def _group_product_inventory(items: list[MaterialInventory]) -> list[ProductInve
                 "thickness": item.thickness,
                 "quantity": 0,
                 "locations": set(),
+                "paper_materials": set(),
                 "latest": item.updated_at or item.created_at,
             }
         grouped[code]["quantity"] += item.quantity
         if item.location:
             grouped[code]["locations"].add(item.location)
+        if item.paper_material:
+            grouped[code]["paper_materials"].add(item.paper_material)
         item_time = item.updated_at or item.created_at
         if item_time and item_time > grouped[code]["latest"]:
             grouped[code]["latest"] = item_time
@@ -270,6 +296,7 @@ def _group_product_inventory(items: list[MaterialInventory]) -> list[ProductInve
             thickness=value["thickness"],
             quantity=value["quantity"],
             locations=sorted(value["locations"]),
+            paper_materials=sorted(value["paper_materials"]),
             latest=value["latest"].isoformat() if value["latest"] else None,
         )
         for value in grouped.values()
@@ -450,7 +477,6 @@ def delete_drawing(drawing_id: int, db: Session = Depends(get_db)) -> dict[str, 
     if not drawing:
         raise HTTPException(status_code=404, detail="图纸不存在")
     ensure_drawing_can_be_changed(drawing, db)
-    was_confirmed = drawing.confirmed == 1
     before_data = drawing_snapshot(drawing)
     delete_uploaded_drawing(drawing_id, db)
     record_operation_log(db, "drawing_delete", "drawing", drawing_id, None, "小程序删除图纸", before_data=before_data)
@@ -463,11 +489,17 @@ def confirm_drawing(drawing_id: int, payload: DrawingConfirm, db: Session = Depe
     drawing = db.get(ProductDrawing, drawing_id)
     if not drawing:
         raise HTTPException(status_code=404, detail="图纸不存在")
-    ensure_drawing_can_be_changed(drawing, db)
     was_confirmed = drawing.confirmed == 1
     before_data = drawing_snapshot(drawing)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(drawing, key, value)
+    drawing.tooth_type = normalize_tooth_type(drawing.tooth_type)
+    if drawing.teeth_count_text:
+        drawing.teeth_count = first_int_value(drawing.teeth_count_text)
+    if drawing.module_text:
+        drawing.module = plain_float_value(drawing.module_text)
+    if drawing.common_normal_length_text:
+        drawing.common_normal_length = common_normal_value_from_text(drawing.common_normal_length_text, drawing.tooth_type)
     drawing.thickness = drawing.product_thickness or drawing.plate_thickness or drawing.thickness
     drawing.confirmed = 1
     apply_drawing_version(drawing, db, force_increment=was_confirmed)
@@ -505,7 +537,13 @@ def products(q: str = "", material: str = "", thickness: str = "", db: Session =
     keyword = q.strip()
     if keyword:
         like = f"%{keyword}%"
-        query = query.filter((MaterialInventory.material_code.ilike(like)) | (MaterialInventory.material.ilike(like)) | (MaterialInventory.location.ilike(like)) | (MaterialInventory.source_product_code.ilike(like)))
+        query = query.filter(
+            (MaterialInventory.material_code.ilike(like))
+            | (MaterialInventory.material.ilike(like))
+            | (MaterialInventory.location.ilike(like))
+            | (MaterialInventory.paper_material.ilike(like))
+            | (MaterialInventory.source_product_code.ilike(like))
+        )
     if material.strip():
         query = query.filter(MaterialInventory.material.ilike(f"%{material.strip()}%"))
     thickness_value = _optional_float(thickness)
@@ -530,6 +568,7 @@ def product_inbound(payload: ProductInboundPayload, db: Session = Depends(get_db
             drawing=drawing,
             quantity=payload.quantity,
             location=payload.location,
+            paper_material=payload.paper_material,
             operator_name=payload.operator_name,
             db=db,
             idempotency_key=idempotency_key,

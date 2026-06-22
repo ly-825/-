@@ -8,6 +8,14 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import ProductDrawing
+from app.services.drawing_parameters import (
+    clean_text_value,
+    common_normal_value_from_text,
+    first_int_value,
+    normalize_teeth_text,
+    normalize_tooth_type,
+    plain_float_value,
+)
 from app.services.drawing_preview import generate_drawing_preview
 from app.services.dxf_parser import parse_dxf
 from app.services.qwen_service import recognize_drawing
@@ -75,6 +83,26 @@ def save_uploaded_drawing(file: UploadFile, db: Session) -> tuple[ProductDrawing
         parse_status = "failed"
 
     gear = candidates.get("gear_candidates", {})
+    tooth_type = normalize_tooth_type(recognized.get("tooth_type") or gear.get("tooth_type"))
+    teeth_count_text = normalize_teeth_text(
+        recognized.get("teeth_count_text")
+        or gear.get("teeth_count_text")
+        or recognized.get("teeth_count")
+        or gear.get("teeth_count")
+    )
+    module_text = clean_text_value(
+        recognized.get("module_text")
+        or gear.get("module_text")
+        or recognized.get("module")
+        or gear.get("module")
+    )
+    common_normal_length_text = clean_text_value(
+        recognized.get("common_normal_length_text")
+        or gear.get("common_normal_length_text")
+        or recognized.get("common_normal_length")
+        or gear.get("common_normal_length")
+    )
+    common_normal_length_value = common_normal_value_from_text(common_normal_length_text, tooth_type)
     drawing = ProductDrawing(
         product_code=recognized.get("product_code"),
         product_name=recognized.get("product_name"),
@@ -89,12 +117,16 @@ def save_uploaded_drawing(file: UploadFile, db: Session) -> tuple[ProductDrawing
         expected_scrap_size=recognized.get("expected_scrap_usable_size"),
         product_thickness=recognized.get("product_thickness") or gear.get("product_thickness"),
         plate_thickness=recognized.get("plate_thickness") or gear.get("plate_thickness"),
-        teeth_count=recognized.get("teeth_count") or gear.get("teeth_count"),
-        module=recognized.get("module") or gear.get("module"),
+        tooth_type=tooth_type,
+        teeth_count=recognized.get("teeth_count") or gear.get("teeth_count") or first_int_value(teeth_count_text),
+        teeth_count_text=teeth_count_text,
+        module=recognized.get("module") or gear.get("module") or plain_float_value(module_text),
+        module_text=module_text,
         pressure_angle=recognized.get("pressure_angle") or gear.get("pressure_angle"),
         profile_shift_coefficient=recognized.get("profile_shift_coefficient") or gear.get("profile_shift_coefficient"),
         span_teeth_count=recognized.get("span_teeth_count") or gear.get("span_teeth_count"),
-        common_normal_length=recognized.get("common_normal_length") or gear.get("common_normal_length"),
+        common_normal_length=common_normal_length_value or recognized.get("common_normal_length") or gear.get("common_normal_length"),
+        common_normal_length_text=common_normal_length_text,
         pin_diameter=recognized.get("pin_diameter") or gear.get("pin_diameter"),
         pin_span=recognized.get("pin_span") or gear.get("pin_span"),
         parse_result_json={"candidates": candidates, "recognized": recognized},

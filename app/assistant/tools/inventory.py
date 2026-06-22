@@ -31,6 +31,10 @@ def query_drawings(intent: AssistantIntent, db: Session) -> AssistantResponse:
             | (ProductDrawing.product_category.ilike(like))
             | (ProductDrawing.remark.ilike(like))
             | (ProductDrawing.material.ilike(like))
+            | (ProductDrawing.tooth_type.ilike(like))
+            | (ProductDrawing.teeth_count_text.ilike(like))
+            | (ProductDrawing.module_text.ilike(like))
+            | (ProductDrawing.common_normal_length_text.ilike(like))
         )
     drawings = query.order_by(ProductDrawing.updated_at.desc()).limit(50).all()
     rows = []
@@ -46,7 +50,7 @@ def query_drawings(intent: AssistantIntent, db: Session) -> AssistantResponse:
                 "material": drawing.material or "-",
                 "status": "已确认" if drawing.confirmed else "待确认",
                 "active": "当前版本" if drawing.is_active else "历史版本",
-                "editable": "不可直接修改" if locked else "可修改/重识别/删除",
+                "editable": "参数可修正；不可删除/重识别" if locked else "可修改/重识别/删除",
             }
         )
     return AssistantResponse(
@@ -84,17 +88,20 @@ def _query_product(intent: AssistantIntent, db: Session) -> AssistantResponse:
         code = item.material_code or item.source_product_code or "未编号"
         group = grouped.setdefault(
             code,
-            {"product_code": code, "quantity": 0, "material": item.material, "thickness": item.thickness, "locations": set()},
+            {"product_code": code, "quantity": 0, "material": item.material, "thickness": item.thickness, "locations": set(), "paper_materials": set()},
         )
         group["quantity"] += item.quantity
         if item.location:
             group["locations"].add(item.location)
+        if item.paper_material:
+            group["paper_materials"].add(item.paper_material)
     rows = [
         {
             "product_code": value["product_code"],
             "quantity": value["quantity"],
             "material": value["material"],
             "thickness": value["thickness"],
+            "paper_materials": " / ".join(sorted(value["paper_materials"])) or "-",
             "locations": " / ".join(sorted(value["locations"])) or "-",
         }
         for value in grouped.values()
@@ -108,6 +115,7 @@ def _query_product(intent: AssistantIntent, db: Session) -> AssistantResponse:
                 {"prop": "quantity", "label": "数量"},
                 {"prop": "material", "label": "材质"},
                 {"prop": "thickness", "label": "厚度"},
+                {"prop": "paper_materials", "label": "纸材质"},
                 {"prop": "locations", "label": "库位"},
             ],
             rows,

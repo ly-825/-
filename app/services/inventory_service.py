@@ -25,7 +25,7 @@ def drawing_has_inventory_references(drawing_id: int, db: Session) -> bool:
 
 def ensure_drawing_can_be_changed(drawing: ProductDrawing, db: Session) -> None:
     if drawing_has_inventory_references(drawing.id, db):
-        raise HTTPException(status_code=400, detail="该图纸已产生库存或余料记录，不能直接修改、删除或重新识别")
+        raise HTTPException(status_code=400, detail="该图纸已产生库存或余料记录，不能删除或重新识别")
 
 
 def reject_direct_inventory_write() -> None:
@@ -44,6 +44,7 @@ def product_inbound_from_drawing(
     drawing: ProductDrawing,
     quantity: int,
     location: str | None,
+    paper_material: str | None,
     operator_name: str | None,
     db: Session,
     idempotency_key: str | None = None,
@@ -84,6 +85,11 @@ def product_inbound_from_drawing(
         existing_query = existing_query.filter(MaterialInventory.location.is_(None))
     else:
         existing_query = existing_query.filter(MaterialInventory.location == location_value)
+    paper_material_value = paper_material.strip() if paper_material else None
+    if paper_material_value is None:
+        existing_query = existing_query.filter(MaterialInventory.paper_material.is_(None))
+    else:
+        existing_query = existing_query.filter(MaterialInventory.paper_material == paper_material_value)
     item = existing_query.order_by(MaterialInventory.created_at.asc()).first()
     if item:
         item_before_quantity = item.quantity
@@ -98,6 +104,7 @@ def product_inbound_from_drawing(
             item.usable_size = f"φ{drawing.max_outer_diameter:g}"
         item.source_product_code = drawing.product_code
         item.source_drawing_id = drawing.id
+        item.paper_material = paper_material_value
     else:
         item_before_quantity = 0
         item = MaterialInventory(
@@ -111,6 +118,7 @@ def product_inbound_from_drawing(
             width=drawing.max_outer_diameter,
             quantity=quantity,
             location=location_value,
+            paper_material=paper_material_value,
             usable_size=f"φ{drawing.max_outer_diameter:g}" if drawing.max_outer_diameter else None,
             status="available",
             source_product_code=drawing.product_code,

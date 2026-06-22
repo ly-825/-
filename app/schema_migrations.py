@@ -81,6 +81,14 @@ def ensure_runtime_schema(engine: Engine) -> None:
                 connection.execute(text("ALTER TABLE product_drawings ADD COLUMN preview_status VARCHAR(20) DEFAULT 'pending'"))
             if "preview_error" not in drawing_columns:
                 connection.execute(text("ALTER TABLE product_drawings ADD COLUMN preview_error VARCHAR(500)"))
+            if "teeth_count_text" not in drawing_columns:
+                connection.execute(text("ALTER TABLE product_drawings ADD COLUMN teeth_count_text VARCHAR(50)"))
+            if "tooth_type" not in drawing_columns:
+                connection.execute(text("ALTER TABLE product_drawings ADD COLUMN tooth_type VARCHAR(10)"))
+            if "module_text" not in drawing_columns:
+                connection.execute(text("ALTER TABLE product_drawings ADD COLUMN module_text VARCHAR(50)"))
+            if "common_normal_length_text" not in drawing_columns:
+                connection.execute(text("ALTER TABLE product_drawings ADD COLUMN common_normal_length_text VARCHAR(100)"))
             connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_product_drawings_file_hash ON product_drawings (file_hash)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_product_drawings_product_category ON product_drawings (product_category)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_product_drawings_is_active ON product_drawings (is_active)"))
@@ -90,6 +98,8 @@ def ensure_runtime_schema(engine: Engine) -> None:
             inventory_columns = table_columns["material_inventory"]
             if "source_drawing_id" not in inventory_columns:
                 connection.execute(text("ALTER TABLE material_inventory ADD COLUMN source_drawing_id INTEGER"))
+            if "paper_material" not in inventory_columns:
+                connection.execute(text("ALTER TABLE material_inventory ADD COLUMN paper_material VARCHAR(100)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_material_inventory_source_drawing_id ON material_inventory (source_drawing_id)"))
         if "inventory_transaction_records" in tables:
             transaction_columns = table_columns["inventory_transaction_records"]

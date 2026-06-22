@@ -5,6 +5,15 @@ from typing import Any
 
 import ezdxf
 
+from app.services.drawing_parameters import (
+    TOOTH_TYPES,
+    common_normal_value_from_text,
+    first_int_value,
+    normalize_teeth_text,
+    normalize_tooth_type,
+    plain_float_value,
+)
+
 
 def _clean_mtext(raw: str) -> str:
     s = raw
@@ -80,7 +89,31 @@ _GEAR_PATTERNS: list[tuple[str, str, list[str]]] = [
 ]
 
 
-def _extract_table_pairs(text_entities: list[dict[str, Any]]) -> dict[str, float | int | None]:
+def _nearest_right_text(positioned: list[dict[str, Any]], label: dict[str, Any], max_dx: float = 90, max_dy: float = 4.5) -> str | None:
+    label_x = float(label["x"])
+    label_y = float(label["y"])
+    candidates: list[tuple[float, str]] = []
+    for item in positioned:
+        item_raw = str(item.get("raw", "")).strip()
+        if not item_raw:
+            continue
+        dx = float(item["x"]) - label_x
+        dy = abs(float(item["y"]) - label_y)
+        if 0 < dx <= max_dx and dy <= max_dy:
+            candidates.append((dx + dy * 4, item_raw))
+    return sorted(candidates, key=lambda pair: pair[0])[0][1] if candidates else None
+
+
+def _split_tooth_type_and_count(value: str) -> tuple[str | None, str | None]:
+    text = value.strip().upper().replace(" ", "")
+    match = re.search(rf"\b({'|'.join(TOOTH_TYPES)})(\d+(?:\(\d+\))?)\b", text)
+    if match:
+        return normalize_tooth_type(match.group(1)), normalize_teeth_text(match.group(2))
+    match = re.search(r"\d+(?:\(\d+\))?", text)
+    return None, normalize_teeth_text(match.group()) if match else None
+
+
+def _extract_table_pairs(text_entities: list[dict[str, Any]]) -> dict[str, Any]:
     label_map = {
         "z": ("teeth_count", "int"),
         "齿  数": ("teeth_count", "int"),
@@ -107,13 +140,32 @@ def _extract_table_pairs(text_entities: list[dict[str, Any]]) -> dict[str, float
         "标准量棒": ("pin_diameter", "float"),
         "标准量棒dp": ("pin_diameter", "float"),
     }
-    result: dict[str, float | int | None] = {}
+    result: dict[str, Any] = {}
     positioned = [item for item in text_entities if item.get("x") is not None and item.get("y") is not None]
     for label in positioned:
         raw = str(label.get("raw", "")).strip()
         if raw not in label_map:
             continue
         field, field_type = label_map[raw]
+        raw_value = _nearest_right_text(positioned, label)
+        if raw_value:
+            if field == "teeth_count":
+                tooth_type, teeth_text = _split_tooth_type_and_count(raw_value)
+                if tooth_type:
+                    result["tooth_type"] = tooth_type
+                if teeth_text:
+                    result["teeth_count_text"] = teeth_text
+                    result["teeth_count"] = first_int_value(teeth_text)
+            elif field == "module":
+                result["module_text"] = raw_value.strip()
+                module_value = plain_float_value(raw_value)
+                if module_value is not None and 0.5 <= module_value <= 20:
+                    result["module"] = module_value
+            elif field == "common_normal_length":
+                result["common_normal_length_text"] = raw_value.strip()
+                normal_value = common_normal_value_from_text(raw_value, result.get("tooth_type"))
+                if normal_value is not None:
+                    result["common_normal_length"] = normal_value
         candidates = []
         label_x = float(label["x"])
         label_y = float(label["y"])
@@ -141,14 +193,49 @@ def _extract_table_pairs(text_entities: list[dict[str, Any]]) -> dict[str, float
         if candidates:
             value = sorted(candidates, key=lambda pair: pair[0])[0][1]
             result[field] = int(value) if field_type == "int" else value
+            if field == "teeth_count":
+                result.setdefault("teeth_count_text", str(int(value)))
+            elif field == "module":
+                result.setdefault("module_text", f"{value:g}")
+            elif field == "common_normal_length":
+                result.setdefault("common_normal_length_text", f"{value:g}")
+    if result.get("common_normal_length_text"):
+        normal_value = common_normal_value_from_text(result["common_normal_length_text"], result.get("tooth_type"))
+        if normal_value is not None:
+            result["common_normal_length"] = normal_value
     return result
 
 
-def _extract_gear_candidates(texts: list[str], text_entities: list[dict[str, Any]] | None = None) -> dict[str, float | int | None]:
-    result: dict[str, float | int | None] = {}
+def _extract_gear_candidates(texts: list[str], text_entities: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = {}
     if text_entities:
         result.update(_extract_table_pairs(text_entities))
     joined = "  ".join(texts)
+    if "teeth_count_text" not in result:
+        tooth_match = re.search(rf"\b({'|'.join(TOOTH_TYPES)})\s*(\d+\s*(?:\(\s*\d+\s*\))?)\b", joined, re.IGNORECASE)
+        if tooth_match:
+            result["tooth_type"] = normalize_tooth_type(tooth_match.group(1))
+            result["teeth_count_text"] = normalize_teeth_text(tooth_match.group(2))
+            result["teeth_count"] = first_int_value(result["teeth_count_text"])
+    if "module_text" not in result:
+        module_match = re.search(r"(?:模数|[Mm]\s*[=:：])\s*([A-Za-z]{1,6}\d*|\d+(?:\.\d+)?)", joined)
+        if module_match:
+            module_text = module_match.group(1).strip()
+            result["module_text"] = module_text
+            module_value = plain_float_value(module_text)
+            if module_value is not None and 0.5 <= module_value <= 20:
+                result["module"] = module_value
+    if "common_normal_length_text" not in result:
+        normal_match = re.search(
+            r"(?:公法线(?:长度)?|[Ww][Kk]?\s*[=:：]|[Ll]\s*[=:：])\s*(\d+(?:\.\d+)?\s*(?:[-~—至]\s*\d+(?:\.\d+)?)?)",
+            joined,
+        )
+        if normal_match:
+            normal_text = normal_match.group(1).strip()
+            result["common_normal_length_text"] = normal_text
+            normal_value = common_normal_value_from_text(normal_text, result.get("tooth_type"))
+            if normal_value is not None:
+                result["common_normal_length"] = normal_value
     for field, field_type, patterns in _GEAR_PATTERNS:
         if field in result:
             continue
@@ -157,6 +244,12 @@ def _extract_gear_candidates(texts: list[str], text_entities: list[dict[str, Any
             if match:
                 try:
                     result[field] = int(match.group(1)) if field_type == "int" else float(match.group(1))
+                    if field == "teeth_count":
+                        result.setdefault("teeth_count_text", str(result[field]))
+                    elif field == "module":
+                        result.setdefault("module_text", match.group(1))
+                    elif field == "common_normal_length":
+                        result.setdefault("common_normal_length_text", match.group(1))
                 except ValueError:
                     pass
                 break
@@ -176,6 +269,11 @@ def _extract_gear_candidates(texts: list[str], text_entities: list[dict[str, Any
                     integers.append(value)
         if integers:
             result["teeth_count"] = integers[0]
+            result.setdefault("teeth_count_text", str(integers[0]))
+    if result.get("common_normal_length_text"):
+        normal_value = common_normal_value_from_text(result["common_normal_length_text"], result.get("tooth_type"))
+        if normal_value is not None:
+            result["common_normal_length"] = normal_value
     return result
 
 

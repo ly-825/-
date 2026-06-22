@@ -112,6 +112,10 @@ def _find_drawings(intent: AssistantIntent, db: Session) -> list[ProductDrawing]
             | (ProductDrawing.product_name.ilike(like))
             | (ProductDrawing.remark.ilike(like))
             | (ProductDrawing.material.ilike(like))
+            | (ProductDrawing.tooth_type.ilike(like))
+            | (ProductDrawing.teeth_count_text.ilike(like))
+            | (ProductDrawing.module_text.ilike(like))
+            | (ProductDrawing.common_normal_length_text.ilike(like))
         )
     if filters["material"]:
         query = query.filter(ProductDrawing.material.ilike(f"%{filters['material']}%"))
@@ -126,8 +130,13 @@ def _find_drawings(intent: AssistantIntent, db: Session) -> list[ProductDrawing]
         query = query.filter(_number_clause(ProductDrawing.max_outer_diameter, filters["outer_diameter"]))
     if filters["inner_diameter"] is not None:
         query = query.filter(_number_clause(ProductDrawing.min_inner_diameter, filters["inner_diameter"]))
-    if filters["teeth_count"] is not None:
-        query = query.filter(ProductDrawing.teeth_count == filters["teeth_count"])
+    if filters["teeth_count"]:
+        teeth_text = str(filters["teeth_count"])
+        like = f"%{teeth_text}%"
+        try:
+            query = query.filter((ProductDrawing.teeth_count == int(teeth_text)) | ProductDrawing.teeth_count_text.ilike(like))
+        except ValueError:
+            query = query.filter(ProductDrawing.teeth_count_text.ilike(like) | ProductDrawing.tooth_type.ilike(like))
     if not keyword and not any(value is not None and value != "" for value in filters.values()):
         return []
     return query.order_by(ProductDrawing.product_code.asc(), ProductDrawing.version.desc()).limit(50).all()
@@ -151,7 +160,7 @@ def _extract_keyword(intent: AssistantIntent, message: str) -> str:
         value = filters.get(key)
         if value:
             return str(value).strip()
-    code_match = re.search(r"\b[A-Za-z][A-Za-z0-9_.#-]*\d[A-Za-z0-9_.#-]*\b", message)
+    code_match = re.search(r"\b[A-Za-z][A-Za-z0-9_.#()\-\s]*\d[A-Za-z0-9_.#()\-\s]*\b", message)
     if code_match:
         return code_match.group(0).strip()
     return ""
@@ -163,7 +172,7 @@ def _extract_spec_filters(message: str) -> dict[str, float | int | str | None]:
         "thickness": _number_after_label(message, ("厚度", "板厚", "钢板厚度", "产品厚度")),
         "outer_diameter": _number_after_label(message, ("最大外径", "外径", "外圆")),
         "inner_diameter": _number_after_label(message, ("最小内径", "内径", "内孔")),
-        "teeth_count": _int_after_label(message, ("齿数", "齿", "z")),
+        "teeth_count": _text_after_label(message, ("齿数", "齿", "z")),
     }
 
 
@@ -242,7 +251,7 @@ def _drawing_row(drawing: ProductDrawing) -> dict:
         "thickness": effective_drawing_thickness(drawing) or "-",
         "outer_diameter": drawing.max_outer_diameter or "-",
         "inner_diameter": drawing.min_inner_diameter or "-",
-        "teeth_count": drawing.teeth_count or "-",
+        "teeth_count": f"{drawing.tooth_type or ''}{drawing.teeth_count_text or drawing.teeth_count or ''}" or "-",
     }
 
 
