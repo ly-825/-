@@ -35,6 +35,9 @@ def drawing_snapshot(drawing: ProductDrawing | None) -> dict[str, Any] | None:
         "previous_drawing_id": drawing.previous_drawing_id,
         "replaced_by_id": drawing.replaced_by_id,
         "file_hash": drawing.file_hash,
+        "preview_file_url": drawing.preview_file_url,
+        "preview_status": drawing.preview_status,
+        "preview_error": drawing.preview_error,
     }
 
 

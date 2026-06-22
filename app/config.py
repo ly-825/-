@@ -5,6 +5,10 @@ class Settings(BaseSettings):
     app_name: str = "DXF Material Matching MVP"
     database_url: str = "sqlite:///./data/app.db"
     upload_dir: str = "./data/uploads"
+    drawing_preview_dir: str = "./data/previews"
+    drawing_preview_converter_path: str | None = None
+    drawing_preview_converter_args: str = "-auto-fit -paper=A4 -force -monochrome"
+    drawing_preview_timeout_seconds: int = 90
     max_upload_size_mb: int = 50
     qrcode_dir: str = "./data/qrcodes"
     dashscope_api_key: str | None = None

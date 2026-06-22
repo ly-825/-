@@ -11,6 +11,7 @@ from app.schema_migrations import ensure_runtime_schema
 from app.services.drawing_upload import backfill_missing_file_hashes
 
 Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+Path(settings.drawing_preview_dir).mkdir(parents=True, exist_ok=True)
 Base.metadata.create_all(bind=engine)
 ensure_runtime_schema(engine)
 with SessionLocal() as db:

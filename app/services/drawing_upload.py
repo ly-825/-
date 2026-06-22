@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import ProductDrawing
+from app.services.drawing_preview import generate_drawing_preview
 from app.services.dxf_parser import parse_dxf
 from app.services.qwen_service import recognize_drawing
 
@@ -53,6 +54,10 @@ def save_uploaded_drawing(file: UploadFile, db: Session) -> tuple[ProductDrawing
     backfill_missing_file_hashes(db)
     existing = db.query(ProductDrawing).filter(ProductDrawing.file_hash == file_hash).first()
     if existing:
+        if not existing.preview_file_url:
+            generate_drawing_preview(existing)
+            db.commit()
+            db.refresh(existing)
         return existing, True
 
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
@@ -97,6 +102,9 @@ def save_uploaded_drawing(file: UploadFile, db: Session) -> tuple[ProductDrawing
         confirmed=0,
     )
     db.add(drawing)
+    db.commit()
+    db.refresh(drawing)
+    generate_drawing_preview(drawing)
     db.commit()
     db.refresh(drawing)
     return drawing, False

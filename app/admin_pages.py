@@ -2,12 +2,16 @@ import html
 import json
 import math
 from datetime import datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 from urllib.parse import quote
 
 import ezdxf
+from ezdxf.addons.drawing import Frontend, RenderContext, layout
+from ezdxf.addons.drawing.config import BackgroundPolicy, Configuration
+from ezdxf.addons.drawing.svg import SVGBackend
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.assistant.engine import run_assistant
@@ -15,6 +19,7 @@ from app.config import settings
 from app.database import SessionLocal, get_db
 from app.models import InventoryTransactionRecord, MaterialInventory, OperationLog, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 from app.services.dxf_parser import parse_dxf
+from app.services.drawing_preview import generate_drawing_preview
 from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_drawing
 from app.services.drawing_version import apply_drawing_version
 from app.services.excel_export import build_export_rows, content_disposition, export_filename, log_export, make_workbook_bytes
@@ -419,170 +424,18 @@ def scrub_internal_ids(value: object) -> object:
 
 def render_dxf_svg(file_path: str) -> str:
     doc = ezdxf.readfile(file_path)
-    msp = doc.modelspace()
-    items = []
-    texts = []
-    points = []
-    stats: dict[str, int] = {}
-
-    def add_point(x: float, y: float) -> None:
-        points.append((float(x), float(y)))
-
-    def clean_dxf_text(value: str) -> str:
-        return (
-            value.replace("\\P", " ")
-            .replace("%%C", "φ")
-            .replace("%%c", "φ")
-            .replace("%%D", "°")
-            .replace("%%P", "±")
-        )
-
-    def add_polyline(polyline_points: list[tuple[float, float]], closed: bool = False) -> None:
-        if len(polyline_points) < 2:
-            return
-        for x, y in polyline_points:
-            add_point(x, y)
-        items.append(("polyline", (polyline_points, closed)))
-
-    def add_entity(entity, depth: int = 0) -> None:
-        dxftype = entity.dxftype()
-        stats[dxftype] = stats.get(dxftype, 0) + 1
-        try:
-            if dxftype == "LINE":
-                start = entity.dxf.start
-                end = entity.dxf.end
-                add_point(start.x, start.y)
-                add_point(end.x, end.y)
-                items.append(("line", (start.x, start.y, end.x, end.y)))
-            elif dxftype == "CIRCLE":
-                center = entity.dxf.center
-                radius = float(entity.dxf.radius)
-                add_point(center.x - radius, center.y - radius)
-                add_point(center.x + radius, center.y + radius)
-                items.append(("circle", (center.x, center.y, radius)))
-            elif dxftype == "ARC":
-                center = entity.dxf.center
-                radius = float(entity.dxf.radius)
-                add_point(center.x - radius, center.y - radius)
-                add_point(center.x + radius, center.y + radius)
-                items.append(("arc", (center.x, center.y, radius, float(entity.dxf.start_angle), float(entity.dxf.end_angle))))
-            elif dxftype == "LWPOLYLINE":
-                polyline_points = [(float(point[0]), float(point[1])) for point in entity.get_points()]
-                add_polyline(polyline_points, bool(entity.closed))
-            elif dxftype == "POLYLINE":
-                polyline_points = [(float(vertex.dxf.location.x), float(vertex.dxf.location.y)) for vertex in entity.vertices]
-                add_polyline(polyline_points, bool(entity.is_closed))
-            elif dxftype == "SPLINE":
-                polyline_points = [(float(point.x), float(point.y)) for point in entity.flattening(0.5)]
-                add_polyline(polyline_points)
-            elif dxftype == "ELLIPSE":
-                polyline_points = [(float(point.x), float(point.y)) for point in entity.flattening(0.5)]
-                add_polyline(polyline_points, bool(entity.dxf.start_param == 0 and entity.dxf.end_param >= math.tau))
-            elif dxftype in {"SOLID", "TRACE", "3DFACE"}:
-                polyline_points = []
-                for attr in ("vtx0", "vtx1", "vtx2", "vtx3"):
-                    if hasattr(entity.dxf, attr):
-                        point = getattr(entity.dxf, attr)
-                        polyline_points.append((float(point.x), float(point.y)))
-                add_polyline(polyline_points, True)
-            elif dxftype == "HATCH":
-                for path in entity.paths:
-                    if hasattr(path, "vertices"):
-                        polyline_points = [(float(vertex[0]), float(vertex[1])) for vertex in path.vertices]
-                        add_polyline(polyline_points, True)
-                    elif hasattr(path, "edges"):
-                        for edge in path.edges:
-                            edge_type = edge.EDGE_TYPE
-                            if edge_type == "LineEdge":
-                                add_entity(edge.construction_tool(), depth + 1)
-                            elif hasattr(edge, "flattening"):
-                                polyline_points = [(float(point.x), float(point.y)) for point in edge.flattening(0.5)]
-                                add_polyline(polyline_points)
-            elif dxftype == "TEXT":
-                insert = entity.dxf.insert
-                text = clean_dxf_text(entity.dxf.text or "")
-                add_point(insert.x, insert.y)
-                texts.append((insert.x, insert.y, text))
-            elif dxftype == "MTEXT":
-                insert = entity.dxf.insert
-                text = clean_dxf_text(entity.text or "")
-                add_point(insert.x, insert.y)
-                texts.append((insert.x, insert.y, text))
-            elif dxftype == "DIMENSION":
-                raw_text = entity.dxf.text or ""
-                text = clean_dxf_text(raw_text)
-                midpoint = getattr(entity.dxf, "text_midpoint", None)
-                if text and midpoint:
-                    add_point(midpoint.x, midpoint.y)
-                    texts.append((midpoint.x, midpoint.y, text))
-                for virtual_entity in entity.virtual_entities():
-                    add_entity(virtual_entity, depth + 1)
-            elif dxftype == "INSERT" and depth < 4:
-                for attrib in getattr(entity, "attribs", []):
-                    insert = attrib.dxf.insert
-                    text = clean_dxf_text(attrib.dxf.text or "")
-                    add_point(insert.x, insert.y)
-                    texts.append((insert.x, insert.y, text))
-                for virtual_entity in entity.virtual_entities():
-                    add_entity(virtual_entity, depth + 1)
-        except Exception:
-            pass
-
-    for entity in msp:
-        add_entity(entity)
-
-    if not points:
-        return "<p>该DXF暂时没有可预览的线、圆、文字实体。</p>"
-
-    min_x = min(x for x, _ in points)
-    max_x = max(x for x, _ in points)
-    min_y = min(y for _, y in points)
-    max_y = max(y for _, y in points)
-    margin = max(max_x - min_x, max_y - min_y) * 0.08 or 10
-    view_x = min_x - margin
-    view_y = -(max_y + margin)
-    view_w = max_x - min_x + margin * 2
-    view_h = max_y - min_y + margin * 2
-
-    svg = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view_x:.3f} {view_y:.3f} {view_w:.3f} {view_h:.3f}" style="width:100%;height:78vh;background:#fff;border:1px solid var(--line);border-radius:18px">',
-        '<g transform="scale(1,-1)" fill="none" stroke="#111827" stroke-width="0.6">',
-    ]
-    for kind, data in items:
-        if kind == "line":
-            x1, y1, x2, y2 = data
-            svg.append(f'<line x1="{x1:.3f}" y1="{y1:.3f}" x2="{x2:.3f}" y2="{y2:.3f}"/>')
-        elif kind == "circle":
-            cx, cy, radius = data
-            svg.append(f'<circle cx="{cx:.3f}" cy="{cy:.3f}" r="{radius:.3f}"/>')
-        elif kind == "arc":
-            cx, cy, radius, start_angle, end_angle = data
-            start = math.radians(start_angle)
-            end = math.radians(end_angle)
-            x1 = cx + radius * math.cos(start)
-            y1 = cy + radius * math.sin(start)
-            x2 = cx + radius * math.cos(end)
-            y2 = cy + radius * math.sin(end)
-            large_arc = 1 if ((end_angle - start_angle) % 360) > 180 else 0
-            svg.append(f'<path d="M {x1:.3f} {y1:.3f} A {radius:.3f} {radius:.3f} 0 {large_arc} 0 {x2:.3f} {y2:.3f}"/>')
-        elif kind == "polyline" and len(data) > 1:
-            polyline_points, closed = data
-            points_text = " ".join(f"{x:.3f},{y:.3f}" for x, y in polyline_points)
-            if closed:
-                svg.append(f'<polygon points="{points_text}" fill="none"/>')
-            else:
-                svg.append(f'<polyline points="{points_text}"/>')
-    svg.append("</g>")
-    svg.append('<g fill="#dc2626" font-family="Arial, sans-serif" font-size="4">')
-    for x, y, text in texts:
-        clean_text = html.escape(text[:100])
-        if clean_text:
-            svg.append(f'<text x="{x:.3f}" y="{-y:.3f}">{clean_text}</text>')
-    stat_text = "，".join(f"{key}:{value}" for key, value in sorted(stats.items()))
-    svg.append("</g>")
-    svg.append(f'<text x="{view_x + 3:.3f}" y="{view_y + 8:.3f}" fill="#2563eb" font-size="5">实体统计：{html.escape(stat_text)}</text>')
-    svg.append("</svg>")
-    return "\n".join(svg)
+    backend = SVGBackend()
+    context = RenderContext(doc)
+    config = Configuration(background_policy=BackgroundPolicy.WHITE)
+    Frontend(context, backend, config=config).draw_layout(doc.modelspace())
+    page_layout = layout.Page(420, 297, layout.Units.mm, margins=layout.Margins.all(6))
+    settings = layout.Settings(fit_page=True, fixed_stroke_width=0.18, output_coordinate_space=1_000_000)
+    svg = backend.get_string(page_layout, settings=settings, xml_declaration=False)
+    return svg.replace(
+        "<svg ",
+        '<svg class="cad-preview-svg" style="width:100%;height:78vh;display:block;background:#fff;border:1px solid var(--line);border-radius:18px" ',
+        1,
+    )
 
 
 def assistant_widget() -> str:
@@ -3745,7 +3598,7 @@ def drawings_page(
         for value, label in (("", "全部状态"), ("1", "已确认"), ("0", "待确认"))
     )
     body = f"""
-    <div class="top"><div><h1>图纸识别</h1><p class="muted">上传DXF文件，自动识别产品用料信息。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a><a class="btn secondary" href="/admin/drawings/confirmed">已确认图纸</a></div></div>
+    <div class="top"><div><h1>图纸识别</h1><p class="muted">上传DXF文件，自动识别产品用料信息。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a><a class="btn secondary" href="/admin/drawings/confirmed">已确认图纸</a><form method="post" action="/admin/drawings/previews/regenerate-missing" style="margin:0" onsubmit="return confirm('将为所有缺少高清PDF预览的图纸生成预览，可能需要等待一段时间，继续吗？')"><button class="btn secondary" type="submit">批量生成高清预览</button></form></div></div>
     <section class="card">
       <h2>上传DXF</h2>
       <form id="uploadForm" method="post" action="/admin/drawings/upload" enctype="multipart/form-data">
@@ -3929,6 +3782,44 @@ def pending_drawings_page(db: Session = Depends(get_db)) -> HTMLResponse:
     return page("待确认图纸", body)
 
 
+@router.post("/admin/drawings/previews/regenerate-missing", response_class=HTMLResponse)
+def regenerate_missing_drawing_previews(db: Session = Depends(get_db)) -> HTMLResponse:
+    drawings = db.query(ProductDrawing).order_by(ProductDrawing.created_at.desc()).all()
+    results = []
+    for drawing in drawings:
+        preview_path = Path(drawing.preview_file_url) if drawing.preview_file_url else None
+        if preview_path and preview_path.exists() and preview_path.is_file():
+            continue
+        before_data = drawing_snapshot(drawing)
+        result = generate_drawing_preview(drawing)
+        results.append((drawing, result))
+        record_operation_log(
+            db,
+            "drawing_preview_generate",
+            "drawing",
+            drawing.id,
+            None,
+            "批量生成图纸高清预览",
+            before_data=before_data,
+            after_data=drawing_snapshot(drawing),
+        )
+    db.commit()
+    success_count = sum(1 for _, result in results if result.status == "generated")
+    failed_count = sum(1 for _, result in results if result.status == "failed")
+    unconfigured_count = sum(1 for _, result in results if result.status == "unconfigured")
+    rows = "".join(
+        f"<tr><td>{safe_value(drawing.product_code or '-')}</td><td>{drawing.id}</td><td>{safe_value(result.status)}</td><td>{safe_value(result.error or result.file_path or '-')}</td></tr>"
+        for drawing, result in results
+    )
+    if not rows:
+        rows = "<tr><td colspan='4'>所有图纸都已经有高清预览。</td></tr>"
+    body = f"""
+    <div class="top"><div><h1>高清预览生成结果</h1><p class="muted">成功 {success_count} 张，失败 {failed_count} 张，未配置 {unconfigured_count} 张。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">返回图纸列表</a></div></div>
+    <section class="card"><table><thead><tr><th>产品型号</th><th>图纸ID</th><th>状态</th><th>说明</th></tr></thead><tbody>{rows}</tbody></table></section>
+    """
+    return page("高清预览生成结果", body)
+
+
 @router.post("/admin/drawings/upload")
 def upload_drawing_from_page(file: UploadFile = File(...), db: Session = Depends(get_db)) -> RedirectResponse:
     drawing, duplicated = save_uploaded_drawing(file=file, db=db)
@@ -4053,21 +3944,95 @@ def drawing_preview_page(drawing_id: int, db: Session = Depends(get_db)) -> HTML
     drawing = db.get(ProductDrawing, drawing_id)
     if not drawing:
         raise HTTPException(status_code=404, detail="图纸不存在")
-    try:
-        svg = render_dxf_svg(drawing.dxf_file_url)
-    except Exception as exc:
-        svg = f"<p>图纸预览生成失败：{html.escape(str(exc))}</p>"
+    preview_file_path = Path(drawing.preview_file_url) if drawing.preview_file_url else None
+    has_pdf_preview = bool(preview_file_path and preview_file_path.exists() and preview_file_path.is_file())
+    if has_pdf_preview:
+        preview_content = f"""
+      <p class="muted">高清PDF预览由QCAD根据DXF原始文件生成，可直接缩放、拖动和打印；最终仍以原始DXF文件为准。</p>
+      <iframe src="/admin/drawings/{drawing.id}/preview-file" title="高清PDF预览" style="width:100%;height:82vh;border:1px solid var(--line);border-radius:18px;background:#fff"></iframe>
+        """
+    else:
+        try:
+            svg = render_dxf_svg(drawing.dxf_file_url)
+        except Exception as exc:
+            svg = f"<p>图纸预览生成失败：{html.escape(str(exc))}</p>"
+        status_hint = ""
+        if drawing.preview_status == "unconfigured":
+            status_hint = f"<p class='muted'>高清PDF预览未配置：{safe_value(drawing.preview_error)}。当前先显示临时SVG预览。</p>"
+        elif drawing.preview_status == "failed":
+            status_hint = f"<p class='muted'>高清PDF预览生成失败：{safe_value(drawing.preview_error)}。当前先显示临时SVG预览。</p>"
+        preview_content = f"""
+      {status_hint}
+      <p class="muted">CAD渲染预览由DXF原始文件生成，浏览器显示仍可能与专业CAD有细微差异；最终以原始DXF文件为准。</p>
+      {svg}
+        """
     body = f"""
     <div class="top">
       <div><h1>图纸预览</h1><p class="muted">产品型号：{drawing.product_code or '-'}　版本：{drawing_version_code(drawing)}</p></div>
-      <div class="actions"><a class="btn secondary" href="/admin/drawings/{drawing.id}">返回详情</a></div>
+      <div class="actions">
+        <a class="btn secondary" href="/admin/drawings/{drawing.id}">返回详情</a>
+        <a class="btn secondary" href="/admin/drawings/{drawing.id}/download">下载原始DXF</a>
+        <form method="post" action="/admin/drawings/{drawing.id}/preview/regenerate" style="margin:0">
+          <button class="btn secondary" type="submit">重新生成高清预览</button>
+        </form>
+      </div>
     </div>
     <section class="card">
-      <p class="muted">这是浏览器粗略预览，不等同于CAD最终显示；用于快速查看图纸形状、文字和尺寸位置。</p>
-      {svg}
+      {preview_content}
     </section>
     """
     return page("图纸预览", body)
+
+
+@router.get("/admin/drawings/{drawing_id}/preview-file")
+def drawing_preview_file(drawing_id: int, db: Session = Depends(get_db)) -> FileResponse:
+    drawing = db.get(ProductDrawing, drawing_id)
+    if not drawing:
+        raise HTTPException(status_code=404, detail="图纸不存在")
+    if not drawing.preview_file_url:
+        raise HTTPException(status_code=404, detail="高清预览文件不存在")
+    file_path = Path(drawing.preview_file_url)
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="高清预览文件不存在")
+    return FileResponse(
+        path=file_path,
+        media_type="application/pdf",
+        filename=file_path.name,
+    )
+
+
+@router.post("/admin/drawings/{drawing_id}/preview/regenerate")
+def regenerate_drawing_preview(drawing_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
+    drawing = db.get(ProductDrawing, drawing_id)
+    if not drawing:
+        raise HTTPException(status_code=404, detail="图纸不存在")
+    generate_drawing_preview(drawing, force=True)
+    record_operation_log(
+        db,
+        "drawing_preview_generate",
+        "drawing",
+        drawing.id,
+        None,
+        "重新生成图纸高清预览",
+        after_data=drawing_snapshot(drawing),
+    )
+    db.commit()
+    return RedirectResponse(f"/admin/drawings/{drawing.id}/preview", status_code=303)
+
+
+@router.get("/admin/drawings/{drawing_id}/download")
+def download_drawing_file(drawing_id: int, db: Session = Depends(get_db)) -> FileResponse:
+    drawing = db.get(ProductDrawing, drawing_id)
+    if not drawing:
+        raise HTTPException(status_code=404, detail="图纸不存在")
+    file_path = Path(drawing.dxf_file_url)
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="图纸文件不存在")
+    return FileResponse(
+        path=file_path,
+        media_type="application/dxf",
+        filename=file_path.name,
+    )
 
 
 @router.post("/admin/drawings/{drawing_id}/rerun")

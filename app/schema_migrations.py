@@ -75,6 +75,12 @@ def ensure_runtime_schema(engine: Engine) -> None:
                 connection.execute(text("ALTER TABLE product_drawings ADD COLUMN previous_drawing_id INTEGER"))
             if "replaced_by_id" not in drawing_columns:
                 connection.execute(text("ALTER TABLE product_drawings ADD COLUMN replaced_by_id INTEGER"))
+            if "preview_file_url" not in drawing_columns:
+                connection.execute(text("ALTER TABLE product_drawings ADD COLUMN preview_file_url VARCHAR(500)"))
+            if "preview_status" not in drawing_columns:
+                connection.execute(text("ALTER TABLE product_drawings ADD COLUMN preview_status VARCHAR(20) DEFAULT 'pending'"))
+            if "preview_error" not in drawing_columns:
+                connection.execute(text("ALTER TABLE product_drawings ADD COLUMN preview_error VARCHAR(500)"))
             connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_product_drawings_file_hash ON product_drawings (file_hash)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_product_drawings_product_category ON product_drawings (product_category)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_product_drawings_is_active ON product_drawings (is_active)"))

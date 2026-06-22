@@ -110,6 +110,36 @@ DASHSCOPE_API_KEY=你的APIKey
 
 如果没有 API Key，也可以运行系统，只是图纸识别会更依赖人工确认。
 
+### 6. 配置高清图纸预览
+
+如果需要让网页内显示更清楚的真实图纸预览，建议在运行后台服务的这台 Windows 电脑安装 QCAD Professional。
+
+安装后，找到 QCAD 安装目录里的 `dwg2pdf.bat`。常见位置：
+
+```text
+C:\Program Files\QCAD\dwg2pdf.bat
+C:\Program Files\QCAD Professional\dwg2pdf.bat
+C:\Program Files\QCADCAM\dwg2pdf.bat
+```
+
+打开项目目录下的 `.env`，填写：
+
+```text
+DRAWING_PREVIEW_CONVERTER_PATH=C:\Program Files\QCAD\dwg2pdf.bat
+DRAWING_PREVIEW_CONVERTER_ARGS=-auto-fit -paper=A4 -force -monochrome
+DRAWING_PREVIEW_TIMEOUT_SECONDS=90
+```
+
+注意：
+
+```text
+只需要运行后台服务的电脑安装 QCAD。
+其他访问后台的电脑或手机不需要安装 CAD。
+如果图纸中文显示不完整，需要把图纸使用的 SHX 字体放到 QCAD 能识别的字体目录。
+```
+
+配置完成并重启后台后，进入后台的“图纸识别”页面，可以点击“批量生成高清预览”，为已经上传过的历史图纸生成 PDF 预览。
+
 ## 二、迁移旧电脑数据
 
 如果这是全新试用，可以跳过本节。
@@ -119,6 +149,7 @@ DASHSCOPE_API_KEY=你的APIKey
 ```text
 data/app.db
 data/uploads/
+data/previews/
 ```
 
 复制到 Windows 项目目录下：
@@ -126,6 +157,7 @@ data/uploads/
 ```text
 杭州特耐时-backend\data\app.db
 杭州特耐时-backend\data\uploads\
+杭州特耐时-backend\data\previews\
 ```
 
 注意：
@@ -133,7 +165,8 @@ data/uploads/
 ```text
 app.db 是库存、图纸、流水等业务数据。
 uploads 是上传过的 DXF 图纸文件。
-这两个必须一起迁移。
+previews 是已经生成的高清 PDF 预览文件，可以一起迁移；如果没有迁移，也可以后续重新生成。
+app.db 和 uploads 必须一起迁移。
 ```
 
 ## 三、启动后端服务

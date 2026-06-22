@@ -1,9 +1,12 @@
 import unittest
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
+import ezdxf
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.admin_pages import admin_home, confirm_drawing_from_page, drawing_detail_page, drawing_version_label, page, product_outbound_analysis_page
+from app.admin_pages import admin_home, confirm_drawing_from_page, download_drawing_file, drawing_detail_page, drawing_preview_page, drawing_version_label, page, product_outbound_analysis_page, render_dxf_svg
 from app.database import Base
 from app.models import ProductDrawing
 
@@ -122,6 +125,36 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
 
             self.assertEqual(drawing.remark, "客户要求热处理")
             self.assertIn("客户要求热处理", html)
+
+    def test_drawing_preview_uses_cad_svg_renderer_and_links_original_file(self) -> None:
+        with TemporaryDirectory() as temp_dir, self.Session() as db:
+            dxf_path = Path(temp_dir) / "preview.dxf"
+            doc = ezdxf.new("R2010")
+            msp = doc.modelspace()
+            msp.add_line((0, 0), (80, 0))
+            msp.add_text("TNX001", dxfattribs={"height": 3}).set_placement((5, 8))
+            doc.saveas(dxf_path)
+
+            svg = render_dxf_svg(str(dxf_path))
+            self.assertIn("<svg", svg)
+            self.assertNotIn("实体统计", svg)
+
+            drawing = ProductDrawing(
+                product_code="PREVIEW-001",
+                dxf_file_url=str(dxf_path),
+                confirmed=1,
+                is_active=1,
+            )
+            db.add(drawing)
+            db.commit()
+            db.refresh(drawing)
+
+            html = drawing_preview_page(drawing.id, db=db).body.decode("utf-8")
+            self.assertIn("CAD渲染预览", html)
+            self.assertIn(f'/admin/drawings/{drawing.id}/download', html)
+
+            download_response = download_drawing_file(drawing.id, db=db)
+            self.assertEqual(Path(download_response.path), dxf_path)
 
 
 if __name__ == "__main__":
