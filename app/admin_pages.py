@@ -955,6 +955,9 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     label {{ display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }}
     input,select,textarea {{ width:100%; border:1px solid var(--line); border-radius:12px; background:white; font:inherit; }}
     input,select {{ height:42px; padding:0 12px; }}
+    .inline-input-group {{ display:flex; width:100%; }}
+    .inline-input-group > select {{ flex:0 0 106px; border-top-right-radius:0; border-bottom-right-radius:0; border-right:0; }}
+    .inline-input-group > input {{ flex:1 1 auto; min-width:0; border-top-left-radius:0; border-bottom-left-radius:0; }}
     textarea {{ min-height:86px; padding:10px 12px; resize:vertical; line-height:1.5; }}
     .btn {{ display:inline-flex; align-items:center; justify-content:center; height:42px; padding:0 16px; border-radius:12px; border:none; background:var(--primary); color:white; font-weight:700; cursor:pointer; }}
     .btn.secondary {{ background:#eef2ff; color:var(--primary); }}
@@ -4022,8 +4025,7 @@ def drawing_detail_page(drawing_id: int, notice: str = "", db: Session = Depends
         <div><label>内径</label><input name="min_inner_diameter" type="number" step="0.01" value="{safe_value(drawing.min_inner_diameter)}" placeholder="mm"></div>
         <div><label>总成品厚度</label><input name="product_thickness" type="number" step="0.001" value="{safe_value(drawing.product_thickness)}" placeholder="含复合材料总厚"></div>
         <div><label>钢板厚度</label><input name="plate_thickness" type="number" step="0.001" value="{safe_value(drawing.plate_thickness)}" placeholder="基板厚度"></div>
-        <div><label>齿型</label><select name="tooth_type">{tooth_type_options(drawing.tooth_type)}</select></div>
-        <div><label>齿数 z</label><input name="teeth_count" value="{safe_value(drawing.teeth_count_text or drawing.teeth_count)}" placeholder="例如 41 / 48(52)"></div>
+        <div><label>齿数 z</label><div class="inline-input-group tooth-count-field"><select name="tooth_type">{tooth_type_options(drawing.tooth_type)}</select><input name="teeth_count" value="{safe_value(drawing.teeth_count_text or drawing.teeth_count)}" placeholder="例如 41 / 48(52)"></div></div>
         <div><label>模数 m</label><input name="module" value="{safe_value(drawing.module_text or drawing.module)}" placeholder="公制数字或英制字母"></div>
         <div><label>压力角 α</label><input name="pressure_angle" type="number" step="0.01" value="{safe_value(drawing.pressure_angle)}" placeholder="常见20°"></div>
         <div><label>变位系数 x</label><input name="profile_shift_coefficient" type="number" step="0.001" value="{safe_value(drawing.profile_shift_coefficient)}"></div>

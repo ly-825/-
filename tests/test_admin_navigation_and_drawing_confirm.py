@@ -126,6 +126,27 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
             self.assertEqual(drawing.remark, "客户要求热处理")
             self.assertIn("客户要求热处理", html)
 
+    def test_tooth_type_select_is_embedded_in_teeth_count_field(self) -> None:
+        with self.Session() as db:
+            drawing = ProductDrawing(
+                product_code="TOOTH-001",
+                dxf_file_url="/tmp/tooth-layout.dxf",
+                tooth_type="OT",
+                teeth_count_text="48(52)",
+                confirmed=0,
+                is_active=1,
+            )
+            db.add(drawing)
+            db.commit()
+            db.refresh(drawing)
+
+            html = drawing_detail_page(drawing.id, db=db).body.decode("utf-8")
+
+            self.assertNotIn("<label>齿型</label>", html)
+            self.assertIn('<label>齿数 z</label><div class="inline-input-group tooth-count-field">', html)
+            self.assertIn('<select name="tooth_type"', html)
+            self.assertIn('<input name="teeth_count"', html)
+
     def test_drawing_preview_uses_cad_svg_renderer_and_links_original_file(self) -> None:
         with TemporaryDirectory() as temp_dir, self.Session() as db:
             dxf_path = Path(temp_dir) / "preview.dxf"
