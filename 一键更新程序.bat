@@ -13,14 +13,14 @@ echo.
 echo 请先关闭正在运行的后台服务窗口。
 echo 本脚本会先备份 data\app.db 和 data\uploads，再拉取最新代码。
 echo.
-pause
+call :wait "确认已关闭后台服务后，按回车开始更新..."
 
 if not exist ".git" (
     echo.
     echo 错误：当前文件夹不是通过 git clone 下载的项目，不能自动更新。
     echo 请确认你双击的是项目根目录里的 一键更新程序.bat。
     echo.
-    pause
+    call :wait "按回车关闭窗口..."
     exit /b 1
 )
 
@@ -29,7 +29,7 @@ if errorlevel 1 (
     echo.
     echo 错误：未检测到 Git。请先安装 Git 后再更新。
     echo.
-    pause
+    call :wait "按回车关闭窗口..."
     exit /b 1
 )
 
@@ -42,7 +42,7 @@ if not errorlevel 1 (
         echo.
         echo 错误：未检测到 Python。请先安装 Python 3 后再更新。
         echo.
-        pause
+        call :wait "按回车关闭窗口..."
         exit /b 1
     )
     set "PY_CMD=python"
@@ -65,7 +65,7 @@ for /f %%i in ('git status --porcelain') do (
     echo.
     git status --short
     echo.
-    pause
+    call :wait "按回车关闭窗口..."
     exit /b 1
 )
 
@@ -75,7 +75,7 @@ if errorlevel 1 (
     echo.
     echo 更新失败：拉取代码失败。请检查网络，或联系管理员处理。
     echo.
-    pause
+    call :wait "按回车关闭窗口..."
     exit /b 1
 )
 
@@ -87,7 +87,7 @@ if not exist ".venv\Scripts\python.exe" (
         echo.
         echo 创建 Python 虚拟环境失败。
         echo.
-        pause
+        call :wait "按回车关闭窗口..."
         exit /b 1
     )
 )
@@ -105,7 +105,7 @@ if errorlevel 1 (
     echo.
     echo 依赖安装失败。请检查网络，或联系管理员处理。
     echo.
-    pause
+    call :wait "按回车关闭窗口..."
     exit /b 1
 )
 
@@ -123,4 +123,13 @@ echo 浏览器地址：http://127.0.0.1:8000/admin
 
 :end
 echo.
-pause
+call :wait "操作结束，按回车关闭窗口..."
+exit /b 0
+
+:wait
+set "__WAIT_TEXT=%~1"
+if "%__WAIT_TEXT%"=="" set "__WAIT_TEXT=按回车继续..."
+set /p "__WAIT=%__WAIT_TEXT%"
+set "__WAIT="
+set "__WAIT_TEXT="
+exit /b 0

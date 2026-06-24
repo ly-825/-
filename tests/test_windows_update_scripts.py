@@ -21,6 +21,9 @@ class WindowsUpdateScriptTests(unittest.TestCase):
         self.assertIn("git pull --ff-only", script)
         self.assertIn('".venv\\Scripts\\python.exe" -m pip install -r requirements.txt', script)
         self.assertIn("uvicorn app.main:app --host 0.0.0.0 --port 8000", script)
+        self.assertNotIn("\npause", script.lower())
+        self.assertIn("按回车开始更新", script)
+        self.assertIn("按回车关闭窗口", script)
 
     def test_start_script_runs_backend_from_project_root(self):
         script = read_text(PROJECT_ROOT / "启动后台服务.bat")
