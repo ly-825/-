@@ -63,7 +63,7 @@ class ProductCatalogSearchTest(unittest.TestCase):
 
             html = response.body.decode("utf-8")
             self.assertIn("<td>CAR-100</td>", html)
-            self.assertIn("<td>客户要求热处理</td>", html)
+            self.assertIn("客户要求热处理", html)
             self.assertNotIn("<td>MOTO-200</td>", html)
 
     def test_product_catalog_export_filters_category_and_includes_parameters(self) -> None:
@@ -157,10 +157,9 @@ class ProductCatalogSearchTest(unittest.TestCase):
             keyword_response = confirmed_drawings_page(q="1.25", db=db)
             keyword_html = keyword_response.body.decode("utf-8")
 
-            self.assertIn("<th>总成品厚度</th>", all_html)
-            self.assertIn("<th>钢板厚度</th>", all_html)
-            self.assertIn("<td>1.25</td>", all_html)
-            self.assertIn("<td>0.95</td>", all_html)
+            self.assertIn("<th>厚度</th>", all_html)
+            self.assertIn("总 1.25", all_html)
+            self.assertIn("钢 0.95", all_html)
             self.assertIn("<td>CAR-125</td>", all_html)
             self.assertIn("<td>CAR-080</td>", all_html)
             self.assertNotIn("<td>CAR-125</td>", keyword_html)

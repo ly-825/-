@@ -49,6 +49,18 @@ def backfill_missing_file_hashes(db: Session) -> None:
         db.commit()
 
 
+def _existing_drawing_for_product_code(product_code: object, db: Session) -> ProductDrawing | None:
+    code = clean_text_value(product_code)
+    if not code:
+        return None
+    return (
+        db.query(ProductDrawing)
+        .filter(ProductDrawing.product_code == code, ProductDrawing.is_active == 1)
+        .order_by(ProductDrawing.confirmed.desc(), ProductDrawing.version.desc(), ProductDrawing.updated_at.desc())
+        .first()
+    )
+
+
 def save_uploaded_drawing(file: UploadFile, db: Session) -> tuple[ProductDrawing, bool]:
     safe_filename = _safe_original_filename(file.filename or "")
     if not safe_filename.lower().endswith(".dxf"):
@@ -83,6 +95,16 @@ def save_uploaded_drawing(file: UploadFile, db: Session) -> tuple[ProductDrawing
         parse_status = "failed"
 
     gear = candidates.get("gear_candidates", {})
+    existing_by_code = _existing_drawing_for_product_code(recognized.get("product_code"), db)
+    if existing_by_code:
+        if file_path.exists():
+            file_path.unlink()
+        if not existing_by_code.preview_file_url:
+            generate_drawing_preview(existing_by_code)
+            db.commit()
+            db.refresh(existing_by_code)
+        return existing_by_code, True
+
     tooth_type = normalize_tooth_type(recognized.get("tooth_type") or gear.get("tooth_type"))
     teeth_count_text = normalize_teeth_text(
         recognized.get("teeth_count_text")

@@ -9,6 +9,8 @@ class InventoryBase(BaseModel):
     inventory_type: str
     material: str
     thickness: float
+    product_thickness: float | None = None
+    plate_thickness: float | None = None
     shape: str
     diameter: float | None = None
     length: float | None = None

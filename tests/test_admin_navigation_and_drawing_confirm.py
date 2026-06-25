@@ -1,4 +1,6 @@
 import unittest
+from io import BytesIO
+from types import SimpleNamespace
 from tempfile import TemporaryDirectory
 from pathlib import Path
 
@@ -9,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from app.admin_pages import admin_home, confirm_drawing_from_page, download_drawing_file, drawing_detail_page, drawing_preview_page, drawing_version_label, page, product_outbound_analysis_page, render_dxf_svg
 from app.database import Base
 from app.models import ProductDrawing
+import app.services.drawing_upload as drawing_upload_service
 
 
 class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
@@ -147,7 +150,7 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
             self.assertIn('<select name="tooth_type"', html)
             self.assertIn('<input name="teeth_count"', html)
 
-    def test_drawing_preview_uses_cad_svg_renderer_and_links_original_file(self) -> None:
+    def test_drawing_preview_uses_local_software_download_entry_and_links_original_file(self) -> None:
         with TemporaryDirectory() as temp_dir, self.Session() as db:
             dxf_path = Path(temp_dir) / "preview.dxf"
             doc = ezdxf.new("R2010")
@@ -171,11 +174,86 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
             db.refresh(drawing)
 
             html = drawing_preview_page(drawing.id, db=db).body.decode("utf-8")
-            self.assertIn("CAD渲染预览", html)
+            self.assertIn("用本机软件打开DXF", html)
             self.assertIn(f'/admin/drawings/{drawing.id}/download', html)
 
             download_response = download_drawing_file(drawing.id, db=db)
             self.assertEqual(Path(download_response.path), dxf_path)
+
+    def test_uploading_same_product_code_returns_existing_drawing_even_when_file_hash_differs(self) -> None:
+        with TemporaryDirectory() as temp_dir, self.Session() as db:
+            existing_path = Path(temp_dir) / "existing.dxf"
+            existing_path.write_text("old", encoding="utf-8")
+            existing = ProductDrawing(
+                product_code="TNX-DUP",
+                dxf_file_url=str(existing_path),
+                file_hash="old-hash",
+                confirmed=1,
+                is_active=1,
+            )
+            db.add(existing)
+            db.commit()
+            db.refresh(existing)
+
+            original_upload_dir = drawing_upload_service.settings.upload_dir
+            original_parse_dxf = drawing_upload_service.parse_dxf
+            original_recognize_drawing = drawing_upload_service.recognize_drawing
+            original_generate_preview = drawing_upload_service.generate_drawing_preview
+            drawing_upload_service.settings.upload_dir = temp_dir
+            drawing_upload_service.parse_dxf = lambda _path: {"gear_candidates": {}, "geometry_summary": {"bounding_box": {}}}
+            drawing_upload_service.recognize_drawing = lambda _candidates: {
+                "product_code": "TNX-DUP",
+                "need_manual_review": False,
+                "confidence": 90,
+            }
+            drawing_upload_service.generate_drawing_preview = lambda _drawing: None
+            try:
+                uploaded = SimpleNamespace(filename="same-code.dxf", file=BytesIO(b"new-file-content"))
+                drawing, duplicated = drawing_upload_service.save_uploaded_drawing(uploaded, db)
+            finally:
+                drawing_upload_service.settings.upload_dir = original_upload_dir
+                drawing_upload_service.parse_dxf = original_parse_dxf
+                drawing_upload_service.recognize_drawing = original_recognize_drawing
+                drawing_upload_service.generate_drawing_preview = original_generate_preview
+
+            self.assertTrue(duplicated)
+            self.assertEqual(drawing.id, existing.id)
+            self.assertEqual(db.query(ProductDrawing).count(), 1)
+
+    def test_confirmed_drawings_page_uses_compact_parameter_columns(self) -> None:
+        with self.Session() as db:
+            db.add(
+                ProductDrawing(
+                    product_code="TNX-COMPACT",
+                    product_name="紧凑列表",
+                    dxf_file_url="/tmp/compact.dxf",
+                    material="65Mn",
+                    product_thickness=1.6,
+                    plate_thickness=0.8,
+                    max_outer_diameter=120,
+                    min_inner_diameter=84,
+                    tooth_type="OT",
+                    teeth_count_text="48(52)",
+                    module_text="DP",
+                    common_normal_length_text="58.26-58.14",
+                    confirmed=1,
+                    is_active=1,
+                )
+            )
+            db.commit()
+
+            from app.admin_pages import confirmed_drawings_page
+
+            html = confirmed_drawings_page(db=db).body.decode("utf-8")
+
+            self.assertIn("<th>厚度</th>", html)
+            self.assertIn("<th>尺寸</th>", html)
+            self.assertIn("<th>齿轮参数</th>", html)
+            self.assertNotIn("<th>版本状态</th>", html)
+            self.assertNotIn("<th>备注</th>", html)
+            self.assertNotIn("<th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>模数</th><th>公法线</th>", html)
+            self.assertIn("OT48(52)", html)
+            self.assertIn("DP", html)
 
 
 if __name__ == "__main__":

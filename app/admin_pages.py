@@ -24,7 +24,7 @@ from app.services.drawing_preview import generate_drawing_preview
 from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_drawing
 from app.services.drawing_version import apply_drawing_version
 from app.services.excel_export import build_export_rows, content_disposition, export_filename, log_export, make_workbook_bytes
-from app.services.inventory_service import adjust_inventory_quantity, ensure_drawing_can_be_changed, inventory_write_lock, product_inbound_from_drawing, reject_direct_inventory_write, reverse_inventory_transaction
+from app.services.inventory_service import adjust_inventory_quantity, ensure_drawing_can_be_changed, inventory_write_lock, product_inbound_from_drawing, reject_direct_inventory_write, reverse_inventory_transaction, sync_product_inventory_from_drawing
 from app.services.material_matching import (
     drawing_required_diameter,
     effective_drawing_thickness,
@@ -919,13 +919,13 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .risk-item span,.risk-ok span {{ display:block; font-size:12px; line-height:1.45; color:#9a3412; }}
     .risk-ok {{ border-color:#bbf7d0; background:#f0fdf4; color:#166534; }}
     .risk-ok span {{ color:#15803d; }}
-    table {{ width:100%; min-width:760px; border-collapse:separate; border-spacing:0; }}
-    th,td {{ padding:12px 10px; border-bottom:1px solid var(--line); text-align:left; font-size:14px; vertical-align:middle; }}
+    table {{ width:100%; min-width:0; border-collapse:separate; border-spacing:0; table-layout:auto; }}
+    th,td {{ padding:10px 8px; border-bottom:1px solid var(--line); text-align:left; font-size:13px; vertical-align:middle; overflow-wrap:anywhere; }}
     th {{ color:var(--muted); font-weight:800; background:#fbfcff; position:sticky; top:0; z-index:1; white-space:nowrap; }}
     tbody tr:nth-child(even) td {{ background:#fcfdff; }}
     tbody tr:hover td {{ background:#f6f8fc; }}
     .table-scroll {{ overflow:auto; max-height:68vh; border:1px solid var(--line); border-radius:16px; }}
-    .table-scroll table {{ margin:0; min-width:860px; }}
+    .table-scroll table {{ margin:0; min-width:0; }}
     .table-scroll tr:last-child td {{ border-bottom:0; }}
     .num-col {{ text-align:right; font-variant-numeric:tabular-nums; }}
     .action-col {{ position:sticky; right:0; z-index:2; min-width:116px; background:#fff; box-shadow:-10px 0 18px rgba(20,32,55,.05); }}
@@ -1778,13 +1778,16 @@ def inventory_page(
             grouped[code] = {
                 "code": code,
                 "material": item.material,
-                "thickness": item.thickness,
+                "product_thicknesses": set(),
+                "plate_thicknesses": set(),
                 "quantity": 0,
                 "locations": set(),
                 "paper_materials": set(),
                 "latest": item.updated_at or item.created_at,
             }
         grouped[code]["quantity"] += item.quantity
+        grouped[code]["product_thicknesses"].add(fmt_option(item.product_thickness or item.thickness))
+        grouped[code]["plate_thicknesses"].add(fmt_option(item.plate_thickness or item.thickness))
         if item.location:
             grouped[code]["locations"].add(item.location)
         if item.paper_material:
@@ -1795,7 +1798,7 @@ def inventory_page(
     rows = "".join(
         f"""
         <tr>
-          <td>{group['code']}</td><td>{group['material']}</td><td>{group['thickness']}</td><td>{' / '.join(sorted(group['paper_materials'])) or '-'}</td><td><strong>{group['quantity']}</strong></td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td>{group['latest'] or '-'}</td><td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe="")}'>查看明细</a></td>
+          <td>{group['code']}</td><td>{group['material']}</td><td>{' / '.join(sorted(value for value in group['product_thicknesses'] if value)) or '-'}</td><td>{' / '.join(sorted(value for value in group['plate_thicknesses'] if value)) or '-'}</td><td>{' / '.join(sorted(group['paper_materials'])) or '-'}</td><td><strong>{group['quantity']}</strong></td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td>{group['latest'] or '-'}</td><td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe="")}'>查看明细</a></td>
         </tr>
         """
         for group in grouped.values()
@@ -1819,7 +1822,7 @@ def inventory_page(
         <a class="btn secondary" href="/admin/inventory">清空</a>
       </form>
     </section>
-    <section class="card"><h2>成品汇总</h2><table><thead><tr><th>产品编号</th><th>材质</th><th>厚度</th><th>纸材质</th><th>总数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='8'>暂无成品库存。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>成品汇总</h2><table><thead><tr><th>产品编号</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>纸材质</th><th>总数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无成品库存。</td></tr>"}</tbody></table></section>
     """
     return page("成品管理", body)
 
@@ -2870,7 +2873,8 @@ def inventory_product_detail_page(product_code: str, db: Session = Depends(get_d
           <td>{item.location or '-'}</td>
           <td>{item.paper_material or '-'}</td>
           <td>{item.material}</td>
-          <td>{item.thickness}</td>
+          <td>{fmt_option(item.product_thickness or item.thickness) or '-'}</td>
+          <td>{fmt_option(item.plate_thickness or item.thickness) or '-'}</td>
           <td>{item.status}</td>
           <td>{item.created_at}</td>
           <td>{item.updated_at}</td>
@@ -2896,7 +2900,7 @@ def inventory_product_detail_page(product_code: str, db: Session = Depends(get_d
     )
     body = f"""
     <div class="top"><div><h1>成品明细：{html.escape(product_code)}</h1><p class="muted">当前总数量：<strong>{total_quantity}</strong></p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回成品汇总</a></div></div>
-    <section class="card"><h2>入库批次</h2><table><thead><tr><th>产品型号</th><th>数量</th><th>库位</th><th>纸材质</th><th>材质</th><th>厚度</th><th>状态</th><th>创建时间</th><th>更新时间</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无该成品库存。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>入库批次</h2><table><thead><tr><th>产品型号</th><th>数量</th><th>库位</th><th>纸材质</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>状态</th><th>创建时间</th><th>更新时间</th></tr></thead><tbody>{rows or "<tr><td colspan='10'>暂无该成品库存。</td></tr>"}</tbody></table></section>
     <section class="card"><h2>产品流水</h2><table><thead><tr><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>关联库位</th><th>客户/去向</th><th>操作人</th><th>备注</th><th>时间</th></tr></thead><tbody>{transaction_rows or "<tr><td colspan='9'>暂无该产品流水。</td></tr>"}</tbody></table></section>
     """
     return page("库存明细", body)
@@ -3776,17 +3780,17 @@ def drawings_page(
         <a class="btn secondary" href="/admin/drawings">清空</a>
       </form>
     </section>
-    <section class="card"><h2>图纸记录</h2><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>模数</th><th>公法线</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table></section>
+    <section class="card"><h2>图纸记录</h2><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>产品名称</th><th>材质</th><th>厚度</th><th>尺寸</th><th>齿轮参数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table></section>
     """
     return page("图纸识别", body)
 
 
 def drawing_rows(drawings: list[ProductDrawing], show_id: bool = True) -> str:
     rows = "".join(
-        f"<tr><td>{html.escape(d.product_category or '-')}</td><td>{html.escape(d.product_code or '-')}</td><td>{drawing_version_code(d)}</td><td>{'当前' if d.is_active else '历史'}</td><td>{html.escape(d.product_name or '-')}</td><td>{html.escape(d.remark or '-')}</td><td>{html.escape(d.material or '-')}</td><td>{fmt_option(d.product_thickness) or '-'}</td><td>{fmt_option(d.plate_thickness) or '-'}</td><td>{d.max_outer_diameter or '-'}</td><td>{d.min_inner_diameter or '-'}</td><td>{html.escape(display_teeth_count(d))}</td><td>{html.escape(display_module(d))}</td><td>{html.escape(display_common_normal_length(d))}</td><td>{'已确认' if d.confirmed else '待确认'}</td><td><a class='btn secondary' href='/admin/drawings/{d.id}'>查看</a></td></tr>"
+        f"<tr><td>{html.escape(d.product_category or '-')}</td><td>{html.escape(d.product_code or '-')}</td><td>{drawing_version_code(d)}<br><span class='muted'>{'当前' if d.is_active else '历史'}</span></td><td>{html.escape(d.product_name or '-')}<br><span class='muted'>{html.escape(d.remark or '')}</span></td><td>{html.escape(d.material or '-')}</td><td>总 {fmt_option(d.product_thickness) or '-'}<br>钢 {fmt_option(d.plate_thickness) or '-'}</td><td>外 {fmt_option(d.max_outer_diameter) or '-'}<br>内 {fmt_option(d.min_inner_diameter) or '-'}</td><td>{html.escape(display_teeth_count(d))}<br>模数 {html.escape(display_module(d))}<br>公法线 {html.escape(display_common_normal_length(d))}</td><td>{'已确认' if d.confirmed else '待确认'}</td><td><a class='btn secondary' href='/admin/drawings/{d.id}'>查看</a></td></tr>"
         for d in drawings
     )
-    return rows or "<tr><td colspan='16'>暂无图纸记录。</td></tr>"
+    return rows or "<tr><td colspan='10'>暂无图纸记录。</td></tr>"
 
 
 @router.get("/admin/drawings/confirmed", response_class=HTMLResponse)
@@ -3869,7 +3873,7 @@ def confirmed_drawings_page(
         <button class="btn" type="submit">搜索</button>
         <a class="btn secondary" href="/admin/drawings/confirmed">清空</a>
       </form>
-      <table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>模数</th><th>公法线</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings, show_id=False)}</tbody></table>
+      <table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>产品名称</th><th>材质</th><th>厚度</th><th>尺寸</th><th>齿轮参数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings, show_id=False)}</tbody></table>
     </section>
     """
     return page("已确认图纸", body)
@@ -3880,7 +3884,7 @@ def pending_drawings_page(db: Session = Depends(get_db)) -> HTMLResponse:
     drawings = db.query(ProductDrawing).filter(ProductDrawing.confirmed == 0).order_by(ProductDrawing.created_at.desc()).all()
     body = f"""
     <div class="top"><div><h1>待确认图纸</h1><p class="muted">这些图纸需要人工检查并保存确认结果。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/confirmed">已确认图纸</a></div></div>
-    <section class="card"><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>版本状态</th><th>产品名称</th><th>备注</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>模数</th><th>公法线</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table></section>
+    <section class="card"><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>产品名称</th><th>材质</th><th>厚度</th><th>尺寸</th><th>齿轮参数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table></section>
     """
     return page("待确认图纸", body)
 
@@ -4002,7 +4006,8 @@ def drawing_detail_page(drawing_id: int, notice: str = "", db: Session = Depends
       <div><h1>图纸详情</h1><p class="muted">请人工确认识别结果，确认后可进行成品入库。</p></div>
       <div class="actions">
         <a class="btn secondary" href="/admin/drawings">返回列表</a>
-        <a class="btn secondary" href="/admin/drawings/{drawing.id}/preview" target="_blank">查看图纸预览</a>
+        <a class="btn secondary" href="/admin/drawings/{drawing.id}/download">用本机软件打开图纸</a>
+        <a class="btn secondary" href="/admin/drawings/{drawing.id}/preview" target="_blank">浏览器临时预览</a>
         <form method="post" action="/admin/drawings/{drawing.id}/rerun" style="margin:0">
           <button class="btn secondary" type="submit">重新识别当前图纸</button>
         </form>
@@ -4051,7 +4056,7 @@ def drawing_preview_page(drawing_id: int, db: Session = Depends(get_db)) -> HTML
     has_pdf_preview = bool(preview_file_path and preview_file_path.exists() and preview_file_path.is_file())
     if has_pdf_preview:
         preview_content = f"""
-      <p class="muted">高清PDF预览由QCAD根据DXF原始文件生成，可直接缩放、拖动和打印；最终仍以原始DXF文件为准。</p>
+      <p class="muted">这里保留浏览器预览作为快速参考；正式看尺寸和文字时请用本机CAD/看图软件打开原始DXF。</p>
       <iframe src="/admin/drawings/{drawing.id}/preview-file" title="高清PDF预览" style="width:100%;height:82vh;border:1px solid var(--line);border-radius:18px;background:#fff"></iframe>
         """
     else:
@@ -4066,7 +4071,7 @@ def drawing_preview_page(drawing_id: int, db: Session = Depends(get_db)) -> HTML
             status_hint = f"<p class='muted'>高清PDF预览生成失败：{safe_value(drawing.preview_error)}。当前先显示临时SVG预览。</p>"
         preview_content = f"""
       {status_hint}
-      <p class="muted">CAD渲染预览由DXF原始文件生成，浏览器显示仍可能与专业CAD有细微差异；最终以原始DXF文件为准。</p>
+      <p class="muted">浏览器临时预览可能看不清文字或与专业CAD有差异；正式查看请下载原始DXF后用本机软件打开。</p>
       {svg}
         """
     body = f"""
@@ -4074,6 +4079,7 @@ def drawing_preview_page(drawing_id: int, db: Session = Depends(get_db)) -> HTML
       <div><h1>图纸预览</h1><p class="muted">产品型号：{drawing.product_code or '-'}　版本：{drawing_version_code(drawing)}</p></div>
       <div class="actions">
         <a class="btn secondary" href="/admin/drawings/{drawing.id}">返回详情</a>
+        <a class="btn" href="/admin/drawings/{drawing.id}/download">用本机软件打开DXF</a>
         <a class="btn secondary" href="/admin/drawings/{drawing.id}/download">下载原始DXF</a>
         <form method="post" action="/admin/drawings/{drawing.id}/preview/regenerate" style="margin:0">
           <button class="btn secondary" type="submit">重新生成高清预览</button>
@@ -4251,13 +4257,14 @@ def confirm_drawing_from_page(
     drawing.expected_scrap_size = expected_scrap_size or None
     drawing.confirmed = 1
     apply_drawing_version(drawing, db, force_increment=was_confirmed)
+    synced_count = sync_product_inventory_from_drawing(drawing, db)
     record_operation_log(
         db,
         "drawing_confirm",
         "drawing",
         drawing.id,
         None,
-        "确认图纸",
+        f"确认图纸，同步成品库存 {synced_count} 批",
         before_data=before_data,
         after_data=drawing_snapshot(drawing),
     )

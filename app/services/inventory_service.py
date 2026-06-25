@@ -40,6 +40,46 @@ class ProductInboundResult:
     duplicated_request: bool = False
 
 
+def _product_inventory_thicknesses(drawing: ProductDrawing) -> tuple[float | None, float | None, float | None]:
+    product_thickness = drawing.product_thickness or drawing.thickness
+    plate_thickness = drawing.plate_thickness
+    effective_thickness = product_thickness or plate_thickness or drawing.thickness
+    return product_thickness, plate_thickness, effective_thickness
+
+
+def apply_drawing_parameters_to_product_inventory(item: MaterialInventory, drawing: ProductDrawing) -> None:
+    product_thickness, plate_thickness, effective_thickness = _product_inventory_thicknesses(drawing)
+    if effective_thickness is not None:
+        item.thickness = effective_thickness
+    item.product_thickness = product_thickness
+    item.plate_thickness = plate_thickness
+    if drawing.material:
+        item.material = drawing.material
+    item.diameter = drawing.max_outer_diameter
+    item.length = drawing.max_outer_diameter
+    item.width = drawing.max_outer_diameter
+    if drawing.max_outer_diameter:
+        item.usable_size = f"φ{drawing.max_outer_diameter:g}"
+    if drawing.product_code:
+        item.material_code = drawing.product_code
+        item.source_product_code = drawing.product_code
+    item.source_drawing_id = drawing.id
+
+
+def sync_product_inventory_from_drawing(drawing: ProductDrawing, db: Session) -> int:
+    items = (
+        db.query(MaterialInventory)
+        .filter(
+            MaterialInventory.inventory_type == "product",
+            MaterialInventory.source_drawing_id == drawing.id,
+        )
+        .all()
+    )
+    for item in items:
+        apply_drawing_parameters_to_product_inventory(item, drawing)
+    return len(items)
+
+
 def product_inbound_from_drawing(
     drawing: ProductDrawing,
     quantity: int,
@@ -66,7 +106,7 @@ def product_inbound_from_drawing(
                 )
             raise HTTPException(status_code=409, detail="重复请求对应的库存记录不存在")
 
-    thickness = drawing.plate_thickness or drawing.product_thickness or drawing.thickness
+    _, _, thickness = _product_inventory_thicknesses(drawing)
     if not drawing.product_code or not drawing.material or thickness is None:
         raise HTTPException(status_code=400, detail="图纸缺少产品编号、材质或厚度，不能入库")
 
@@ -95,15 +135,7 @@ def product_inbound_from_drawing(
         item_before_quantity = item.quantity
         item.quantity += quantity
         item.status = "available"
-        item.material = drawing.material
-        item.thickness = thickness
-        item.diameter = drawing.max_outer_diameter
-        item.length = drawing.max_outer_diameter
-        item.width = drawing.max_outer_diameter
-        if drawing.max_outer_diameter:
-            item.usable_size = f"φ{drawing.max_outer_diameter:g}"
-        item.source_product_code = drawing.product_code
-        item.source_drawing_id = drawing.id
+        apply_drawing_parameters_to_product_inventory(item, drawing)
         item.paper_material = paper_material_value
     else:
         item_before_quantity = 0
@@ -112,6 +144,8 @@ def product_inbound_from_drawing(
             inventory_type="product",
             material=drawing.material,
             thickness=thickness,
+            product_thickness=drawing.product_thickness or drawing.thickness,
+            plate_thickness=drawing.plate_thickness,
             shape="circle",
             diameter=drawing.max_outer_diameter,
             length=drawing.max_outer_diameter,

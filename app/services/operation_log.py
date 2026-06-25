@@ -54,6 +54,8 @@ def inventory_snapshot(item: MaterialInventory | None) -> dict[str, Any] | None:
         "inventory_type": item.inventory_type,
         "material": item.material,
         "thickness": item.thickness,
+        "product_thickness": item.product_thickness,
+        "plate_thickness": item.plate_thickness,
         "shape": item.shape,
         "diameter": item.diameter,
         "usable_size": item.usable_size,

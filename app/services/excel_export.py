@@ -354,8 +354,8 @@ def build_export_rows(module: str, filters: dict, db: Session) -> tuple[str, lis
         return EXPORT_MODULES[module], *_product_catalog_rows(db, filters)
     if module == "product_inventory":
         items = _apply_inventory_filters(db.query(MaterialInventory), filters, "product").order_by(MaterialInventory.created_at.desc()).all()
-        rows = [[item.material_code or item.source_product_code or "", item.quantity, item.material, _fmt_num(item.thickness), item.paper_material or "", item.location or "", item.source_drawing_id or "", _fmt_time(item.created_at)] for item in items]
-        return EXPORT_MODULES[module], ["产品型号", "库存数量", "材质", "厚度", "纸材质", "库位", "来源图纸", "创建时间"], rows
+        rows = [[item.material_code or item.source_product_code or "", item.quantity, item.material, _fmt_num(item.product_thickness or item.thickness), _fmt_num(item.plate_thickness or item.thickness), item.paper_material or "", item.location or "", item.source_drawing_id or "", _fmt_time(item.created_at)] for item in items]
+        return EXPORT_MODULES[module], ["产品型号", "库存数量", "材质", "总成品厚度", "钢板厚度", "纸材质", "库位", "来源图纸", "创建时间"], rows
     if module == "raw_plate_inventory":
         items = _apply_inventory_filters(db.query(MaterialInventory), filters, "raw_plate").order_by(MaterialInventory.created_at.desc()).all()
         rows = [[item.material, _fmt_num(item.length), _fmt_num(item.width), _fmt_num(item.thickness), item.quantity, item.material_code or "", item.location or "", _fmt_time(item.created_at)] for item in items]

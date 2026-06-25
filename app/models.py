@@ -15,6 +15,8 @@ class MaterialInventory(Base):
     inventory_type: Mapped[str] = mapped_column(String(20), index=True)
     material: Mapped[str] = mapped_column(String(100), index=True)
     thickness: Mapped[float] = mapped_column(Float, index=True)
+    product_thickness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    plate_thickness: Mapped[float | None] = mapped_column(Float, nullable=True)
     shape: Mapped[str] = mapped_column(String(20), index=True)
     diameter: Mapped[float | None] = mapped_column(Float, nullable=True)
     length: Mapped[float | None] = mapped_column(Float, nullable=True)

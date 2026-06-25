@@ -100,6 +100,10 @@ def ensure_runtime_schema(engine: Engine) -> None:
                 connection.execute(text("ALTER TABLE material_inventory ADD COLUMN source_drawing_id INTEGER"))
             if "paper_material" not in inventory_columns:
                 connection.execute(text("ALTER TABLE material_inventory ADD COLUMN paper_material VARCHAR(100)"))
+            if "product_thickness" not in inventory_columns:
+                connection.execute(text("ALTER TABLE material_inventory ADD COLUMN product_thickness FLOAT"))
+            if "plate_thickness" not in inventory_columns:
+                connection.execute(text("ALTER TABLE material_inventory ADD COLUMN plate_thickness FLOAT"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_material_inventory_source_drawing_id ON material_inventory (source_drawing_id)"))
         if "inventory_transaction_records" in tables:
             transaction_columns = table_columns["inventory_transaction_records"]

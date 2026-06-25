@@ -81,6 +81,70 @@ class DrawingParameterTextAndProductPaperTest(unittest.TestCase):
             self.assertEqual(drawing.common_normal_length_text, "58.26-58.14")
             self.assertEqual(drawing.common_normal_length, 58.26)
 
+    def test_confirming_drawing_syncs_existing_product_inventory_thicknesses(self) -> None:
+        with self.Session() as db:
+            drawing = ProductDrawing(
+                product_code="TNX-SYNC",
+                dxf_file_url="/tmp/tnx-sync.dxf",
+                material="65Mn",
+                product_thickness=1.5,
+                plate_thickness=0.8,
+                max_outer_diameter=90,
+                confirmed=1,
+                is_active=1,
+            )
+            db.add(drawing)
+            db.flush()
+            item = MaterialInventory(
+                material_code="TNX-SYNC",
+                inventory_type="product",
+                material="65Mn",
+                thickness=0.8,
+                shape="circle",
+                quantity=7,
+                source_product_code="TNX-SYNC",
+                source_drawing_id=drawing.id,
+                status="available",
+            )
+            db.add(item)
+            db.commit()
+
+            confirm_drawing_from_page(
+                drawing_id=drawing.id,
+                product_code="TNX-SYNC",
+                product_name="同步厚度",
+                product_category="汽车",
+                remark="",
+                material="65Mn",
+                max_outer_diameter="120",
+                min_inner_diameter="60",
+                product_thickness="2.4",
+                plate_thickness="1.1",
+                tooth_type="OT",
+                teeth_count="48",
+                module="2",
+                pressure_angle="20",
+                profile_shift_coefficient="",
+                span_teeth_count="",
+                common_normal_length="",
+                pin_diameter="",
+                pin_span="",
+                expected_scrap_size="φ60",
+                db=db,
+            )
+            db.refresh(item)
+            summary_html = inventory_page(db=db).body.decode("utf-8")
+            detail_html = inventory_product_detail_page("TNX-SYNC", db=db).body.decode("utf-8")
+
+            self.assertEqual(item.thickness, 2.4)
+            self.assertEqual(item.diameter, 120)
+            self.assertIn("<th>总成品厚度</th>", summary_html)
+            self.assertIn("<th>钢板厚度</th>", summary_html)
+            self.assertIn("<td>2.4</td>", summary_html)
+            self.assertIn("<td>1.1</td>", summary_html)
+            self.assertIn("<th>总成品厚度</th>", detail_html)
+            self.assertIn("<td>2.4</td>", detail_html)
+
     def test_text_gear_parameters_are_searchable_and_exported(self) -> None:
         with self.Session() as db:
             db.add_all(
@@ -115,8 +179,8 @@ class DrawingParameterTextAndProductPaperTest(unittest.TestCase):
             _, headings, rows = build_export_rows("product_catalog", {"module": "DP"}, db)
 
             self.assertIn("<td>TNX-OT</td>", html)
-            self.assertIn("<td>OT48(52)</td>", html)
-            self.assertIn("<td>DP</td>", html)
+            self.assertIn("OT48(52)", html)
+            self.assertIn("模数 DP", html)
             self.assertNotIn("<td>TNX-STD</td>", html)
             self.assertIn("齿型", headings)
             self.assertEqual([row[1] for row in rows], ["TNX-OT"])

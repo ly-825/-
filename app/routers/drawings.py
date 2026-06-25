@@ -7,7 +7,7 @@ from app.schemas import DrawingConfirm, DrawingOut, DrawingUploadOut
 from app.services.drawing_parameters import common_normal_value_from_text, first_int_value, normalize_tooth_type, plain_float_value
 from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_drawing
 from app.services.drawing_version import apply_drawing_version
-from app.services.inventory_service import ensure_drawing_can_be_changed
+from app.services.inventory_service import ensure_drawing_can_be_changed, sync_product_inventory_from_drawing
 from app.services.operation_log import drawing_snapshot, record_operation_log
 
 router = APIRouter()
@@ -70,7 +70,8 @@ def confirm_drawing(drawing_id: int, payload: DrawingConfirm, db: Session = Depe
     drawing.thickness = drawing.product_thickness or drawing.plate_thickness or drawing.thickness
     drawing.confirmed = 1
     apply_drawing_version(drawing, db, force_increment=was_confirmed)
-    record_operation_log(db, "drawing_confirm", "drawing", drawing.id, None, "API确认图纸", before_data=before_data, after_data=drawing_snapshot(drawing))
+    synced_count = sync_product_inventory_from_drawing(drawing, db)
+    record_operation_log(db, "drawing_confirm", "drawing", drawing.id, None, f"API确认图纸，同步成品库存 {synced_count} 批", before_data=before_data, after_data=drawing_snapshot(drawing))
     db.commit()
     db.refresh(drawing)
     return drawing
