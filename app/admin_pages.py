@@ -4024,7 +4024,6 @@ def drawing_detail_page(drawing_id: int, notice: str = "", db: Session = Depends
           <button class="btn" type="submit">用本机软件打开图纸</button>
         </form>
         <a class="btn secondary" href="/admin/drawings/{drawing.id}/download">下载DXF</a>
-        <a class="btn secondary" href="/admin/drawings/{drawing.id}/preview" target="_blank">浏览器临时预览</a>
         <form method="post" action="/admin/drawings/{drawing.id}/rerun" style="margin:0">
           <button class="btn secondary" type="submit">重新识别当前图纸</button>
         </form>
@@ -4064,52 +4063,12 @@ def drawing_detail_page(drawing_id: int, notice: str = "", db: Session = Depends
     return page("图纸详情", body, notice=notice)
 
 
-@router.get("/admin/drawings/{drawing_id}/preview", response_class=HTMLResponse)
-def drawing_preview_page(drawing_id: int, db: Session = Depends(get_db)) -> HTMLResponse:
+@router.get("/admin/drawings/{drawing_id}/preview")
+def drawing_preview_page(drawing_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
     drawing = db.get(ProductDrawing, drawing_id)
     if not drawing:
         raise HTTPException(status_code=404, detail="图纸不存在")
-    preview_file_path = Path(drawing.preview_file_url) if drawing.preview_file_url else None
-    has_pdf_preview = bool(preview_file_path and preview_file_path.exists() and preview_file_path.is_file())
-    if has_pdf_preview:
-        preview_content = f"""
-      <p class="muted">这里保留浏览器预览作为快速参考；正式看尺寸和文字时请用本机CAD/看图软件打开原始DXF。</p>
-      <iframe src="/admin/drawings/{drawing.id}/preview-file" title="高清PDF预览" style="width:100%;height:82vh;border:1px solid var(--line);border-radius:18px;background:#fff"></iframe>
-        """
-    else:
-        try:
-            svg = render_dxf_svg(drawing.dxf_file_url)
-        except Exception as exc:
-            svg = f"<p>图纸预览生成失败：{html.escape(str(exc))}</p>"
-        status_hint = ""
-        if drawing.preview_status == "unconfigured":
-            status_hint = f"<p class='muted'>高清PDF预览未配置：{safe_value(drawing.preview_error)}。当前先显示临时SVG预览。</p>"
-        elif drawing.preview_status == "failed":
-            status_hint = f"<p class='muted'>高清PDF预览生成失败：{safe_value(drawing.preview_error)}。当前先显示临时SVG预览。</p>"
-        preview_content = f"""
-      {status_hint}
-      <p class="muted">浏览器临时预览可能看不清文字或与专业CAD有差异；正式查看请下载原始DXF后用本机软件打开。</p>
-      {svg}
-        """
-    body = f"""
-    <div class="top">
-      <div><h1>图纸预览</h1><p class="muted">产品型号：{drawing.product_code or '-'}　版本：{drawing_version_code(drawing)}</p></div>
-      <div class="actions">
-        <a class="btn secondary" href="/admin/drawings/{drawing.id}">返回详情</a>
-        <form method="post" action="/admin/drawings/{drawing.id}/open-local" style="margin:0">
-          <button class="btn" type="submit">用本机软件打开DXF</button>
-        </form>
-        <a class="btn secondary" href="/admin/drawings/{drawing.id}/download">下载原始DXF</a>
-        <form method="post" action="/admin/drawings/{drawing.id}/preview/regenerate" style="margin:0">
-          <button class="btn secondary" type="submit">重新生成高清预览</button>
-        </form>
-      </div>
-    </div>
-    <section class="card">
-      {preview_content}
-    </section>
-    """
-    return page("图纸预览", body)
+    return RedirectResponse(f"/admin/drawings/{drawing.id}", status_code=303)
 
 
 @router.get("/admin/drawings/{drawing_id}/preview-file")
@@ -4145,7 +4104,7 @@ def regenerate_drawing_preview(drawing_id: int, db: Session = Depends(get_db)) -
         after_data=drawing_snapshot(drawing),
     )
     db.commit()
-    return RedirectResponse(f"/admin/drawings/{drawing.id}/preview", status_code=303)
+    return RedirectResponse(f"/admin/drawings/{drawing.id}", status_code=303)
 
 
 @router.get("/admin/drawings/{drawing_id}/download")

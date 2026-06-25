@@ -27,7 +27,7 @@ class DrawingPdfPreviewTest(unittest.TestCase):
         settings.drawing_preview_converter_path = self._old_converter_path
         settings.drawing_preview_converter_args = self._old_converter_args
 
-    def test_configured_converter_generates_pdf_preview_and_page_embeds_it(self) -> None:
+    def test_configured_converter_generates_pdf_preview_and_preview_page_redirects_to_detail(self) -> None:
         with TemporaryDirectory() as temp_dir, self.Session() as db:
             root = Path(temp_dir)
             dxf_path = root / "tnx001.dxf"
@@ -63,10 +63,9 @@ class DrawingPdfPreviewTest(unittest.TestCase):
             self.assertTrue(Path(drawing.preview_file_url).exists())
             self.assertEqual(Path(drawing.preview_file_url).read_bytes()[:8], b"%PDF-1.4")
 
-            html = drawing_preview_page(drawing.id, db=db).body.decode("utf-8")
-            self.assertIn("高清PDF预览", html)
-            self.assertIn(f'/admin/drawings/{drawing.id}/preview-file', html)
-            self.assertNotIn("CAD渲染预览由DXF原始文件生成", html)
+            preview_response = drawing_preview_page(drawing.id, db=db)
+            self.assertEqual(preview_response.status_code, 303)
+            self.assertEqual(preview_response.headers["location"], f"/admin/drawings/{drawing.id}")
 
             response = drawing_preview_file(drawing.id, db=db)
             self.assertEqual(Path(response.path), Path(drawing.preview_file_url))

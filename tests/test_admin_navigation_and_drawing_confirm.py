@@ -151,7 +151,26 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
             self.assertIn('<select name="tooth_type"', html)
             self.assertIn('<input name="teeth_count"', html)
 
-    def test_drawing_preview_uses_local_software_download_entry_and_links_original_file(self) -> None:
+    def test_drawing_detail_hides_browser_temporary_preview_entry(self) -> None:
+        with self.Session() as db:
+            drawing = ProductDrawing(
+                product_code="NO-BROWSER-PREVIEW",
+                dxf_file_url="/tmp/no-browser-preview.dxf",
+                confirmed=1,
+                is_active=1,
+            )
+            db.add(drawing)
+            db.commit()
+            db.refresh(drawing)
+
+            html = drawing_detail_page(drawing.id, db=db).body.decode("utf-8")
+
+            self.assertIn("用本机软件打开图纸", html)
+            self.assertIn("下载DXF", html)
+            self.assertNotIn("浏览器临时预览", html)
+            self.assertNotIn(f'/admin/drawings/{drawing.id}/preview"', html)
+
+    def test_drawing_detail_uses_local_software_entry_and_links_original_file(self) -> None:
         with TemporaryDirectory() as temp_dir, self.Session() as db:
             dxf_path = Path(temp_dir) / "preview.dxf"
             doc = ezdxf.new("R2010")
@@ -174,9 +193,12 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
             db.commit()
             db.refresh(drawing)
 
-            html = drawing_preview_page(drawing.id, db=db).body.decode("utf-8")
-            self.assertIn("用本机软件打开DXF", html)
+            html = drawing_detail_page(drawing.id, db=db).body.decode("utf-8")
+            self.assertIn("用本机软件打开图纸", html)
             self.assertIn(f'/admin/drawings/{drawing.id}/download', html)
+            preview_response = drawing_preview_page(drawing.id, db=db)
+            self.assertEqual(preview_response.status_code, 303)
+            self.assertEqual(preview_response.headers["location"], f"/admin/drawings/{drawing.id}")
 
             download_response = download_drawing_file(drawing.id, db=db)
             self.assertEqual(Path(download_response.path), dxf_path)
