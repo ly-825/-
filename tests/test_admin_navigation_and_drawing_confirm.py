@@ -8,7 +8,8 @@ import ezdxf
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.admin_pages import admin_home, confirm_drawing_from_page, download_drawing_file, drawing_detail_page, drawing_preview_page, drawing_version_label, page, product_outbound_analysis_page, render_dxf_svg
+from app.admin_pages import admin_home, confirm_drawing_from_page, download_drawing_file, drawing_detail_page, drawing_preview_page, drawing_version_label, open_local_drawing_file_from_page, page, product_outbound_analysis_page, render_dxf_svg
+import app.admin_pages as admin_pages
 from app.database import Base
 from app.models import ProductDrawing
 import app.services.drawing_upload as drawing_upload_service
@@ -179,6 +180,31 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
 
             download_response = download_drawing_file(drawing.id, db=db)
             self.assertEqual(Path(download_response.path), dxf_path)
+
+    def test_open_local_drawing_file_route_invokes_system_opener(self) -> None:
+        with TemporaryDirectory() as temp_dir, self.Session() as db:
+            dxf_path = Path(temp_dir) / "open-local.dxf"
+            dxf_path.write_text("0\nEOF\n", encoding="utf-8")
+            drawing = ProductDrawing(
+                product_code="OPEN-LOCAL",
+                dxf_file_url=str(dxf_path),
+                confirmed=1,
+                is_active=1,
+            )
+            db.add(drawing)
+            db.commit()
+            db.refresh(drawing)
+            opened_paths: list[Path] = []
+            original_open_local_file = admin_pages.open_local_file
+            admin_pages.open_local_file = lambda path: opened_paths.append(path)
+            try:
+                response = open_local_drawing_file_from_page(drawing.id, db=db)
+            finally:
+                admin_pages.open_local_file = original_open_local_file
+
+            self.assertEqual(opened_paths, [dxf_path])
+            self.assertEqual(response.status_code, 303)
+            self.assertEqual(response.headers["location"], f"/admin/drawings/{drawing.id}?notice=opened")
 
     def test_uploading_same_product_code_returns_existing_drawing_even_when_file_hash_differs(self) -> None:
         with TemporaryDirectory() as temp_dir, self.Session() as db:

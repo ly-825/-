@@ -1,7 +1,10 @@
 import html
 import json
 import math
+import os
 import re
+import subprocess
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -40,6 +43,15 @@ from app.time_utils import china_now
 
 router = APIRouter()
 TOOTH_TYPES = ("IT", "IL", "IR", "OT", "OL", "OR")
+
+
+def open_local_file(file_path: Path) -> None:
+    if sys.platform.startswith("win"):
+        os.startfile(str(file_path))  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(file_path)])
+    else:
+        subprocess.Popen(["xdg-open", str(file_path)])
 
 
 def clean_text_value(value: object) -> str | None:
@@ -4000,13 +4012,18 @@ def drawing_detail_page(drawing_id: int, notice: str = "", db: Session = Depends
         notice_html = "<section class='card'><strong>这张图纸已经上传过。</strong><p class='muted'>已为你打开已有图纸记录，可直接查看或重新识别。</p></section>"
     elif notice == "uploaded":
         notice_html = "<section class='card'><strong>图纸上传成功，已完成自动识别。</strong><p class='muted'>请核对下面的识别结果，确认无误后保存。</p></section>"
+    elif notice == "opened":
+        notice_html = "<section class='card'><strong>已调用本机软件打开图纸。</strong><p class='muted'>如果没有弹出软件，请检查这台电脑是否已安装并关联DXF查看软件。</p></section>"
     parse_json_text = html.escape(json.dumps(drawing.parse_result_json or {}, ensure_ascii=True, default=str, indent=2), quote=False)
     body = f"""
     <div class="top">
       <div><h1>图纸详情</h1><p class="muted">请人工确认识别结果，确认后可进行成品入库。</p></div>
       <div class="actions">
         <a class="btn secondary" href="/admin/drawings">返回列表</a>
-        <a class="btn secondary" href="/admin/drawings/{drawing.id}/download">用本机软件打开图纸</a>
+        <form method="post" action="/admin/drawings/{drawing.id}/open-local" style="margin:0">
+          <button class="btn" type="submit">用本机软件打开图纸</button>
+        </form>
+        <a class="btn secondary" href="/admin/drawings/{drawing.id}/download">下载DXF</a>
         <a class="btn secondary" href="/admin/drawings/{drawing.id}/preview" target="_blank">浏览器临时预览</a>
         <form method="post" action="/admin/drawings/{drawing.id}/rerun" style="margin:0">
           <button class="btn secondary" type="submit">重新识别当前图纸</button>
@@ -4079,7 +4096,9 @@ def drawing_preview_page(drawing_id: int, db: Session = Depends(get_db)) -> HTML
       <div><h1>图纸预览</h1><p class="muted">产品型号：{drawing.product_code or '-'}　版本：{drawing_version_code(drawing)}</p></div>
       <div class="actions">
         <a class="btn secondary" href="/admin/drawings/{drawing.id}">返回详情</a>
-        <a class="btn" href="/admin/drawings/{drawing.id}/download">用本机软件打开DXF</a>
+        <form method="post" action="/admin/drawings/{drawing.id}/open-local" style="margin:0">
+          <button class="btn" type="submit">用本机软件打开DXF</button>
+        </form>
         <a class="btn secondary" href="/admin/drawings/{drawing.id}/download">下载原始DXF</a>
         <form method="post" action="/admin/drawings/{drawing.id}/preview/regenerate" style="margin:0">
           <button class="btn secondary" type="submit">重新生成高清预览</button>
@@ -4142,6 +4161,31 @@ def download_drawing_file(drawing_id: int, db: Session = Depends(get_db)) -> Fil
         media_type="application/dxf",
         filename=file_path.name,
     )
+
+
+@router.post("/admin/drawings/{drawing_id}/open-local")
+def open_local_drawing_file_from_page(drawing_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
+    drawing = db.get(ProductDrawing, drawing_id)
+    if not drawing:
+        raise HTTPException(status_code=404, detail="图纸不存在")
+    file_path = Path(drawing.dxf_file_url)
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="图纸文件不存在")
+    try:
+        open_local_file(file_path)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"调用本机软件失败：{exc}") from exc
+    record_operation_log(
+        db,
+        "drawing_open_local",
+        "drawing",
+        drawing.id,
+        None,
+        "用本机软件打开DXF",
+        after_data=drawing_snapshot(drawing),
+    )
+    db.commit()
+    return RedirectResponse(f"/admin/drawings/{drawing.id}?notice=opened", status_code=303)
 
 
 @router.post("/admin/drawings/{drawing_id}/rerun")
