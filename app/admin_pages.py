@@ -24,6 +24,7 @@ from app.database import SessionLocal, get_db
 from app.models import InventoryTransactionRecord, MaterialInventory, OperationLog, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 from app.services.dxf_parser import parse_dxf
 from app.services.drawing_preview import generate_drawing_preview
+from app.services.drawing_search import natural_sort_key, tooth_search_filter
 from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_drawing
 from app.services.drawing_version import apply_drawing_version
 from app.services.excel_export import build_export_rows, content_disposition, export_filename, log_export, make_workbook_bytes
@@ -185,11 +186,11 @@ def build_query(params: dict[str, object]) -> str:
 
 
 def confirmed_drawing_options(db: Session, selected_id: int | None = None, include_blank: bool = False) -> str:
-    drawings = (
+    drawings = sorted(
         db.query(ProductDrawing)
         .filter(ProductDrawing.confirmed == 1, ProductDrawing.is_active == 1)
-        .order_by(ProductDrawing.product_code.asc(), ProductDrawing.version.desc())
-        .all()
+        .all(),
+        key=lambda drawing: (natural_sort_key(drawing.product_code), -(drawing.version or 1)),
     )
     options = "".join(
         f"<option value='{drawing.id}' {'selected' if selected_id == drawing.id else ''}>{html.escape(drawing.product_code or '-')}｜{html.escape(drawing.product_category or '-')}｜{drawing_version_code(drawing)}｜{html.escape(drawing.product_name or '-')}｜{html.escape(drawing.material or '-')}｜厚度 {drawing.plate_thickness or drawing.product_thickness or drawing.thickness or '-'}</option>"
@@ -315,6 +316,7 @@ def apply_drawing_filters(
             | (ProductDrawing.teeth_count_text.ilike(like))
             | (ProductDrawing.module_text.ilike(like))
             | (ProductDrawing.common_normal_length_text.ilike(like))
+            | tooth_search_filter(keyword)
         )
         query = query.filter(keyword_filter)
     if product_category.strip():
@@ -342,12 +344,7 @@ def apply_drawing_filters(
         query = query.filter(float_between_filter(ProductDrawing.min_inner_diameter, inner_value))
     teeth_text = teeth_count.strip()
     if teeth_text:
-        teeth_value = optional_int(teeth_text)
-        like = f"%{teeth_text}%"
-        if teeth_value is not None:
-            query = query.filter((ProductDrawing.teeth_count == teeth_value) | (ProductDrawing.teeth_count_text.ilike(like)))
-        else:
-            query = query.filter((ProductDrawing.teeth_count_text.ilike(like)) | (ProductDrawing.tooth_type.ilike(like)))
+        query = query.filter(tooth_search_filter(teeth_text))
     module_text = module.strip()
     if module_text:
         module_value = optional_float(module_text)
@@ -833,7 +830,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     * {{ box-sizing:border-box; }}
     body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }}
     a {{ color:inherit; text-decoration:none; }}
-    .layout {{ display:grid; grid-template-columns:220px 1fr; min-height:100vh; }}
+    .layout {{ display:grid; grid-template-columns:220px minmax(0,1fr); min-height:100vh; }}
     aside {{ background:#0f1f46; color:white; padding:20px 14px; max-height:100vh; overflow:auto; position:sticky; top:0; }}
     .brand {{ font-size:17px; font-weight:800; margin:0 8px 12px; }}
     .nav-current {{ margin:0 6px 14px; padding:10px 12px; border-radius:10px; background:rgba(147,197,253,.14); color:#dbeafe; border:1px solid rgba(147,197,253,.24); }}
@@ -853,7 +850,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .nav-section .nav-items a.active {{ background:rgba(147,197,253,.18); color:white; }}
     .nav-subhead {{ display:block; margin:9px 9px 5px; padding-top:9px; border-top:1px solid rgba(255,255,255,.12); color:rgba(219,234,254,.58); font-size:11px; font-weight:900; }}
     .nav-root {{ margin-bottom:10px; }}
-    main {{ padding:28px; }}
+    main {{ min-width:0; padding:28px; }}
     .top {{ display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:22px; }}
     h1 {{ margin:0; font-size:28px; }}
     .muted {{ color:var(--muted); }}
@@ -936,7 +933,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     th {{ color:var(--muted); font-weight:800; background:#fbfcff; position:sticky; top:0; z-index:1; white-space:nowrap; }}
     tbody tr:nth-child(even) td {{ background:#fcfdff; }}
     tbody tr:hover td {{ background:#f6f8fc; }}
-    .table-scroll {{ overflow:auto; max-height:68vh; border:1px solid var(--line); border-radius:16px; }}
+    .table-scroll {{ width:100%; max-width:100%; overflow:auto; max-height:68vh; border:1px solid var(--line); border-radius:16px; }}
     .table-scroll table {{ margin:0; min-width:0; }}
     .table-scroll tr:last-child td {{ border-bottom:0; }}
     .num-col {{ text-align:right; font-variant-numeric:tabular-nums; }}
@@ -945,6 +942,13 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     tbody tr:nth-child(even) td.action-col {{ background:#fcfdff; }}
     tbody tr:hover td.action-col {{ background:#f6f8fc; }}
     .cell-clip {{ max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+    .compact-list {{ table-layout:fixed; }}
+    .compact-list th:nth-child(1) {{ width:18%; }}
+    .compact-list th:nth-child(2) {{ width:24%; }}
+    .compact-list th:nth-child(3) {{ width:22%; }}
+    .compact-list th:nth-child(4) {{ width:10%; }}
+    .compact-list th:nth-child(5) {{ width:12%; }}
+    .compact-list th:nth-child(6) {{ width:116px; }}
     .status-pill {{ display:inline-flex; align-items:center; justify-content:center; min-height:26px; padding:0 9px; border-radius:999px; background:#eef2ff; color:#1d4ed8; font-size:12px; font-weight:900; white-space:nowrap; }}
     .status-pill.is-ok {{ background:#dcfce7; color:#166534; }}
     .status-pill.is-warn {{ background:#ffedd5; color:#9a3412; }}
@@ -1020,6 +1024,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     pre {{ white-space:pre-wrap; word-break:break-all; background:#0f172a; color:#dbeafe; padding:16px; border-radius:14px; overflow:auto; }}
     @media (max-width:1100px) {{ .workbench-layout,.inventory-overview {{ grid-template-columns:1fr; }} }}
     @media (max-width:900px) {{ .layout {{ grid-template-columns:1fr; }} aside {{ position:static; max-height:none; }} .grid,.form-grid,.quick-action-grid,.flow-summary {{ grid-template-columns:1fr; }} .workbench-head {{ flex-direction:column; }} .workbench-date {{ width:100%; text-align:left; }} .announcement-bar {{ align-items:flex-start; flex-direction:column; }} .announcement-bar a,.announcement-close {{ width:100%; }} .assistant-launcher {{ right:16px; bottom:16px; }} .assistant-panel {{ right:16px; bottom:84px; max-height:calc(100vh - 104px); }} }}
+    @media (max-width:700px) {{ .compact-list,.compact-list tbody,.compact-list tr,.compact-list td {{ display:block; width:100%; }} .compact-list thead {{ display:none; }} .compact-list tr {{ padding:10px 12px; border-bottom:1px solid var(--line); }} .compact-list td {{ display:grid; grid-template-columns:82px minmax(0,1fr); gap:10px; padding:7px 0; border:0; background:transparent !important; }} .compact-list td::before {{ content:attr(data-label); color:var(--muted); font-weight:800; }} .compact-list .action-col {{ position:static; min-width:0; box-shadow:none; }} .compact-list .btn {{ width:100%; }} }}
   </style>
 </head>
 <body>
@@ -1813,7 +1818,7 @@ def inventory_page(
           <td>{group['code']}</td><td>{group['material']}</td><td>{' / '.join(sorted(value for value in group['product_thicknesses'] if value)) or '-'}</td><td>{' / '.join(sorted(value for value in group['plate_thicknesses'] if value)) or '-'}</td><td>{' / '.join(sorted(group['paper_materials'])) or '-'}</td><td><strong>{group['quantity']}</strong></td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td>{group['latest'] or '-'}</td><td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe="")}'>查看明细</a></td>
         </tr>
         """
-        for group in grouped.values()
+        for group in sorted(grouped.values(), key=lambda value: natural_sort_key(value["code"]))
     )
     product_codes = inventory_distinct_options(db, "product", "material_code", quantity_positive=True)
     source_codes = inventory_distinct_options(db, "product", "source_product_code", quantity_positive=True)
@@ -2681,7 +2686,7 @@ def inventory_outbound_page(
             drawing_map[drawing.product_code] = drawing
     drawing_options = "".join(
         f"<option value='{drawing_map[code].id}'>{html.escape(code)}｜{html.escape(drawing_map[code].product_category or '-')}｜{drawing_version_code(drawing_map[code])}｜{html.escape(str(group['material']))}｜厚度 {group['thickness']}｜纸材质 {' / '.join(sorted(group['paper_materials'])) or '-'}｜库存 {group['quantity']}｜库位 {' / '.join(sorted(group['locations'])) or '-'}</option>"
-        for code, group in grouped.items()
+        for code, group in sorted(grouped.items(), key=lambda item: natural_sort_key(item[0]))
         if code in drawing_map
     ) or "<option value='' disabled selected>暂无可出库成品库存</option>"
     rows = "".join(
@@ -2690,7 +2695,7 @@ def inventory_outbound_page(
           <td>{html.escape(str(group['code']))}</td><td>{group['material']}</td><td>{group['thickness']}</td><td>{' / '.join(sorted(group['paper_materials'])) or '-'}</td><td><strong>{group['quantity']}</strong></td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td>{group['latest'] or '-'}</td><td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe="")}'>查看明细</a></td>
         </tr>
         """
-        for group in grouped.values()
+        for group in sorted(grouped.values(), key=lambda value: natural_sort_key(value["code"]))
     )
     product_codes = inventory_distinct_options(db, "product", "material_code", quantity_positive=True)
     source_codes = inventory_distinct_options(db, "product", "source_product_code", quantity_positive=True)
@@ -3664,79 +3669,32 @@ def outbound_scrap_from_page(
 
 @router.get("/admin/drawings", response_class=HTMLResponse)
 def drawings_page(
-    q: str = "",
-    product_category: str = "",
-    material: str = "",
-    thickness: str = "",
-    product_thickness: str = "",
-    plate_thickness: str = "",
-    outer_diameter: str = "",
-    inner_diameter: str = "",
-    teeth_count: str = "",
-    module: str = "",
-    pressure_angle: str = "",
-    common_normal_length: str = "",
-    pin_diameter: str = "",
-    pin_span: str = "",
-    confirmed: str = "",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    query = db.query(ProductDrawing)
-    keyword = q.strip()
-    query = apply_drawing_filters(
-        query,
-        q=q,
-        product_category=product_category,
-        material=material,
-        thickness=thickness,
-        product_thickness=product_thickness,
-        plate_thickness=plate_thickness,
-        outer_diameter=outer_diameter,
-        inner_diameter=inner_diameter,
-        teeth_count=teeth_count,
-        module=module,
-        pressure_angle=pressure_angle,
-        common_normal_length=common_normal_length,
-        pin_diameter=pin_diameter,
-        pin_span=pin_span,
-    )
-    if confirmed in ("0", "1"):
-        query = query.filter(ProductDrawing.confirmed == int(confirmed))
-    drawings = query.order_by(ProductDrawing.created_at.desc()).all()
-    rows = drawing_rows(drawings)
-    product_code_options = datalist_options(drawing_distinct_options(db, "product_code", confirmed_only=False))
-    product_category_options = datalist_options(drawing_distinct_options(db, "product_category", confirmed_only=False) + ["汽车", "摩托车"])
-    material_options = datalist_options(drawing_distinct_options(db, "material", confirmed_only=False))
-    product_thickness_options = datalist_options(drawing_distinct_options(db, "product_thickness", confirmed_only=False))
-    plate_thickness_options = datalist_options(drawing_distinct_options(db, "plate_thickness", confirmed_only=False))
-    outer_options = datalist_options(drawing_distinct_options(db, "max_outer_diameter", confirmed_only=False))
-    inner_options = datalist_options(drawing_distinct_options(db, "min_inner_diameter", confirmed_only=False))
-    teeth_options = datalist_options(drawing_distinct_options(db, "teeth_count", confirmed_only=False))
-    confirmed_options = "".join(
-        f"<option value='{value}' {'selected' if confirmed == value else ''}>{label}</option>"
-        for value, label in (("", "全部状态"), ("1", "已确认"), ("0", "待确认"))
-    )
     body = f"""
-    <div class="top"><div><h1>图纸识别</h1><p class="muted">上传DXF文件，自动识别产品用料信息。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a><a class="btn secondary" href="/admin/drawings/confirmed">已确认图纸</a><form method="post" action="/admin/drawings/previews/regenerate-missing" style="margin:0" onsubmit="return confirm('将为所有缺少高清PDF预览的图纸生成预览，可能需要等待一段时间，继续吗？')"><button class="btn secondary" type="submit">批量生成高清预览</button></form></div></div>
+    <div class="top"><div><h1>图纸识别</h1><p class="muted">上传一张或多张DXF文件，系统会逐张识别。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a><a class="btn secondary" href="/admin/drawings/confirmed">已确认图纸</a></div></div>
     <section class="card">
-      <h2>上传DXF</h2>
-      <form id="uploadForm" method="post" action="/admin/drawings/upload" enctype="multipart/form-data">
-        <label id="dropzone" class="dropzone" for="dxfFile">
-          <strong>拖拽 DXF 文件到这里</strong>
-          <span>或点击选择文件，仅支持 .dxf</span>
+      <h2>上传DXF图纸</h2>
+      <p class="muted">可选择1至50张图纸，上传后会显示每张图纸的识别结果。</p>
+      <form id="uploadForm" method="post" action="/admin/drawings/upload-batch" enctype="multipart/form-data">
+        <label id="dropzone" class="dropzone" for="dxfFiles">
+          <strong>拖拽 DXF 文件到这里，或点击选择</strong>
+          <span>支持单张或批量上传，仅支持 .dxf</span>
           <div id="fileName" class="file-name"></div>
         </label>
-        <input id="dxfFile" class="hidden-file" type="file" name="file" accept=".dxf" required>
+        <input id="dxfFiles" class="hidden-file" type="file" name="files" accept=".dxf" multiple required>
         <br>
-        <button class="btn" type="submit">上传并识别</button>
+        <button class="btn" type="submit">开始上传并识别</button>
       </form>
       <script>
         const dropzone = document.getElementById('dropzone');
-        const fileInput = document.getElementById('dxfFile');
+        const fileInput = document.getElementById('dxfFiles');
         const fileName = document.getElementById('fileName');
-        const showFile = () => {{
-          const file = fileInput.files && fileInput.files[0];
-          fileName.textContent = file ? `已选择：${{file.name}}` : '';
+        const showFiles = () => {{
+          const files = Array.from(fileInput.files || []);
+          const names = files.slice(0, 5).map(file => file.name).join('、');
+          const more = files.length > 5 ? ` 等 ${{files.length}} 张` : '';
+          fileName.textContent = files.length ? `已选择 ${{files.length}} 张：${{names}}${{more}}` : '';
         }};
         ['dragenter', 'dragover'].forEach(eventName => {{
           dropzone.addEventListener(eventName, event => {{
@@ -3751,58 +3709,40 @@ def drawings_page(
           }});
         }});
         dropzone.addEventListener('drop', event => {{
-          const file = event.dataTransfer.files && event.dataTransfer.files[0];
-          if (!file) return;
-          if (!file.name.toLowerCase().endsWith('.dxf')) {{
-            alert('请上传 .dxf 文件');
+          const files = Array.from(event.dataTransfer.files || []);
+          if (!files.length) return;
+          if (files.length > 50) {{
+            alert('一次最多上传50张DXF图纸');
+            return;
+          }}
+          if (files.some(file => !file.name.toLowerCase().endsWith('.dxf'))) {{
+            alert('只能上传 .dxf 文件');
             return;
           }}
           const dataTransfer = new DataTransfer();
-          dataTransfer.items.add(file);
+          files.forEach(file => dataTransfer.items.add(file));
           fileInput.files = dataTransfer.files;
-          showFile();
+          showFiles();
         }});
-        fileInput.addEventListener('change', showFile);
+        fileInput.addEventListener('change', () => {{
+          if (fileInput.files.length > 50) {{
+            alert('一次最多上传50张DXF图纸');
+            fileInput.value = '';
+          }}
+          showFiles();
+        }});
       </script>
     </section>
-    <section class="card">
-      <h2>批量导入DXF</h2>
-      <p class="muted">一次最多选择50张DXF。系统会逐张识别，成功或重复的图纸进入图纸记录，失败的文件会单独显示原因。</p>
-      <form method="post" action="/admin/drawings/upload-batch" enctype="multipart/form-data">
-        <input type="file" name="files" accept=".dxf" multiple required>
-        <br><br>
-        <button class="btn" type="submit">批量上传并识别</button>
-      </form>
-    </section>
-    <section class="card">
-      <form method="get" action="/admin/drawings" class="actions" style="justify-content:flex-start">
-        <input name="q" value="{safe_value(keyword)}" list="drawing-code-options" placeholder="型号/名称/材质筛选" style="width:220px"><datalist id="drawing-code-options">{product_code_options}</datalist>
-        <input name="product_category" value="{safe_value(product_category.strip())}" list="drawing-category-options" placeholder="产品分类" style="width:150px"><datalist id="drawing-category-options">{product_category_options}</datalist>
-        <input name="material" value="{safe_value(material.strip())}" list="drawing-material-options" placeholder="材质" style="width:130px"><datalist id="drawing-material-options">{material_options}</datalist>
-        <input name="product_thickness" value="{safe_value(product_thickness.strip())}" list="drawing-product-thickness-options" placeholder="总成品厚度" style="width:130px"><datalist id="drawing-product-thickness-options">{product_thickness_options}</datalist>
-        <input name="plate_thickness" value="{safe_value(plate_thickness.strip())}" list="drawing-plate-thickness-options" placeholder="钢板厚度" style="width:120px"><datalist id="drawing-plate-thickness-options">{plate_thickness_options}</datalist>
-        <input name="outer_diameter" value="{safe_value(outer_diameter.strip())}" list="drawing-outer-options" placeholder="外径" style="width:110px"><datalist id="drawing-outer-options">{outer_options}</datalist>
-        <input name="inner_diameter" value="{safe_value(inner_diameter.strip())}" list="drawing-inner-options" placeholder="内径" style="width:110px"><datalist id="drawing-inner-options">{inner_options}</datalist>
-        <input name="teeth_count" value="{safe_value(teeth_count.strip())}" list="drawing-teeth-options" placeholder="齿数" style="width:110px"><datalist id="drawing-teeth-options">{teeth_options}</datalist>
-        <input name="module" value="{safe_value(module.strip())}" placeholder="模数" style="width:100px">
-        <input name="pressure_angle" value="{safe_value(pressure_angle.strip())}" placeholder="压力角" style="width:110px">
-        <input name="common_normal_length" value="{safe_value(common_normal_length.strip())}" placeholder="公法线" style="width:120px">
-        <select name="confirmed" style="width:140px">{confirmed_options}</select>
-        <button class="btn" type="submit">搜索图纸</button>
-        <a class="btn secondary" href="/admin/drawings">清空</a>
-      </form>
-    </section>
-    <section class="card"><h2>图纸记录</h2><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>产品名称</th><th>材质</th><th>厚度</th><th>尺寸</th><th>齿轮参数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table></section>
     """
     return page("图纸识别", body)
 
 
-def drawing_rows(drawings: list[ProductDrawing], show_id: bool = True) -> str:
+def drawing_rows(drawings: list[ProductDrawing]) -> str:
     rows = "".join(
-        f"<tr><td>{html.escape(d.product_category or '-')}</td><td>{html.escape(d.product_code or '-')}</td><td>{drawing_version_code(d)}<br><span class='muted'>{'当前' if d.is_active else '历史'}</span></td><td>{html.escape(d.product_name or '-')}<br><span class='muted'>{html.escape(d.remark or '')}</span></td><td>{html.escape(d.material or '-')}</td><td>总 {fmt_option(d.product_thickness) or '-'}<br>钢 {fmt_option(d.plate_thickness) or '-'}</td><td>外 {fmt_option(d.max_outer_diameter) or '-'}<br>内 {fmt_option(d.min_inner_diameter) or '-'}</td><td>{html.escape(display_teeth_count(d))}<br>模数 {html.escape(display_module(d))}<br>公法线 {html.escape(display_common_normal_length(d))}</td><td>{'已确认' if d.confirmed else '待确认'}</td><td><a class='btn secondary' href='/admin/drawings/{d.id}'>查看</a></td></tr>"
+        f"<tr><td data-label='产品编号'>{html.escape(d.product_code or '-')}</td><td data-label='产品名称'>{html.escape(d.product_name or '-')}</td><td data-label='分类/材质'>{html.escape(d.product_category or '-')}<br><span class='muted'>{html.escape(d.material or '-')}</span></td><td data-label='版本'>{drawing_version_code(d)}</td><td data-label='状态'>{'已确认' if d.confirmed else '待确认'}</td><td data-label='操作' class='action-col'><a class='btn secondary' href='/admin/drawings/{d.id}'>{'查看' if d.confirmed else '确认'}</a></td></tr>"
         for d in drawings
     )
-    return rows or "<tr><td colspan='10'>暂无图纸记录。</td></tr>"
+    return rows or "<tr><td colspan='6'>暂无图纸记录。</td></tr>"
 
 
 @router.get("/admin/drawings/confirmed", response_class=HTMLResponse)
@@ -3842,7 +3782,10 @@ def confirmed_drawings_page(
         pin_diameter=pin_diameter,
         pin_span=pin_span,
     )
-    drawings = query.order_by(ProductDrawing.updated_at.desc()).all()
+    drawings = sorted(
+        query.all(),
+        key=lambda drawing: (natural_sort_key(drawing.product_code), -(drawing.version or 1)),
+    )
     product_code_options = datalist_options(drawing_distinct_options(db, "product_code"))
     product_category_options = datalist_options(drawing_distinct_options(db, "product_category") + ["汽车", "摩托车"])
     material_options = datalist_options(drawing_distinct_options(db, "material"))
@@ -3885,7 +3828,7 @@ def confirmed_drawings_page(
         <button class="btn" type="submit">搜索</button>
         <a class="btn secondary" href="/admin/drawings/confirmed">清空</a>
       </form>
-      <table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>产品名称</th><th>材质</th><th>厚度</th><th>尺寸</th><th>齿轮参数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings, show_id=False)}</tbody></table>
+      <table class="compact-list"><thead><tr><th>产品编号</th><th>产品名称</th><th>分类/材质</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table>
     </section>
     """
     return page("已确认图纸", body)
@@ -3893,10 +3836,13 @@ def confirmed_drawings_page(
 
 @router.get("/admin/drawings/pending", response_class=HTMLResponse)
 def pending_drawings_page(db: Session = Depends(get_db)) -> HTMLResponse:
-    drawings = db.query(ProductDrawing).filter(ProductDrawing.confirmed == 0).order_by(ProductDrawing.created_at.desc()).all()
+    drawings = sorted(
+        db.query(ProductDrawing).filter(ProductDrawing.confirmed == 0).all(),
+        key=lambda drawing: (natural_sort_key(drawing.product_code), -(drawing.version or 1)),
+    )
     body = f"""
     <div class="top"><div><h1>待确认图纸</h1><p class="muted">这些图纸需要人工检查并保存确认结果。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/confirmed">已确认图纸</a></div></div>
-    <section class="card"><table><thead><tr><th>产品分类</th><th>产品编号</th><th>版本</th><th>产品名称</th><th>材质</th><th>厚度</th><th>尺寸</th><th>齿轮参数</th><th>确认状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table></section>
+    <section class="card"><table class="compact-list"><thead><tr><th>产品编号</th><th>产品名称</th><th>分类/材质</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table></section>
     """
     return page("待确认图纸", body)
 

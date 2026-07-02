@@ -8,7 +8,7 @@ import ezdxf
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.admin_pages import admin_home, confirm_drawing_from_page, download_drawing_file, drawing_detail_page, drawing_preview_page, drawing_version_label, open_local_drawing_file_from_page, page, product_outbound_analysis_page, render_dxf_svg
+from app.admin_pages import admin_home, confirm_drawing_from_page, download_drawing_file, drawing_detail_page, drawing_preview_page, drawing_version_label, drawings_page, open_local_drawing_file_from_page, page, product_outbound_analysis_page, render_dxf_svg
 import app.admin_pages as admin_pages
 from app.database import Base
 from app.models import ProductDrawing
@@ -37,6 +37,18 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
             html = product_outbound_analysis_page(db=db).body.decode("utf-8")
 
         self.assertIn('href="/admin/reports/outbound">综合出库统计', html)
+
+    def test_drawing_upload_page_uses_one_multi_file_uploader_only(self) -> None:
+        with self.Session() as db:
+            html = drawings_page(db=db).body.decode("utf-8")
+
+        self.assertEqual(html.count('type="file"'), 1)
+        self.assertIn('action="/admin/drawings/upload-batch"', html)
+        self.assertIn('name="files"', html)
+        self.assertIn("multiple", html)
+        self.assertNotIn('method="get" action="/admin/drawings"', html)
+        self.assertNotIn("图纸记录", html)
+        self.assertNotIn("批量生成高清预览", html)
 
     def test_confirming_existing_drawing_increments_a_version_and_redirects_success_notice(self) -> None:
         with self.Session() as db:
@@ -268,40 +280,56 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
             self.assertEqual(drawing.id, existing.id)
             self.assertEqual(db.query(ProductDrawing).count(), 1)
 
-    def test_confirmed_drawings_page_uses_compact_parameter_columns(self) -> None:
+    def test_pending_and_confirmed_drawing_lists_only_show_primary_columns(self) -> None:
         with self.Session() as db:
-            db.add(
-                ProductDrawing(
-                    product_code="TNX-COMPACT",
-                    product_name="紧凑列表",
-                    dxf_file_url="/tmp/compact.dxf",
-                    material="65Mn",
-                    product_thickness=1.6,
-                    plate_thickness=0.8,
-                    max_outer_diameter=120,
-                    min_inner_diameter=84,
-                    tooth_type="OT",
-                    teeth_count_text="48(52)",
-                    module_text="DP",
-                    common_normal_length_text="58.26-58.14",
-                    confirmed=1,
-                    is_active=1,
-                )
+            confirmed = ProductDrawing(
+                product_code="TNX-COMPACT",
+                product_name="紧凑列表",
+                product_category="汽车",
+                dxf_file_url="/tmp/compact.dxf",
+                material="65Mn",
+                product_thickness=1.6,
+                plate_thickness=0.8,
+                max_outer_diameter=120,
+                min_inner_diameter=84,
+                tooth_type="OT",
+                teeth_count_text="48(52)",
+                module_text="DP",
+                common_normal_length_text="58.26-58.14",
+                confirmed=1,
+                is_active=1,
             )
+            pending = ProductDrawing(
+                product_code="TNX-PENDING",
+                product_name="待确认列表",
+                product_category="摩托车",
+                dxf_file_url="/tmp/pending.dxf",
+                material="Q235",
+                confirmed=0,
+                is_active=1,
+            )
+            db.add_all([confirmed, pending])
             db.commit()
 
-            from app.admin_pages import confirmed_drawings_page
+            from app.admin_pages import confirmed_drawings_page, pending_drawings_page
 
-            html = confirmed_drawings_page(db=db).body.decode("utf-8")
+            confirmed_html = confirmed_drawings_page(db=db).body.decode("utf-8")
+            pending_html = pending_drawings_page(db=db).body.decode("utf-8")
+            detail_html = drawing_detail_page(confirmed.id, db=db).body.decode("utf-8")
 
-            self.assertIn("<th>厚度</th>", html)
-            self.assertIn("<th>尺寸</th>", html)
-            self.assertIn("<th>齿轮参数</th>", html)
-            self.assertNotIn("<th>版本状态</th>", html)
-            self.assertNotIn("<th>备注</th>", html)
-            self.assertNotIn("<th>总成品厚度</th><th>钢板厚度</th><th>外径</th><th>内径</th><th>齿数</th><th>模数</th><th>公法线</th>", html)
-            self.assertIn("OT48(52)", html)
-            self.assertIn("DP", html)
+            headings = "<th>产品编号</th><th>产品名称</th><th>分类/材质</th><th>版本</th><th>状态</th><th>操作</th>"
+            for html in (confirmed_html, pending_html):
+                self.assertIn(headings, html)
+                self.assertNotIn("<th>厚度</th>", html)
+                self.assertNotIn("<th>尺寸</th>", html)
+                self.assertNotIn("<th>齿轮参数</th>", html)
+                self.assertIn('class="compact-list"', html)
+            self.assertIn("TNX-COMPACT", confirmed_html)
+            self.assertNotIn("TNX-PENDING", confirmed_html)
+            self.assertIn("TNX-PENDING", pending_html)
+            self.assertIn("总成品厚度", detail_html)
+            self.assertIn("钢板厚度", detail_html)
+            self.assertIn("齿数 z", detail_html)
 
 
 if __name__ == "__main__":

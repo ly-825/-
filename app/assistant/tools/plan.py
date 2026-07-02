@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.assistant.render import table
 from app.assistant.types import AssistantAction, AssistantIntent, AssistantResponse
 from app.models import MaterialInventory, ProductDrawing
+from app.services.drawing_search import tooth_search_filter
 from app.services.material_matching import (
     drawing_required_diameter,
     effective_drawing_thickness,
@@ -116,6 +117,7 @@ def _find_drawings(intent: AssistantIntent, db: Session) -> list[ProductDrawing]
             | (ProductDrawing.teeth_count_text.ilike(like))
             | (ProductDrawing.module_text.ilike(like))
             | (ProductDrawing.common_normal_length_text.ilike(like))
+            | tooth_search_filter(keyword)
         )
     if filters["material"]:
         query = query.filter(ProductDrawing.material.ilike(f"%{filters['material']}%"))
@@ -131,12 +133,7 @@ def _find_drawings(intent: AssistantIntent, db: Session) -> list[ProductDrawing]
     if filters["inner_diameter"] is not None:
         query = query.filter(_number_clause(ProductDrawing.min_inner_diameter, filters["inner_diameter"]))
     if filters["teeth_count"]:
-        teeth_text = str(filters["teeth_count"])
-        like = f"%{teeth_text}%"
-        try:
-            query = query.filter((ProductDrawing.teeth_count == int(teeth_text)) | ProductDrawing.teeth_count_text.ilike(like))
-        except ValueError:
-            query = query.filter(ProductDrawing.teeth_count_text.ilike(like) | ProductDrawing.tooth_type.ilike(like))
+        query = query.filter(tooth_search_filter(str(filters["teeth_count"])))
     if not keyword and not any(value is not None and value != "" for value in filters.values()):
         return []
     return query.order_by(ProductDrawing.product_code.asc(), ProductDrawing.version.desc()).limit(50).all()

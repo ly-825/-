@@ -178,10 +178,8 @@ class DrawingParameterTextAndProductPaperTest(unittest.TestCase):
             html = confirmed_drawings_page(module="DP", teeth_count="48(52)", db=db).body.decode("utf-8")
             _, headings, rows = build_export_rows("product_catalog", {"module": "DP"}, db)
 
-            self.assertIn("<td>TNX-OT</td>", html)
-            self.assertIn("OT48(52)", html)
-            self.assertIn("模数 DP", html)
-            self.assertNotIn("<td>TNX-STD</td>", html)
+            self.assertIn(">TNX-OT</td>", html)
+            self.assertNotIn(">TNX-STD</td>", html)
             self.assertIn("齿型", headings)
             self.assertEqual([row[1] for row in rows], ["TNX-OT"])
             self.assertIn("DP", rows[0])

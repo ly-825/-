@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.assistant.render import table
 from app.assistant.types import AssistantAction, AssistantIntent, AssistantResponse
 from app.models import ProductDrawing
+from app.services.drawing_search import TOOTH_TYPES, tooth_search_filter
 from app.services.inventory_service import drawing_has_inventory_references
 
 
@@ -111,25 +112,23 @@ def list_drawings_by_parameter(intent: AssistantIntent, db: Session) -> Assistan
 
 def detect_drawing_parameter(message: str) -> str | None:
     normalized = message.lower().replace(" ", "")
-    matches: list[tuple[int, str]] = []
+    matches: list[tuple[int, int, str]] = []
     for field, meta in DRAWING_PARAMETERS.items():
         for alias in meta["aliases"]:
             alias_text = str(alias).lower().replace(" ", "")
             if alias_text and alias_text in normalized:
-                matches.append((len(alias_text), field))
+                is_enum_value = str(alias).upper() in TOOTH_TYPES
+                matches.append((0 if is_enum_value else 1, len(alias_text), field))
     if not matches:
         return None
-    return sorted(matches, reverse=True)[0][1]
+    return sorted(matches, reverse=True)[0][2]
 
 
 def _apply_value_filter(query, field: str, keyword: str, kind: str):
     if kind == "number":
         like = f"%{keyword}%"
         if field == "teeth_count":
-            number = _extract_number(keyword)
-            if number is not None:
-                return query.filter((ProductDrawing.teeth_count == int(number)) | ProductDrawing.teeth_count_text.ilike(like))
-            return query.filter(ProductDrawing.teeth_count_text.ilike(like) | ProductDrawing.tooth_type.ilike(like))
+            return query.filter(tooth_search_filter(keyword))
         if field == "module":
             number = _extract_number(keyword)
             if number is not None:

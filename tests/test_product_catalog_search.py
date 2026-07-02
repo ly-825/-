@@ -62,9 +62,8 @@ class ProductCatalogSearchTest(unittest.TestCase):
             )
 
             html = response.body.decode("utf-8")
-            self.assertIn("<td>CAR-100</td>", html)
-            self.assertIn("客户要求热处理", html)
-            self.assertNotIn("<td>MOTO-200</td>", html)
+            self.assertIn(">CAR-100</td>", html)
+            self.assertNotIn(">MOTO-200</td>", html)
 
     def test_product_catalog_export_filters_category_and_includes_parameters(self) -> None:
         with self.Session() as db:
@@ -157,13 +156,11 @@ class ProductCatalogSearchTest(unittest.TestCase):
             keyword_response = confirmed_drawings_page(q="1.25", db=db)
             keyword_html = keyword_response.body.decode("utf-8")
 
-            self.assertIn("<th>厚度</th>", all_html)
-            self.assertIn("总 1.25", all_html)
-            self.assertIn("钢 0.95", all_html)
-            self.assertIn("<td>CAR-125</td>", all_html)
-            self.assertIn("<td>CAR-080</td>", all_html)
-            self.assertNotIn("<td>CAR-125</td>", keyword_html)
-            self.assertNotIn("<td>CAR-080</td>", keyword_html)
+            self.assertNotIn("<th>厚度</th>", all_html)
+            self.assertIn(">CAR-125</td>", all_html)
+            self.assertIn(">CAR-080</td>", all_html)
+            self.assertNotIn(">CAR-125</td>", keyword_html)
+            self.assertNotIn(">CAR-080</td>", keyword_html)
 
     def test_mobile_drawing_keyword_search_does_not_match_product_or_plate_thickness(self) -> None:
         with self.Session() as db:
@@ -254,10 +251,10 @@ class ProductCatalogSearchTest(unittest.TestCase):
 
             self.assertIn('name="product_thickness"', product_html)
             self.assertIn('name="plate_thickness"', product_html)
-            self.assertIn("<td>SEP-PRODUCT</td>", product_html)
-            self.assertNotIn("<td>SEP-PLATE</td>", product_html)
-            self.assertIn("<td>SEP-PLATE</td>", plate_html)
-            self.assertNotIn("<td>SEP-PRODUCT</td>", plate_html)
+            self.assertIn(">SEP-PRODUCT</td>", product_html)
+            self.assertNotIn(">SEP-PLATE</td>", product_html)
+            self.assertIn(">SEP-PLATE</td>", plate_html)
+            self.assertNotIn(">SEP-PRODUCT</td>", plate_html)
 
     def test_mobile_drawings_have_separate_product_and_plate_thickness_filters(self) -> None:
         with self.Session() as db:

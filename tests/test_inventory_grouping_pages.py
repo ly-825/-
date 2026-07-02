@@ -1,11 +1,12 @@
 import unittest
+from datetime import datetime, timedelta
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.admin_pages import page, raw_plate_group_detail_page, raw_plates_page, scrap_group_detail_page, scraps_page
+from app.admin_pages import confirmed_drawing_options, inventory_outbound_page, inventory_page, page, raw_plate_group_detail_page, raw_plates_page, scrap_group_detail_page, scraps_page
 from app.database import Base
-from app.models import InventoryTransactionRecord, MaterialInventory, RawPlateSpecification, ScrapGenerationRecord
+from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 
 
 class InventoryGroupingPagesTest(unittest.TestCase):
@@ -31,6 +32,46 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         self.assertLess(raw_stock, raw_flow)
         self.assertLess(raw_flow, scrap_divider)
         self.assertLess(scrap_divider, scrap_pending)
+
+    def test_product_inventory_outbound_and_drawing_options_use_natural_code_order(self) -> None:
+        with self.Session() as db:
+            base_time = datetime(2026, 1, 1, 8, 0, 0)
+            codes_and_minutes = (("TNX2", 1), ("TNX10", 2), ("TNX1", 3))
+            for code, minutes in codes_and_minutes:
+                db.add(
+                    MaterialInventory(
+                        inventory_type="product",
+                        material_code=code,
+                        material="65Mn",
+                        thickness=1.2,
+                        shape="circle",
+                        quantity=1,
+                        status="available",
+                        created_at=base_time + timedelta(minutes=minutes),
+                        updated_at=base_time + timedelta(minutes=minutes),
+                    )
+                )
+                db.add(
+                    ProductDrawing(
+                        product_code=code,
+                        product_name=code,
+                        dxf_file_url=f"/tmp/{code}.dxf",
+                        material="65Mn",
+                        confirmed=1,
+                        is_active=1,
+                    )
+                )
+            db.commit()
+
+            inventory_html = inventory_page(db=db).body.decode("utf-8")
+            outbound_html = inventory_outbound_page(db=db).body.decode("utf-8")
+            options_html = confirmed_drawing_options(db)
+
+        for html in (inventory_html, outbound_html):
+            self.assertLess(html.index(">TNX1</td>"), html.index(">TNX2</td>"))
+            self.assertLess(html.index(">TNX2</td>"), html.index(">TNX10</td>"))
+        self.assertLess(options_html.index("TNX1｜"), options_html.index("TNX2｜"))
+        self.assertLess(options_html.index("TNX2｜"), options_html.index("TNX10｜"))
 
     def test_raw_plate_stock_groups_spec_and_temporary_batches_with_detail_link(self) -> None:
         with self.Session() as db:
