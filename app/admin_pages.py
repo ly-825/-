@@ -2623,35 +2623,12 @@ def inventory_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
 
 
 @router.get("/admin/inventory/outbound", response_class=HTMLResponse)
-def inventory_outbound_page(
-    q: str = "",
-    material: str = "",
-    thickness: str = "",
-    location: str = "",
-    db: Session = Depends(get_db),
-) -> HTMLResponse:
+def inventory_outbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
     client_request_id = uuid4().hex
     query = db.query(MaterialInventory).filter(
         MaterialInventory.inventory_type == "product",
         MaterialInventory.quantity > 0,
     )
-    keyword = q.strip()
-    if keyword:
-        like = f"%{keyword}%"
-        query = query.filter(
-            (MaterialInventory.material_code.ilike(like))
-            | (MaterialInventory.material.ilike(like))
-            | (MaterialInventory.location.ilike(like))
-            | (MaterialInventory.paper_material.ilike(like))
-            | (MaterialInventory.source_product_code.ilike(like))
-        )
-    if material.strip():
-        query = query.filter(MaterialInventory.material.ilike(f"%{material.strip()}%"))
-    thickness_value = optional_float(thickness)
-    if thickness_value is not None:
-        query = query.filter(MaterialInventory.thickness == thickness_value)
-    if location.strip():
-        query = query.filter(MaterialInventory.location.ilike(f"%{location.strip()}%"))
     items = query.order_by(MaterialInventory.created_at.asc()).all()
     grouped = {}
     for item in items:
@@ -2697,12 +2674,6 @@ def inventory_outbound_page(
         """
         for group in sorted(grouped.values(), key=lambda value: natural_sort_key(value["code"]))
     )
-    product_codes = inventory_distinct_options(db, "product", "material_code", quantity_positive=True)
-    source_codes = inventory_distinct_options(db, "product", "source_product_code", quantity_positive=True)
-    product_code_options = datalist_options(product_codes + source_codes)
-    material_options = select_options(inventory_distinct_options(db, "product", "material", quantity_positive=True), material, "全部材质")
-    thickness_options = select_options(inventory_distinct_options(db, "product", "thickness", quantity_positive=True), thickness, "全部厚度")
-    location_options = select_options(inventory_distinct_options(db, "product", "location", quantity_positive=True), location, "全部库位")
     location_candidates = datalist_options(inventory_distinct_options(db, "product", "location", quantity_positive=True))
     customer_candidates = datalist_options(transaction_customer_options(db))
     purpose_options = "".join(
@@ -2712,20 +2683,12 @@ def inventory_outbound_page(
     body = f"""
     <div class="top"><div><h1>成品出库</h1><p class="muted">在本页查看当前成品库存，并按产品型号填写出库数量；库位不填时按所有库位先进先出扣减。</p></div><div class="actions"><a class="btn secondary" href="/admin/inventory">返回成品库存</a></div></div>
     <section class="card">
-      <form method="get" action="/admin/inventory/outbound" class="actions" style="justify-content:flex-start;margin-bottom:14px">
-        <input name="q" value="{safe_value(keyword)}" list="product-outbound-code-options" placeholder="输入型号筛选" style="width:220px"><datalist id="product-outbound-code-options">{product_code_options}</datalist>
-        <select name="material" style="width:150px">{material_options}</select>
-        <select name="thickness" style="width:130px">{thickness_options}</select>
-        <select name="location" style="width:150px">{location_options}</select>
-        <button class="btn secondary" type="submit">筛选</button>
-        <a class="btn secondary" href="/admin/inventory/outbound">清空</a>
-      </form>
       <form method="post" action="/admin/inventory/product/out" class="form-grid" data-confirm-flow="true" data-confirm-title="确认成品出库" data-confirm-note="库位为空时，系统会按所有库位的最早入库批次 FIFO 扣减，并生成成品出库流水。">
         <input type="hidden" name="client_request_id" value="{client_request_id}">
         <div><label>筛选产品型号</label><input type="search" data-select-filter="product-outbound-drawing-select" placeholder="输入型号、分类、材质、纸材质、厚度、库存或库位"></div>
         <div><label>选择产品型号</label><select id="product-outbound-drawing-select" name="drawing_id" required>{drawing_options}</select></div>
         <div><label>出库数量</label><input name="quantity" type="number" value="1" min="1" required></div>
-        <div><label>指定库位，可选</label><input name="location" value="{html.escape(location.strip())}" list="product-out-location-options" placeholder="不填则所有库位FIFO"><datalist id="product-out-location-options">{location_candidates}</datalist></div>
+        <div><label>指定库位，可选</label><input name="location" list="product-out-location-options" placeholder="不填则所有库位FIFO"><datalist id="product-out-location-options">{location_candidates}</datalist></div>
         <div><label>客户/去向</label><input name="customer_name" list="product-out-customer-options" placeholder="例如 XX客户 / 车间领用"><datalist id="product-out-customer-options">{customer_candidates}</datalist></div>
         <div><label>用途</label><select name="outbound_purpose">{purpose_options}</select></div>
         <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>

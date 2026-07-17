@@ -73,6 +73,18 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         self.assertLess(options_html.index("TNX1｜"), options_html.index("TNX2｜"))
         self.assertLess(options_html.index("TNX2｜"), options_html.index("TNX10｜"))
 
+    def test_product_outbound_page_omits_redundant_stock_filter_row(self) -> None:
+        with self.Session() as db:
+            html = inventory_outbound_page(db=db).body.decode("utf-8")
+
+        self.assertNotIn('method="get" action="/admin/inventory/outbound"', html)
+        self.assertNotIn('placeholder="输入型号筛选"', html)
+        self.assertIn('data-select-filter="product-outbound-drawing-select"', html)
+        self.assertIn('<select id="product-outbound-drawing-select" name="drawing_id" required>', html)
+        self.assertIn('<input name="location" list="product-out-location-options"', html)
+        self.assertIn('<button class="btn" type="submit">确认出库</button>', html)
+        self.assertIn("<h2>当前可出库成品库存</h2>", html)
+
     def test_raw_plate_stock_groups_spec_and_temporary_batches_with_detail_link(self) -> None:
         with self.Session() as db:
             db.add(RawPlateSpecification(spec_name="常用板", material="Q235", length=1000, width=500, thickness=3))
