@@ -977,12 +977,12 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     tbody tr:hover td.action-col {{ background:#f6f8fc; }}
     .cell-clip {{ max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
     .compact-list {{ table-layout:fixed; }}
-    .compact-list th:nth-child(1) {{ width:18%; }}
-    .compact-list th:nth-child(2) {{ width:24%; }}
-    .compact-list th:nth-child(3) {{ width:22%; }}
-    .compact-list th:nth-child(4) {{ width:10%; }}
-    .compact-list th:nth-child(5) {{ width:12%; }}
-    .compact-list th:nth-child(6) {{ width:116px; }}
+    .compact-list th:nth-child(1) {{ width:14%; }}
+    .compact-list th:nth-child(2) {{ width:16%; }}
+    .compact-list th:nth-child(3) {{ width:16%; }}
+    .compact-list th:nth-child(4) {{ width:8%; }}
+    .compact-list th:nth-child(6) {{ width:72px; }}
+    .compact-list th:nth-child(7) {{ width:116px; }}
     .status-pill {{ display:inline-flex; align-items:center; justify-content:center; min-height:26px; padding:0 9px; border-radius:999px; background:#eef2ff; color:#1d4ed8; font-size:12px; font-weight:900; white-space:nowrap; }}
     .status-pill.is-ok {{ background:#dcfce7; color:#166534; }}
     .status-pill.is-warn {{ background:#ffedd5; color:#9a3412; }}
