@@ -29,6 +29,14 @@ from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_d
 from app.services.drawing_version import apply_drawing_version
 from app.services.excel_export import build_export_rows, content_disposition, export_filename, log_export, make_workbook_bytes
 from app.services.inventory_service import adjust_inventory_quantity, ensure_drawing_can_be_changed, inventory_write_lock, product_inbound_from_drawing, reject_direct_inventory_write, reverse_inventory_transaction, sync_product_inventory_from_drawing
+from app.services.inventory_summaries import (
+    product_summary_rows,
+    product_summary_sort_key_map,
+    raw_plate_summary_rows,
+    raw_plate_summary_sort_key_map,
+    scrap_summary_rows,
+    scrap_summary_sort_key_map,
+)
 from app.services.list_sorting import sort_records, sort_select_options
 from app.services.material_matching import (
     drawing_required_diameter,
@@ -1768,6 +1776,8 @@ def inventory_page(
     material: str = "",
     thickness: str = "",
     location: str = "",
+    sort_by: str = "",
+    sort_dir: str = "",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     query = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "product")
@@ -1794,38 +1804,28 @@ def inventory_page(
     if location.strip():
         query = query.filter(MaterialInventory.location.ilike(f"%{location.strip()}%"))
     items = query.order_by(MaterialInventory.created_at.desc()).all()
-    grouped = {}
-    for item in items:
-        code = item.material_code or item.source_product_code or "未编号"
-        if code not in grouped:
-            grouped[code] = {
-                "code": code,
-                "material": item.material,
-                "product_thicknesses": set(),
-                "plate_thicknesses": set(),
-                "quantity": 0,
-                "locations": set(),
-                "paper_materials": set(),
-                "latest": item.updated_at or item.created_at,
-            }
-        grouped[code]["quantity"] += item.quantity
-        grouped[code]["product_thicknesses"].add(fmt_option(item.product_thickness or item.thickness))
-        grouped[code]["plate_thicknesses"].add(fmt_option(item.plate_thickness or item.thickness))
-        if item.location:
-            grouped[code]["locations"].add(item.location)
-        if item.paper_material:
-            grouped[code]["paper_materials"].add(item.paper_material)
-        item_time = item.updated_at or item.created_at
-        if item_time and item_time > grouped[code]["latest"]:
-            grouped[code]["latest"] = item_time
+    grouped_rows = product_summary_rows(items)
+    grouped_rows, selected_sort_by, selected_sort_dir = sort_records(
+        grouped_rows,
+        sort_by,
+        sort_dir,
+        product_summary_sort_key_map(),
+    )
+    if not selected_sort_by:
+        grouped_rows.sort(key=lambda value: natural_sort_key(value["code"]))
     rows = "".join(
         f"""
         <tr>
-          <td>{group['code']}</td><td>{group['material']}</td><td>{' / '.join(sorted(value for value in group['product_thicknesses'] if value)) or '-'}</td><td>{' / '.join(sorted(value for value in group['plate_thicknesses'] if value)) or '-'}</td><td>{' / '.join(sorted(group['paper_materials'])) or '-'}</td><td><strong>{group['quantity']}</strong></td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td>{group['latest'] or '-'}</td><td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe="")}'>查看明细</a></td>
+          <td>{group['code']}</td><td>{group['material']}</td><td>{' / '.join(fmt_option(value) for value in sorted(value for value in group['product_thicknesses'] if value is not None)) or '-'}</td><td>{' / '.join(fmt_option(value) for value in sorted(value for value in group['plate_thicknesses'] if value is not None)) or '-'}</td><td>{' / '.join(sorted(group['paper_materials'])) or '-'}</td><td><strong>{group['quantity']}</strong></td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td>{group['latest'] or '-'}</td><td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe="")}'>查看明细</a></td>
         </tr>
         """
-        for group in sorted(grouped.values(), key=lambda value: natural_sort_key(value["code"]))
+        for group in grouped_rows
     )
+    sort_options = sort_select_options(
+        {"": "默认顺序", "code": "产品型号", "material": "材质", "quantity": "总数量", "batch_count": "批次数", "latest": "最近更新"},
+        selected_sort_by,
+    )
+    direction_options = sort_select_options({"asc": "升序", "desc": "降序"}, selected_sort_dir or "asc")
     product_codes = inventory_distinct_options(db, "product", "material_code", quantity_positive=True)
     source_codes = inventory_distinct_options(db, "product", "source_product_code", quantity_positive=True)
     product_code_options = datalist_options(product_codes + source_codes)
@@ -1833,7 +1833,7 @@ def inventory_page(
     thickness_options = datalist_options(inventory_distinct_options(db, "product", "thickness", quantity_positive=True))
     location_options = datalist_options(inventory_distinct_options(db, "product", "location", quantity_positive=True))
     body = f"""
-    <div class="top"><div><h1>成品库存</h1><p class="muted">只查询成品库存汇总；入库和出库请进入单独页面操作。</p></div><div class="actions"><a class="btn" href="/admin/inventory/inbound">成品入库</a><a class="btn secondary" href="/admin/inventory/outbound">成品出库</a><a class="btn secondary" href="/admin/reports/product-outbound">产品出入库分析</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="{export_link('product_inventory', {'q': keyword, 'material': material.strip(), 'thickness': thickness.strip(), 'location': location.strip()})}">导出Excel</a></div></div>
+    <div class="top"><div><h1>成品库存</h1><p class="muted">只查询成品库存汇总；入库和出库请进入单独页面操作。</p></div><div class="actions"><a class="btn" href="/admin/inventory/inbound">成品入库</a><a class="btn secondary" href="/admin/inventory/outbound">成品出库</a><a class="btn secondary" href="/admin/reports/product-outbound">产品出入库分析</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="{export_link('product_inventory', {'q': keyword, 'material': material.strip(), 'thickness': thickness.strip(), 'location': location.strip(), 'sort_by': selected_sort_by, 'sort_dir': selected_sort_dir})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/inventory" class="actions" style="justify-content:flex-start">
         <input name="q" value="{safe_value(keyword)}" list="product-code-options" placeholder="输入型号筛选" style="width:220px"><datalist id="product-code-options">{product_code_options}</datalist>
@@ -1841,6 +1841,8 @@ def inventory_page(
         <input name="material" value="{safe_value(material.strip())}" list="product-material-options" placeholder="材质" style="width:150px"><datalist id="product-material-options">{material_options}</datalist>
         <input name="thickness" value="{safe_value(thickness.strip())}" list="product-thickness-options" placeholder="厚度" style="width:130px"><datalist id="product-thickness-options">{thickness_options}</datalist>
         <input name="location" value="{safe_value(location.strip())}" list="product-location-options" placeholder="库位" style="width:150px"><datalist id="product-location-options">{location_options}</datalist>
+        <select name="sort_by" aria-label="排序参数">{sort_options}</select>
+        <select name="sort_dir" aria-label="排序方式">{direction_options}</select>
         <button class="btn" type="submit">搜索库存</button>
         <a class="btn secondary" href="/admin/inventory">清空</a>
       </form>
@@ -1858,6 +1860,8 @@ def raw_plates_page(
     length: str = "",
     width: str = "",
     location: str = "",
+    sort_by: str = "",
+    sort_dir: str = "",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     query = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "raw_plate")
@@ -1888,29 +1892,15 @@ def raw_plates_page(
         (spec.material, spec.length, spec.width, spec.thickness): spec.spec_name
         for spec in db.query(RawPlateSpecification).filter(RawPlateSpecification.is_active == 1).all()
     }
-    summary = {}
-    for item in items:
-        key = (
-            item.material,
-            item.length,
-            item.width,
-            item.thickness,
-        )
-        if key not in summary:
-            summary[key] = {
-                "spec_name": spec_names.get(key) or "临时规格",
-                "material": item.material,
-                "length": item.length,
-                "width": item.width,
-                "thickness": item.thickness,
-                "quantity": 0,
-                "batch_count": 0,
-                "locations": set(),
-            }
-        summary[key]["quantity"] += item.quantity
-        summary[key]["batch_count"] += 1
-        if item.location:
-            summary[key]["locations"].add(item.location)
+    grouped_rows = raw_plate_summary_rows(items, spec_names)
+    grouped_rows, selected_sort_by, selected_sort_dir = sort_records(
+        grouped_rows,
+        sort_by,
+        sort_dir,
+        raw_plate_summary_sort_key_map(),
+    )
+    if not selected_sort_by:
+        grouped_rows.sort(key=lambda group: (str(group["material"]), group["thickness"] or 0, group["length"] or 0, group["width"] or 0))
     summary_rows = "".join(
         f"""
         <tr>
@@ -1925,8 +1915,13 @@ def raw_plates_page(
           <td><a class="btn secondary" href="/admin/raw-plates/detail?{build_query({'material': group['material'], 'length': group['length'], 'width': group['width'], 'thickness': group['thickness']})}">查看明细</a></td>
         </tr>
         """
-        for group in sorted(summary.values(), key=lambda group: (str(group["material"]), group["thickness"] or 0, group["length"] or 0, group["width"] or 0))
+        for group in grouped_rows
     )
+    sort_options = sort_select_options(
+        {"": "默认顺序", "spec_name": "规格名称", "material": "材质", "length": "长度", "width": "宽度", "thickness": "厚度", "quantity": "总块数", "batch_count": "批次数", "latest": "最近更新"},
+        selected_sort_by,
+    )
+    direction_options = sort_select_options({"asc": "升序", "desc": "降序"}, selected_sort_dir or "asc")
     batch_options = datalist_options(inventory_distinct_options(db, "raw_plate", "material_code", quantity_positive=True))
     material_options = datalist_options(inventory_distinct_options(db, "raw_plate", "material", quantity_positive=True))
     length_options = datalist_options(inventory_distinct_options(db, "raw_plate", "length", quantity_positive=True))
@@ -1934,7 +1929,7 @@ def raw_plates_page(
     thickness_options = datalist_options(inventory_distinct_options(db, "raw_plate", "thickness", quantity_positive=True))
     location_options = datalist_options(inventory_distinct_options(db, "raw_plate", "location", quantity_positive=True))
     body = f"""
-    <div class="top"><div><h1>板料库存</h1><p class="muted">查看按重量换算入库的原料钢板库存。</p></div><div class="actions"><a class="btn" href="/admin/raw-plates/inbound">板料入库</a><a class="btn secondary" href="/admin/raw-plates/outbound">板料出库</a><a class="btn secondary" href="{export_link('raw_plate_inventory', {'q': keyword, 'material': material.strip(), 'thickness': thickness.strip()})}">导出Excel</a></div></div>
+    <div class="top"><div><h1>板料库存</h1><p class="muted">查看按重量换算入库的原料钢板库存。</p></div><div class="actions"><a class="btn" href="/admin/raw-plates/inbound">板料入库</a><a class="btn secondary" href="/admin/raw-plates/outbound">板料出库</a><a class="btn secondary" href="{export_link('raw_plate_inventory', {'q': keyword, 'material': material.strip(), 'length': length.strip(), 'width': width.strip(), 'thickness': thickness.strip(), 'location': location.strip(), 'sort_by': selected_sort_by, 'sort_dir': selected_sort_dir})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/raw-plates" class="actions" style="justify-content:flex-start">
         <input name="q" value="{safe_value(keyword)}" list="raw-plate-batch-options" placeholder="输入批次/材质/尺寸/库位" style="width:220px"><datalist id="raw-plate-batch-options">{batch_options}</datalist>
@@ -1943,6 +1938,8 @@ def raw_plates_page(
         <input name="width" value="{safe_value(width.strip())}" list="raw-plate-width-options" placeholder="宽度" style="width:120px"><datalist id="raw-plate-width-options">{width_options}</datalist>
         <input name="thickness" value="{safe_value(thickness.strip())}" list="raw-plate-thickness-options" placeholder="厚度" style="width:120px"><datalist id="raw-plate-thickness-options">{thickness_options}</datalist>
         <input name="location" value="{safe_value(location.strip())}" list="raw-plate-location-options" placeholder="库位" style="width:150px"><datalist id="raw-plate-location-options">{location_options}</datalist>
+        <select name="sort_by" aria-label="排序参数">{sort_options}</select>
+        <select name="sort_dir" aria-label="排序方式">{direction_options}</select>
         <button class="btn" type="submit">搜索板料</button>
         <a class="btn secondary" href="/admin/raw-plates">清空</a>
       </form>
@@ -4371,6 +4368,8 @@ def scraps_page(
     thickness: str = "",
     required_diameter: str = "",
     location: str = "",
+    sort_by: str = "",
+    sort_dir: str = "",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     records = db.query(ScrapGenerationRecord).order_by(ScrapGenerationRecord.registered_at.desc()).all()
@@ -4419,19 +4418,15 @@ def scraps_page(
         if item and location.strip() and location.strip() not in (item.location or ""):
             continue
         filtered_records.append(record)
-    spec_grouped = {}
-    for record in filtered_records:
-        item = scrap_map.get(record.scrap_inventory_id)
-        if item:
-            location_label = scrap_location_label(item)
-            size_label = item.usable_size or (f"φ{item.diameter:g}" if item.diameter is not None else "-")
-            spec_key = (item.material, item.thickness, size_label)
-            if spec_key not in spec_grouped:
-                spec_grouped[spec_key] = {"material": item.material, "thickness": item.thickness, "usable_size": size_label, "locations": set(), "quantity": 0, "batch_count": 0}
-            spec_grouped[spec_key]["quantity"] += item.quantity
-            spec_grouped[spec_key]["batch_count"] += 1
-            if location_label != "-":
-                spec_grouped[spec_key]["locations"].add(location_label)
+    grouped_rows = scrap_summary_rows(filtered_records, scrap_map)
+    grouped_rows, selected_sort_by, selected_sort_dir = sort_records(
+        grouped_rows,
+        sort_by,
+        sort_dir,
+        scrap_summary_sort_key_map(),
+    )
+    if not selected_sort_by:
+        grouped_rows.sort(key=lambda group: (str(group["material"]), group["thickness"] or 0, str(group["usable_size"])))
     spec_rows = "".join(
         f"""
         <tr>
@@ -4444,15 +4439,20 @@ def scraps_page(
           <td><a class="btn secondary" href="/admin/scraps/detail?{build_query({'material': group['material'], 'thickness': group['thickness'], 'usable_size': group['usable_size']})}">查看明细</a></td>
         </tr>
         """
-        for group in sorted(spec_grouped.values(), key=lambda group: (str(group["material"]), group["thickness"] or 0, str(group["usable_size"])))
+        for group in grouped_rows
     )
+    sort_options = sort_select_options(
+        {"": "默认顺序", "material": "材质", "thickness": "厚度", "usable_size": "可用尺寸", "quantity": "总数量", "batch_count": "批次数", "latest": "最近更新"},
+        selected_sort_by,
+    )
+    direction_options = sort_select_options({"asc": "升序", "desc": "降序"}, selected_sort_dir or "asc")
     source_product_options = datalist_options([record.source_product_code for record in records])
     material_options = datalist_options(inventory_distinct_options(db, "scrap", "material", quantity_positive=True, status="available"))
     thickness_options = datalist_options(inventory_distinct_options(db, "scrap", "thickness", quantity_positive=True, status="available"))
     diameter_options = datalist_options(inventory_distinct_options(db, "scrap", "diameter", quantity_positive=True, status="available"))
     location_options = datalist_options(inventory_distinct_options(db, "scrap", "location", quantity_positive=True, status="available"))
     body = f"""
-    <div class='top'><div><h1>余料库存</h1><p class='muted'>按材质、厚度和可用尺寸汇总余料，点击明细查看每批来源和出入库流水。</p></div><div class="actions"><a class="btn" href="/admin/scraps/outbound">余料出库</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/scraps/pending">待入库余料</a><a class="btn secondary" href="{export_link('scrap_inventory', {'material': material.strip(), 'thickness': thickness.strip(), 'location': location.strip()})}">导出Excel</a></div></div>
+    <div class='top'><div><h1>余料库存</h1><p class='muted'>按材质、厚度和可用尺寸汇总余料，点击明细查看每批来源和出入库流水。</p></div><div class="actions"><a class="btn" href="/admin/scraps/outbound">余料出库</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/scraps/pending">待入库余料</a><a class="btn secondary" href="{export_link('scrap_inventory', {'source_product_code': source_product_code.strip(), 'drawing_id': drawing_id, 'material': material.strip(), 'thickness': thickness.strip(), 'required_diameter': required_diameter.strip(), 'location': location.strip(), 'sort_by': selected_sort_by, 'sort_dir': selected_sort_dir})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/scraps" class="actions" style="justify-content:flex-start">
         <input name="source_product_code" value="{safe_value(source_product_code.strip())}" list="scrap-source-product-options" placeholder="输入来源/材质/尺寸/库位" style="width:220px"><datalist id="scrap-source-product-options">{source_product_options}</datalist>
@@ -4462,6 +4462,8 @@ def scraps_page(
         <input name="thickness" value="{safe_value(thickness.strip())}" list="scrap-thickness-options" placeholder="厚度" style="width:120px"><datalist id="scrap-thickness-options">{thickness_options}</datalist>
         <input name="required_diameter" value="{safe_value(required_diameter.strip())}" list="scrap-diameter-options" placeholder="直径≥" style="width:120px"><datalist id="scrap-diameter-options">{diameter_options}</datalist>
         <input name="location" value="{safe_value(location.strip())}" list="scrap-location-options" placeholder="库位" style="width:140px"><datalist id="scrap-location-options">{location_options}</datalist>
+        <select name="sort_by" aria-label="排序参数">{sort_options}</select>
+        <select name="sort_dir" aria-label="排序方式">{direction_options}</select>
         <button class="btn" type="submit">搜索余料</button>
         <a class="btn secondary" href="/admin/scraps">清空</a>
       </form>

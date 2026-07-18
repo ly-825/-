@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.admin_pages import confirmed_drawings_page
 from app.database import Base
-from app.models import ProductDrawing
+from app.models import MaterialInventory, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 from app.routers.mobile import drawings as mobile_drawings
 from app.services.excel_export import build_export_rows
 
@@ -109,6 +109,38 @@ class ProductCatalogSearchTest(unittest.TestCase):
             )
 
         self.assertEqual([row[1] for row in rows], ["TNX10", "TNX2", "TNX1"])
+
+    def test_inventory_exports_group_batches_and_use_summary_sorting(self) -> None:
+        with self.Session() as db:
+            product_a = MaterialInventory(material_code="TNX2", inventory_type="product", material="65Mn", thickness=1.2, shape="circle", quantity=2, status="available", location="A1")
+            product_a_second = MaterialInventory(material_code="TNX2", inventory_type="product", material="65Mn", thickness=1.2, shape="circle", quantity=3, status="available", location="A2")
+            product_b = MaterialInventory(material_code="TNX10", inventory_type="product", material="65Mn", thickness=1.2, shape="circle", quantity=10, status="available", location="B1")
+            raw_a = MaterialInventory(material_code="R1", inventory_type="raw_plate", material="Q235", thickness=2, length=1000, width=500, shape="rectangle", quantity=2, status="available", location="R1")
+            raw_a_second = MaterialInventory(material_code="R2", inventory_type="raw_plate", material="Q235", thickness=2, length=1000, width=500, shape="rectangle", quantity=3, status="available", location="R2")
+            raw_b = MaterialInventory(material_code="R3", inventory_type="raw_plate", material="65Mn", thickness=3, length=2000, width=1000, shape="rectangle", quantity=10, status="available", location="R3")
+            scrap_a = MaterialInventory(inventory_type="scrap", material="Q235", thickness=2, diameter=50, usable_size="φ50", shape="round", quantity=2, status="available", location="S1")
+            scrap_b = MaterialInventory(inventory_type="scrap", material="65Mn", thickness=3, diameter=80, usable_size="φ80", shape="round", quantity=10, status="available", location="S2")
+            db.add_all([product_a, product_a_second, product_b, raw_a, raw_a_second, raw_b, scrap_a, scrap_b])
+            db.flush()
+            db.add(RawPlateSpecification(spec_name="Q235常用板", material="Q235", length=1000, width=500, thickness=2))
+            db.add_all(
+                [
+                    ScrapGenerationRecord(source_product_code="P2", scrap_inventory_id=scrap_a.id),
+                    ScrapGenerationRecord(source_product_code="P10", scrap_inventory_id=scrap_b.id),
+                ]
+            )
+            db.commit()
+
+            _, product_headings, product_rows = build_export_rows("product_inventory", {"sort_by": "quantity", "sort_dir": "desc"}, db)
+            _, raw_headings, raw_rows = build_export_rows("raw_plate_inventory", {"sort_by": "quantity", "sort_dir": "desc"}, db)
+            _, scrap_headings, scrap_rows = build_export_rows("scrap_inventory", {"sort_by": "quantity", "sort_dir": "desc"}, db)
+
+        self.assertEqual(product_headings[:2], ["产品型号", "库存数量"])
+        self.assertEqual([(row[0], row[1]) for row in product_rows], [("TNX10", 10), ("TNX2", 5)])
+        self.assertIn("批次数", raw_headings)
+        self.assertEqual([(row[1], row[5]) for row in raw_rows], [("65Mn", 10), ("Q235", 5)])
+        self.assertIn("批次数", scrap_headings)
+        self.assertEqual([(row[0], row[3]) for row in scrap_rows], [("65Mn", 10), ("Q235", 2)])
 
     def test_product_catalog_export_filters_category_and_includes_parameters(self) -> None:
         with self.Session() as db:

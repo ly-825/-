@@ -7,7 +7,16 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from sqlalchemy.orm import Session
 
-from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing, ScrapGenerationRecord
+from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
+from app.services.inventory_summaries import (
+    product_summary_rows,
+    product_summary_sort_key_map,
+    raw_plate_summary_rows,
+    raw_plate_summary_sort_key_map,
+    scrap_summary_rows,
+    scrap_summary_sort_key_map,
+)
+from app.services.material_matching import scrap_matches_drawing
 from app.services.operation_log import record_operation_log
 from app.services.drawing_search import drawing_sort_key_map, natural_sort_key
 from app.services.list_sorting import sort_records
@@ -100,7 +109,66 @@ def _apply_inventory_filters(query, filters: dict, inventory_type: str):
     location = (filters.get("location") or "").strip()
     if location:
         query = query.filter(MaterialInventory.location.ilike(f"%{location}%"))
+    if inventory_type == "raw_plate":
+        length = _optional_float(filters.get("length"))
+        if length is not None:
+            query = query.filter(MaterialInventory.length == length)
+        width = _optional_float(filters.get("width"))
+        if width is not None:
+            query = query.filter(MaterialInventory.width == width)
     return query
+
+
+def _sorted_summary_rows(rows: list[dict], filters: dict, key_map: dict, default_key) -> list[dict]:
+    sorted_rows, selected_field, _ = sort_records(
+        rows,
+        filters.get("sort_by") or "",
+        filters.get("sort_dir") or "",
+        key_map,
+    )
+    if not selected_field:
+        sorted_rows.sort(key=default_key)
+    return sorted_rows
+
+
+def _joined_numbers(values: set) -> str:
+    return " / ".join(_fmt_num(value) for value in sorted(value for value in values if value is not None))
+
+
+def _scrap_inventory_export_records(db: Session, filters: dict) -> tuple[list[ScrapGenerationRecord], dict[int, MaterialInventory]]:
+    records = db.query(ScrapGenerationRecord).order_by(ScrapGenerationRecord.registered_at.desc()).all()
+    scrap_ids = [record.scrap_inventory_id for record in records if record.scrap_inventory_id]
+    scrap_map = {
+        item.id: item
+        for item in db.query(MaterialInventory).filter(MaterialInventory.id.in_(scrap_ids)).all()
+    } if scrap_ids else {}
+    keyword = (filters.get("source_product_code") or "").strip().lower()
+    material = (filters.get("material") or "").strip()
+    thickness = _optional_float(filters.get("thickness"))
+    required_diameter = _optional_float(filters.get("required_diameter"))
+    location = (filters.get("location") or "").strip()
+    drawing_text = str(filters.get("drawing_id") or "").strip()
+    drawing = db.get(ProductDrawing, int(drawing_text)) if drawing_text.isdigit() else None
+    filtered = []
+    for record in records:
+        item = scrap_map.get(record.scrap_inventory_id)
+        if not item or item.status != "available":
+            continue
+        searchable = " ".join(str(value or "") for value in (record.source_product_code, item.material, item.usable_size, item.location)).lower()
+        if keyword and keyword not in searchable:
+            continue
+        if material and material not in item.material:
+            continue
+        if thickness is not None and item.thickness != thickness:
+            continue
+        if required_diameter is not None and (item.diameter is None or item.diameter < required_diameter):
+            continue
+        if drawing and not scrap_matches_drawing(item, drawing):
+            continue
+        if location and location not in (item.location or ""):
+            continue
+        filtered.append(record)
+    return filtered, scrap_map
 
 
 def _date_range(filters: dict) -> tuple[datetime | None, datetime | None]:
@@ -365,26 +433,38 @@ def build_export_rows(module: str, filters: dict, db: Session) -> tuple[str, lis
         return EXPORT_MODULES[module], *_product_catalog_rows(db, filters)
     if module == "product_inventory":
         items = _apply_inventory_filters(db.query(MaterialInventory), filters, "product").order_by(MaterialInventory.created_at.desc()).all()
-        rows = [[item.material_code or item.source_product_code or "", item.quantity, item.material, _fmt_num(item.product_thickness or item.thickness), _fmt_num(item.plate_thickness or item.thickness), item.paper_material or "", item.location or "", item.source_drawing_id or "", _fmt_time(item.created_at)] for item in items]
-        return EXPORT_MODULES[module], ["产品型号", "库存数量", "材质", "总成品厚度", "钢板厚度", "纸材质", "库位", "来源图纸", "创建时间"], rows
+        groups = _sorted_summary_rows(
+            product_summary_rows(items),
+            filters,
+            product_summary_sort_key_map(),
+            lambda row: natural_sort_key(row["code"]),
+        )
+        rows = [[group["code"], group["quantity"], group["material"], _joined_numbers(group["product_thicknesses"]), _joined_numbers(group["plate_thicknesses"]), " / ".join(sorted(group["paper_materials"])), group["batch_count"], " / ".join(sorted(group["locations"])), _fmt_time(group["latest"])] for group in groups]
+        return EXPORT_MODULES[module], ["产品型号", "库存数量", "材质", "总成品厚度", "钢板厚度", "纸材质", "批次数", "库位", "最近更新时间"], rows
     if module == "raw_plate_inventory":
         items = _apply_inventory_filters(db.query(MaterialInventory), filters, "raw_plate").order_by(MaterialInventory.created_at.desc()).all()
-        rows = [[item.material, _fmt_num(item.length), _fmt_num(item.width), _fmt_num(item.thickness), item.quantity, item.material_code or "", item.location or "", _fmt_time(item.created_at)] for item in items]
-        return EXPORT_MODULES[module], ["材质", "长度", "宽度", "厚度", "张数", "批次号", "库位", "创建时间"], rows
+        spec_names = {
+            (spec.material, spec.length, spec.width, spec.thickness): spec.spec_name
+            for spec in db.query(RawPlateSpecification).filter(RawPlateSpecification.is_active == 1).all()
+        }
+        groups = _sorted_summary_rows(
+            raw_plate_summary_rows(items, spec_names),
+            filters,
+            raw_plate_summary_sort_key_map(),
+            lambda row: (str(row["material"]), row["thickness"] or 0, row["length"] or 0, row["width"] or 0),
+        )
+        rows = [[group["spec_name"], group["material"], _fmt_num(group["length"]), _fmt_num(group["width"]), _fmt_num(group["thickness"]), group["quantity"], group["batch_count"], " / ".join(sorted(group["locations"])), _fmt_time(group["latest"])] for group in groups]
+        return EXPORT_MODULES[module], ["规格", "材质", "长度", "宽度", "厚度", "总块数", "批次数", "库位", "最近更新时间"], rows
     if module == "scrap_inventory":
-        query = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "scrap")
-        material = (filters.get("material") or "").strip()
-        if material:
-            query = query.filter(MaterialInventory.material.ilike(f"%{material}%"))
-        thickness = _optional_float(filters.get("thickness"))
-        if thickness is not None:
-            query = query.filter(MaterialInventory.thickness == thickness)
-        location = (filters.get("location") or "").strip()
-        if location:
-            query = query.filter(MaterialInventory.location.ilike(f"%{location}%"))
-        items = query.order_by(MaterialInventory.created_at.desc()).all()
-        rows = [[item.material, _fmt_num(item.thickness), _fmt_num(item.length), _fmt_num(item.width), item.quantity, item.status, item.location or "", item.source_product_code or "", _fmt_time(item.created_at)] for item in items]
-        return EXPORT_MODULES[module], ["材质", "厚度", "长度", "宽度", "数量", "状态", "库位", "来源产品", "创建时间"], rows
+        records, scrap_map = _scrap_inventory_export_records(db, filters)
+        groups = _sorted_summary_rows(
+            scrap_summary_rows(records, scrap_map),
+            filters,
+            scrap_summary_sort_key_map(),
+            lambda row: (str(row["material"]), row["thickness"] or 0, str(row["usable_size"])),
+        )
+        rows = [[group["material"], _fmt_num(group["thickness"]), group["usable_size"], group["quantity"], group["batch_count"], " / ".join(sorted(group["locations"])), _fmt_time(group["latest"])] for group in groups]
+        return EXPORT_MODULES[module], ["材质", "厚度", "可用尺寸", "总数量", "批次数", "库位", "最近更新时间"], rows
     if module == "product_transactions":
         return EXPORT_MODULES[module], *_transaction_rows(db, "product", filters)
     if module == "raw_plate_transactions":

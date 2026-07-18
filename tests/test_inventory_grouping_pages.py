@@ -73,6 +73,24 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         self.assertLess(options_html.index("TNX1｜"), options_html.index("TNX2｜"))
         self.assertLess(options_html.index("TNX2｜"), options_html.index("TNX10｜"))
 
+    def test_product_inventory_sorts_by_quantity_and_natural_code(self) -> None:
+        with self.Session() as db:
+            db.add_all(
+                [
+                    MaterialInventory(material_code="TNX2", inventory_type="product", material="65Mn", thickness=1.2, shape="circle", quantity=2, status="available"),
+                    MaterialInventory(material_code="TNX10", inventory_type="product", material="65Mn", thickness=1.2, shape="circle", quantity=10, status="available"),
+                ]
+            )
+            db.commit()
+
+            quantity_html = inventory_page(sort_by="quantity", sort_dir="desc", db=db).body.decode("utf-8")
+            code_html = inventory_page(sort_by="code", sort_dir="asc", db=db).body.decode("utf-8")
+
+        self.assertLess(quantity_html.index(">TNX10</td>"), quantity_html.index(">TNX2</td>"))
+        self.assertLess(code_html.index(">TNX2</td>"), code_html.index(">TNX10</td>"))
+        self.assertIn("<strong>10</strong>", quantity_html)
+        self.assertIn("<strong>2</strong>", quantity_html)
+
     def test_product_outbound_page_omits_redundant_stock_filter_row(self) -> None:
         with self.Session() as db:
             html = inventory_outbound_page(db=db).body.decode("utf-8")
@@ -146,6 +164,22 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         self.assertIn("/admin/raw-plates/detail?", html)
         self.assertNotIn("<h2>板料批次明细</h2>", html)
         self.assertIn('placeholder="输入批次/材质/尺寸/库位"', html)
+
+    def test_raw_plate_summary_sorts_by_total_quantity_descending(self) -> None:
+        with self.Session() as db:
+            db.add_all(
+                [
+                    MaterialInventory(material_code="R2", inventory_type="raw_plate", material="Q235", thickness=2, length=1000, width=500, shape="rectangle", quantity=2, status="available"),
+                    MaterialInventory(material_code="R10", inventory_type="raw_plate", material="65Mn", thickness=3, length=2000, width=1000, shape="rectangle", quantity=10, status="available"),
+                ]
+            )
+            db.commit()
+
+            html = raw_plates_page(sort_by="quantity", sort_dir="desc", db=db).body.decode("utf-8")
+
+        self.assertLess(html.index(">65Mn</td>"), html.index(">Q235</td>"))
+        self.assertIn("<strong>10</strong>", html)
+        self.assertIn("<strong>2</strong>", html)
 
     def test_raw_plate_group_detail_shows_batches_and_transactions(self) -> None:
         with self.Session() as db:
@@ -255,6 +289,26 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         self.assertIn("/admin/scraps/detail?", html)
         self.assertNotIn("<h2>余料明细</h2>", html)
         self.assertIn('placeholder="输入来源/材质/尺寸/库位"', html)
+
+    def test_scrap_summary_sorts_by_total_quantity_descending(self) -> None:
+        with self.Session() as db:
+            small = MaterialInventory(inventory_type="scrap", material="Q235", thickness=2, diameter=50, usable_size="φ50", shape="round", quantity=2, status="available")
+            large = MaterialInventory(inventory_type="scrap", material="65Mn", thickness=3, diameter=80, usable_size="φ80", shape="round", quantity=10, status="available")
+            db.add_all([small, large])
+            db.flush()
+            db.add_all(
+                [
+                    ScrapGenerationRecord(source_product_code="P2", scrap_inventory_id=small.id),
+                    ScrapGenerationRecord(source_product_code="P10", scrap_inventory_id=large.id),
+                ]
+            )
+            db.commit()
+
+            html = scraps_page(sort_by="quantity", sort_dir="desc", db=db).body.decode("utf-8")
+
+        self.assertLess(html.index(">65Mn</td>"), html.index(">Q235</td>"))
+        self.assertIn("<strong>10</strong>", html)
+        self.assertIn("<strong>2</strong>", html)
 
     def test_scrap_group_detail_shows_batches_and_transactions(self) -> None:
         with self.Session() as db:
