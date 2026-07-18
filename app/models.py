@@ -12,6 +12,7 @@ class MaterialInventory(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     material_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    raw_plate_model: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     inventory_type: Mapped[str] = mapped_column(String(20), index=True)
     material: Mapped[str] = mapped_column(String(100), index=True)
     thickness: Mapped[float] = mapped_column(Float, index=True)

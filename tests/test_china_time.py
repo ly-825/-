@@ -2,12 +2,13 @@ import unittest
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app.models import InventoryTransactionRecord, MaterialInventory
 from app.schema_migrations import ensure_runtime_schema
+from app.services.operation_log import inventory_snapshot
 
 
 def naive_china_now() -> datetime:
@@ -80,6 +81,41 @@ class ChinaTimeTest(unittest.TestCase):
         with self.Session() as db:
             record = db.query(InventoryTransactionRecord).filter_by(transaction_type="out").one()
             self.assertEqual(record.created_at, datetime(2026, 6, 19, 16, 30))
+
+    def test_raw_plate_model_is_in_inventory_snapshot(self) -> None:
+        item = MaterialInventory(
+            inventory_type="raw_plate",
+            material_code="BATCH-1",
+            raw_plate_model="MODEL-1",
+            material="65Mn",
+            thickness=2,
+            length=1000,
+            width=500,
+            shape="rectangle",
+            quantity=3,
+            status="available",
+        )
+
+        self.assertEqual(inventory_snapshot(item)["raw_plate_model"], "MODEL-1")
+
+    def test_runtime_migration_adds_raw_plate_model_once(self) -> None:
+        engine = create_engine("sqlite:///:memory:")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE TABLE material_inventory ("
+                    "id INTEGER PRIMARY KEY, created_at DATETIME, updated_at DATETIME)"
+                )
+            )
+
+        ensure_runtime_schema(engine)
+        ensure_runtime_schema(engine)
+
+        columns = {
+            column["name"]
+            for column in inspect(engine).get_columns("material_inventory")
+        }
+        self.assertIn("raw_plate_model", columns)
 
 
 if __name__ == "__main__":
