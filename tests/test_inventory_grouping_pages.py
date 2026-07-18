@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.admin_pages import confirmed_drawing_options, inventory_outbound_page, inventory_page, page, raw_plate_group_detail_page, raw_plates_page, scrap_group_detail_page, scraps_page
+from app.admin_pages import confirmed_drawing_options, inventory_outbound_page, inventory_page, page, raw_plate_group_detail_page, raw_plate_specifications_page, raw_plates_page, scrap_group_detail_page, scraps_page
 from app.database import Base
 from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 
@@ -84,6 +84,22 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         self.assertIn('<input name="location" list="product-out-location-options"', html)
         self.assertIn('<button class="btn" type="submit">确认出库</button>', html)
         self.assertIn("<h2>当前可出库成品库存</h2>", html)
+
+    def test_raw_plate_specifications_support_selected_sorting(self) -> None:
+        with self.Session() as db:
+            db.add_all(
+                [
+                    RawPlateSpecification(spec_name="S10", material="Q235", length=1000, width=500, thickness=10),
+                    RawPlateSpecification(spec_name="S2", material="65Mn", length=1000, width=500, thickness=2),
+                ]
+            )
+            db.commit()
+
+            material_html = raw_plate_specifications_page(sort_by="material", sort_dir="asc", db=db).body.decode("utf-8")
+            thickness_html = raw_plate_specifications_page(sort_by="thickness", sort_dir="desc", db=db).body.decode("utf-8")
+
+        self.assertLess(material_html.index(">65Mn</td>"), material_html.index(">Q235</td>"))
+        self.assertLess(thickness_html.index(">10</td>"), thickness_html.index(">2</td>"))
 
     def test_raw_plate_stock_groups_spec_and_temporary_batches_with_detail_link(self) -> None:
         with self.Session() as db:

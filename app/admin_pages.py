@@ -2109,8 +2109,45 @@ def update_raw_plate_from_page(
 
 
 @router.get("/admin/raw-plate-specifications", response_class=HTMLResponse)
-def raw_plate_specifications_page(db: Session = Depends(get_db)) -> HTMLResponse:
+def raw_plate_specifications_page(
+    sort_by: str = "",
+    sort_dir: str = "",
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
     specs = db.query(RawPlateSpecification).order_by(RawPlateSpecification.is_active.desc(), RawPlateSpecification.created_at.desc()).all()
+    specs, selected_sort_by, selected_sort_dir = sort_records(
+        specs,
+        sort_by,
+        sort_dir,
+        {
+            "spec_name": lambda spec: natural_sort_key(spec.spec_name or ""),
+            "material": lambda spec: natural_sort_key(spec.material or ""),
+            "length": lambda spec: spec.length,
+            "width": lambda spec: spec.width,
+            "thickness": lambda spec: spec.thickness,
+            "density": lambda spec: spec.density,
+            "status": lambda spec: spec.is_active,
+            "created_at": lambda spec: spec.created_at,
+        },
+    )
+    sort_options = sort_select_options(
+        {
+            "": "默认顺序",
+            "spec_name": "规格名称",
+            "material": "材质",
+            "length": "长度",
+            "width": "宽度",
+            "thickness": "厚度",
+            "density": "密度",
+            "status": "状态",
+            "created_at": "创建时间",
+        },
+        selected_sort_by,
+    )
+    direction_options = sort_select_options(
+        {"asc": "升序", "desc": "降序"},
+        selected_sort_dir or "asc",
+    )
     rows = "".join(
         f"""
         <tr>
@@ -2122,6 +2159,13 @@ def raw_plate_specifications_page(db: Session = Depends(get_db)) -> HTMLResponse
     )
     body = f"""
     <div class="top"><div><h1>板料规格</h1><p class="muted">维护常用固定板料型号，入库时可直接选择带出材质、长宽厚和密度。</p></div><div class="actions"><a class="btn secondary" href="/admin/raw-plates/inbound">板料入库</a></div></div>
+    <section class="card">
+      <form method="get" action="/admin/raw-plate-specifications" class="sort-controls">
+        <div><label>排序参数</label><select name="sort_by">{sort_options}</select></div>
+        <div><label>排序方式</label><select name="sort_dir">{direction_options}</select></div>
+        <div style="align-self:end"><button class="btn secondary" type="submit">排序</button></div>
+      </form>
+    </section>
     <section class="card">
       <form method="post" action="/admin/raw-plate-specifications" class="form-grid">
         <div><label>规格名称</label><input name="spec_name" placeholder="例如 65Mn 2000×1000×2" required></div>
