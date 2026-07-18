@@ -37,6 +37,18 @@ class ListSortingTest(unittest.TestCase):
 
         self.assertEqual([row["value"] for row in result], [10, 2, None])
 
+    def test_natural_text_sort_keeps_blank_and_none_values_last(self) -> None:
+        rows = [{"code": ""}, {"code": "TNX10"}, {"code": None}, {"code": "TNX2"}]
+
+        result, _, _ = sort_records(
+            rows,
+            "code",
+            "asc",
+            {"code": lambda row: natural_sort_key(row["code"])},
+        )
+
+        self.assertEqual([row["code"] for row in result], ["TNX2", "TNX10", "", None])
+
     def test_invalid_sort_returns_original_order_and_empty_selection(self) -> None:
         rows = [{"value": 2}, {"value": 1}]
 

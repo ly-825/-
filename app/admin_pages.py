@@ -838,6 +838,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:," />
   <title>{title}｜杭州特耐时</title>
   <style>
     :root {{ --bg:#f5f7fb; --card:#fff; --text:#172033; --muted:#667085; --primary:#1d4ed8; --line:#e5eaf3; --danger:#dc2626; }}
@@ -988,6 +989,12 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .inline-input-group {{ display:flex; width:100%; }}
     .inline-input-group > select {{ flex:0 0 106px; border-top-right-radius:0; border-bottom-right-radius:0; border-right:0; }}
     .inline-input-group > input {{ flex:1 1 auto; min-width:0; border-top-left-radius:0; border-bottom-left-radius:0; }}
+    .parameter-lines {{ display:grid; gap:3px; min-width:0; }}
+    .parameter-line {{ display:block; overflow-wrap:anywhere; line-height:1.35; }}
+    .sort-controls {{ display:flex; flex:0 1 auto; gap:8px; align-items:center; flex-wrap:wrap; }}
+    .sort-controls > div {{ min-width:0; }}
+    .sort-controls select {{ width:auto; min-width:112px; max-width:180px; }}
+    .flow-switch {{ display:inline-flex; gap:4px; flex-wrap:wrap; margin-bottom:14px; }}
     textarea {{ min-height:86px; padding:10px 12px; resize:vertical; line-height:1.5; }}
     .btn {{ display:inline-flex; align-items:center; justify-content:center; height:42px; padding:0 16px; border-radius:12px; border:none; background:var(--primary); color:white; font-weight:700; cursor:pointer; }}
     .btn.secondary {{ background:#eef2ff; color:var(--primary); }}
@@ -1037,8 +1044,8 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .hidden-file {{ position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }}
     pre {{ white-space:pre-wrap; word-break:break-all; background:#0f172a; color:#dbeafe; padding:16px; border-radius:14px; overflow:auto; }}
     @media (max-width:1100px) {{ .workbench-layout,.inventory-overview {{ grid-template-columns:1fr; }} }}
-    @media (max-width:900px) {{ .layout {{ grid-template-columns:1fr; }} aside {{ position:static; max-height:none; }} .grid,.form-grid,.quick-action-grid,.flow-summary {{ grid-template-columns:1fr; }} .workbench-head {{ flex-direction:column; }} .workbench-date {{ width:100%; text-align:left; }} .announcement-bar {{ align-items:flex-start; flex-direction:column; }} .announcement-bar a,.announcement-close {{ width:100%; }} .assistant-launcher {{ right:16px; bottom:16px; }} .assistant-panel {{ right:16px; bottom:84px; max-height:calc(100vh - 104px); }} }}
-    @media (max-width:700px) {{ .compact-list,.compact-list tbody,.compact-list tr,.compact-list td {{ display:block; width:100%; }} .compact-list thead {{ display:none; }} .compact-list tr {{ padding:10px 12px; border-bottom:1px solid var(--line); }} .compact-list td {{ display:grid; grid-template-columns:82px minmax(0,1fr); gap:10px; padding:7px 0; border:0; background:transparent !important; }} .compact-list td::before {{ content:attr(data-label); color:var(--muted); font-weight:800; }} .compact-list .action-col {{ position:static; min-width:0; box-shadow:none; }} .compact-list .btn {{ width:100%; }} }}
+    @media (max-width:900px) {{ .layout {{ grid-template-columns:1fr; }} aside {{ position:static; max-height:none; }} .top {{ align-items:flex-start; flex-direction:column; }} .top > .actions {{ width:100%; }} .grid,.form-grid,.quick-action-grid,.flow-summary {{ grid-template-columns:1fr; }} .workbench-head {{ flex-direction:column; }} .workbench-date {{ width:100%; text-align:left; }} .announcement-bar {{ align-items:flex-start; flex-direction:column; }} .announcement-bar a,.announcement-close {{ width:100%; }} .assistant-launcher {{ right:16px; bottom:16px; }} .assistant-panel {{ right:16px; bottom:84px; max-height:calc(100vh - 104px); }} }}
+    @media (max-width:700px) {{ main {{ padding:18px 14px; }} .card {{ padding:14px; }} .sort-controls {{ width:100%; }} .sort-controls > div,.sort-controls select,.sort-controls .btn {{ flex:1 1 120px; min-width:0; max-width:none; }} .parameter-lines {{ text-align:left; }} .compact-list,.compact-list tbody,.compact-list tr,.compact-list td,.mobile-list,.mobile-list tbody,.mobile-list tr,.mobile-list td {{ display:block; width:100%; }} .compact-list thead,.mobile-list thead {{ display:none; }} .compact-list tr,.mobile-list tr {{ padding:10px 12px; border-bottom:1px solid var(--line); }} .compact-list td,.mobile-list td {{ display:grid; grid-template-columns:82px minmax(0,1fr); gap:10px; padding:7px 0; border:0; background:transparent !important; text-align:left; }} .compact-list td::before,.mobile-list td::before {{ content:attr(data-label); color:var(--muted); font-weight:800; }} .compact-list td.cell-clip,.mobile-list td.cell-clip {{ max-width:none; white-space:normal; }} .compact-list .action-col,.mobile-list .action-col {{ position:static; min-width:0; box-shadow:none; }} .compact-list .btn,.mobile-list .btn {{ width:100%; }} }}
   </style>
 </head>
 <body>
@@ -1101,6 +1108,11 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     document.querySelectorAll('.table-scroll table').forEach((table) => {{
       const headers = Array.from(table.querySelectorAll('thead th'));
       const numericWords = ['数量','总数','块数','批次数','厚','长','宽','直径','重量','库存','入库','出库','操作前','操作后'];
+      table.querySelectorAll('tbody tr').forEach((row) => {{
+        Array.from(row.children).forEach((cell, index) => {{
+          if (!cell.dataset.label && headers[index]) cell.dataset.label = headers[index].textContent.trim();
+        }});
+      }});
       headers.forEach((header, index) => {{
         const label = header.textContent.trim();
         const cells = [header, ...Array.from(table.querySelectorAll(`tbody tr td:nth-child(${{index + 1}})`))];
@@ -1822,7 +1834,7 @@ def inventory_page(
         for group in grouped_rows
     )
     sort_options = sort_select_options(
-        {"": "默认顺序", "code": "产品型号", "material": "材质", "quantity": "总数量", "batch_count": "批次数", "latest": "最近更新"},
+        {"": "默认顺序", "code": "产品型号", "material": "材质", "product_thickness": "总成品厚度", "plate_thickness": "钢板厚度", "quantity": "总数量", "batch_count": "批次数", "latest": "最近更新"},
         selected_sort_by,
     )
     direction_options = sort_select_options({"asc": "升序", "desc": "降序"}, selected_sort_dir or "asc")
@@ -1847,7 +1859,7 @@ def inventory_page(
         <a class="btn secondary" href="/admin/inventory">清空</a>
       </form>
     </section>
-    <section class="card"><h2>成品汇总</h2><table><thead><tr><th>产品编号</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>纸材质</th><th>总数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无成品库存。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>成品汇总</h2><table class="mobile-list"><thead><tr><th>产品编号</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>纸材质</th><th>总数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无成品库存。</td></tr>"}</tbody></table></section>
     """
     return page("成品管理", body)
 
@@ -1944,7 +1956,7 @@ def raw_plates_page(
         <a class="btn secondary" href="/admin/raw-plates">清空</a>
       </form>
     </section>
-    <section class="card"><h2>板料规格汇总</h2><table><thead><tr><th>规格</th><th>材质</th><th>长mm</th><th>宽mm</th><th>厚mm</th><th>总块数</th><th>批次数</th><th>库位</th><th>操作</th></tr></thead><tbody>{summary_rows or "<tr><td colspan='9'>暂无板料库存。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>板料规格汇总</h2><table class="mobile-list"><thead><tr><th>规格</th><th>材质</th><th>长mm</th><th>宽mm</th><th>厚mm</th><th>总块数</th><th>批次数</th><th>库位</th><th>操作</th></tr></thead><tbody>{summary_rows or "<tr><td colspan='9'>暂无板料库存。</td></tr>"}</tbody></table></section>
     """
     return page("板料库存", body)
 
@@ -2175,7 +2187,7 @@ def raw_plate_specifications_page(
         <div style="align-self:end"><button class="btn" type="submit">保存规格</button></div>
       </form>
     </section>
-    <section class="card"><table><thead><tr><th>规格名称</th><th>材质</th><th>长mm</th><th>宽mm</th><th>厚mm</th><th>密度</th><th>状态</th><th>备注</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无板料规格。</td></tr>"}</tbody></table></section>
+    <section class="card"><table class="mobile-list"><thead><tr><th>规格名称</th><th>材质</th><th>长mm</th><th>宽mm</th><th>厚mm</th><th>密度</th><th>状态</th><th>备注</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无板料规格。</td></tr>"}</tbody></table></section>
     """
     return page("板料规格", body)
 
@@ -3156,7 +3168,7 @@ def product_outbound_analysis_page(
             """
             for row in result["detail_rows"]
         )
-        detail_table = f"<section class='card'><h2>逐单明细</h2><table><thead><tr><th>入库时间</th><th>产品型号</th><th>数量</th><th>库位</th><th>操作人</th><th>备注</th></tr></thead><tbody>{detail_rows or "<tr><td colspan='6'>当前条件暂无入库明细。</td></tr>"}</tbody></table></section>"
+        detail_table = f"<section class='card'><h2>逐单明细</h2><table class='mobile-list'><thead><tr><th>入库时间</th><th>产品型号</th><th>数量</th><th>库位</th><th>操作人</th><th>备注</th></tr></thead><tbody>{detail_rows or "<tr><td colspan='6'>当前条件暂无入库明细。</td></tr>"}</tbody></table></section>"
         stats = f"""
         <section class="grid">
           <div class="card stat"><span class="muted">入库总量</span><strong>{summary['total_quantity']}</strong></div>
@@ -3165,7 +3177,7 @@ def product_outbound_analysis_page(
           <div class="card stat"><span class="muted">月均入库</span><strong>{summary['monthly_avg']}</strong></div>
         </section>"""
         recommendation = ""
-        monthly_table = f"<section class='card'><h2>月度汇总</h2><table><thead><tr><th>月份</th><th>入库量</th><th>入库次数</th><th>型号数</th></tr></thead><tbody>{monthly_rows or "<tr><td colspan='4'>当前条件暂无月度数据。</td></tr>"}</tbody></table></section>"
+        monthly_table = f"<section class='card'><h2>月度汇总</h2><table class='mobile-list'><thead><tr><th>月份</th><th>入库量</th><th>入库次数</th><th>型号数</th></tr></thead><tbody>{monthly_rows or "<tr><td colspan='4'>当前条件暂无月度数据。</td></tr>"}</tbody></table></section>"
         mode_fields = ""
         mode_note = ""
         description = "按产品型号和时间范围查看成品入库情况。"
@@ -3184,7 +3196,7 @@ def product_outbound_analysis_page(
             """
             for row in result["detail_rows"]
         )
-        detail_table = f"<section class='card'><h2>逐单明细</h2><table><thead><tr><th>出库时间</th><th>产品型号</th><th>数量</th><th>客户/去向</th><th>用途</th><th>库位</th><th>操作人</th><th>备注</th></tr></thead><tbody>{detail_rows or "<tr><td colspan='8'>当前条件暂无出库明细。</td></tr>"}</tbody></table></section>"
+        detail_table = f"<section class='card'><h2>逐单明细</h2><table class='mobile-list'><thead><tr><th>出库时间</th><th>产品型号</th><th>数量</th><th>客户/去向</th><th>用途</th><th>库位</th><th>操作人</th><th>备注</th></tr></thead><tbody>{detail_rows or "<tr><td colspan='8'>当前条件暂无出库明细。</td></tr>"}</tbody></table></section>"
         stats = f"""
         <section class="grid">
           <div class="card stat"><span class="muted">销售出库量</span><strong>{summary['sales_quantity']}</strong></div>
@@ -3205,7 +3217,7 @@ def product_outbound_analysis_page(
           </div>
           <p class="muted">建议量按“月均销售”和“最近3个月月均”两者较高者估算，适合做生产计划初步参考。</p>
         </section>"""
-        monthly_table = f"<section class='card'><h2>月度汇总</h2><table><thead><tr><th>月份</th><th>销售出库量</th><th>总出库量</th><th>出库次数</th><th>客户数</th></tr></thead><tbody>{monthly_rows or "<tr><td colspan='5'>当前条件暂无月度数据。</td></tr>"}</tbody></table></section>"
+        monthly_table = f"<section class='card'><h2>月度汇总</h2><table class='mobile-list'><thead><tr><th>月份</th><th>销售出库量</th><th>总出库量</th><th>出库次数</th><th>客户数</th></tr></thead><tbody>{monthly_rows or "<tr><td colspan='5'>当前条件暂无月度数据。</td></tr>"}</tbody></table></section>"
         mode_fields = f"""
         <div><label>客户/去向</label><input name="customer" value="{html.escape(customer)}" list="analysis-customer-options" placeholder="可按客户筛选"><datalist id="analysis-customer-options">{customer_options}</datalist></div>
         <div><label>用途</label><select name="purpose">{''.join(purpose_options)}</select></div>"""
@@ -3220,12 +3232,20 @@ def product_outbound_analysis_page(
         "purpose": purpose.strip(),
         "flow_type": selected_flow,
     }
+    shared_switch_params = {
+        "product_code": product_code.strip(),
+        "period": period,
+        "start_date": start_date.strip(),
+        "end_date": end_date.strip(),
+    }
+    inbound_switch_query = build_query({"flow_type": "in", **shared_switch_params})
+    outbound_switch_query = build_query({"flow_type": "out", **shared_switch_params})
     body = f"""
     <div class="top"><div><h1>产品出入库分析</h1><p class="muted">{description}当前范围：{html.escape(summary['range_label'])}</p></div><div class="actions"><a class="btn secondary" href="/admin/reports/outbound">综合出库统计</a><a class="btn secondary" href="/admin/inventory">成品库存</a><a class="btn secondary" href="{export_link('product_outbound_analysis', export_params)}">导出Excel</a></div></div>
     <section class="card">
       <div class="flow-switch" role="group" aria-label="分析类型">
-        <a class="btn {'secondary' if selected_flow != 'in' else ''}" href="/admin/reports/product-outbound?flow_type=in">入库</a>
-        <a class="btn {'secondary' if selected_flow != 'out' else ''}" href="/admin/reports/product-outbound?flow_type=out">出库</a>
+        <a class="btn {'secondary' if selected_flow != 'in' else ''}" href="/admin/reports/product-outbound?{inbound_switch_query}">入库</a>
+        <a class="btn {'secondary' if selected_flow != 'out' else ''}" href="/admin/reports/product-outbound?{outbound_switch_query}">出库</a>
       </div>
       <form method="get" action="/admin/reports/product-outbound" class="form-grid">
         <input type="hidden" name="flow_type" value="{selected_flow}">
@@ -4469,7 +4489,7 @@ def scraps_page(
       </form>
     </section>
     {f'<section class="card"><strong>当前按图纸匹配：</strong>{selected_drawing.product_code or "-"}，图纸外径/外框 {required_drawing_diameter or "-"}，需要余料直径 ≥ {required_scrap_diameter:g}，厚度 {drawing_required_thickness or "-"}，材质 {selected_drawing.material or "-"}</section>' if selected_drawing and required_scrap_diameter is not None else ''}
-    <section class='card'><h2>按规格汇总</h2><table><thead><tr><th>材质</th><th>厚度</th><th>可用尺寸</th><th>总数量</th><th>批次数</th><th>库位</th><th>操作</th></tr></thead><tbody>{spec_rows or "<tr><td colspan='7'>暂无余料。</td></tr>"}</tbody></table></section>
+    <section class='card'><h2>按规格汇总</h2><table class="mobile-list"><thead><tr><th>材质</th><th>厚度</th><th>可用尺寸</th><th>总数量</th><th>批次数</th><th>库位</th><th>操作</th></tr></thead><tbody>{spec_rows or "<tr><td colspan='7'>暂无余料。</td></tr>"}</tbody></table></section>
     """
     return page("余料库存", body)
 

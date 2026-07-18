@@ -110,6 +110,25 @@ class ProductCatalogSearchTest(unittest.TestCase):
 
         self.assertEqual([row[1] for row in rows], ["TNX10", "TNX2", "TNX1"])
 
+    def test_product_catalog_export_matches_page_for_combined_tooth_filter(self) -> None:
+        with self.Session() as db:
+            db.add_all(
+                [
+                    ProductDrawing(product_code="OT-48", dxf_file_url="/tmp/ot48.dxf", tooth_type="OT", teeth_count=48, teeth_count_text="48(52)", confirmed=1, is_active=1),
+                    ProductDrawing(product_code="IT-48", dxf_file_url="/tmp/it48.dxf", tooth_type="IT", teeth_count=48, teeth_count_text="48", confirmed=1, is_active=1),
+                ]
+            )
+            db.commit()
+
+            page_html = confirmed_drawings_page(teeth_count="OT48", db=db).body.decode("utf-8")
+            _, _, parameter_rows = build_export_rows("product_catalog", {"teeth_count": "OT48"}, db)
+            _, _, keyword_rows = build_export_rows("product_catalog", {"q": "OT48(52)"}, db)
+
+        self.assertIn(">OT-48</td>", page_html)
+        self.assertNotIn(">IT-48</td>", page_html)
+        self.assertEqual([row[1] for row in parameter_rows], ["OT-48"])
+        self.assertEqual([row[1] for row in keyword_rows], ["OT-48"])
+
     def test_inventory_exports_group_batches_and_use_summary_sorting(self) -> None:
         with self.Session() as db:
             product_a = MaterialInventory(material_code="TNX2", inventory_type="product", material="65Mn", thickness=1.2, shape="circle", quantity=2, status="available", location="A1")

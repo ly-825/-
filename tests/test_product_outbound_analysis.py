@@ -236,6 +236,17 @@ class ProductOutboundAnalysisTest(unittest.TestCase):
         self.assertIn("入库时间", headings)
         self.assertEqual(rows, [])
 
+    def test_inbound_analysis_export_normalizes_uppercase_flow_type_for_title(self) -> None:
+        with self.Session() as db:
+            title, headings, _ = build_export_rows(
+                "product_outbound_analysis",
+                {"flow_type": "IN", "start_date": "2026-04-01", "end_date": "2026-04-30"},
+                db,
+            )
+
+        self.assertEqual(title, "产品入库分析")
+        self.assertIn("入库时间", headings)
+
     def test_analysis_page_switches_between_inbound_and_outbound_layouts(self) -> None:
         with self.Session() as db:
             inbound_html = product_outbound_analysis_page(flow_type="in", db=db).body.decode("utf-8")
@@ -260,6 +271,19 @@ class ProductOutboundAnalysisTest(unittest.TestCase):
         self.assertLess(detail_index, html.index("销售出库量"))
         self.assertLess(detail_index, html.index("备货建议"))
         self.assertLess(detail_index, html.index("月度汇总"))
+
+    def test_flow_switch_preserves_shared_product_and_date_filters(self) -> None:
+        with self.Session() as db:
+            html = product_outbound_analysis_page(
+                flow_type="out",
+                product_code="TNX-10",
+                period="custom",
+                start_date="2026-01-01",
+                end_date="2026-01-31",
+                db=db,
+            ).body.decode("utf-8")
+
+        self.assertIn("flow_type=in&product_code=TNX-10&period=custom&start_date=2026-01-01&end_date=2026-01-31", html)
 
 
 if __name__ == "__main__":

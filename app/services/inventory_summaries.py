@@ -13,6 +13,11 @@ def _latest_time(item: MaterialInventory):
     return item.updated_at or item.created_at
 
 
+def _minimum_value(values: set):
+    present = [value for value in values if value is not None]
+    return min(present) if present else None
+
+
 def product_summary_rows(items: list[MaterialInventory]) -> list[SummaryRow]:
     grouped: dict[str, SummaryRow] = {}
     for item in items:
@@ -81,10 +86,12 @@ def scrap_summary_rows(
     scrap_map: dict[int, MaterialInventory],
 ) -> list[SummaryRow]:
     grouped: dict[tuple, SummaryRow] = {}
+    seen_inventory_ids: set[int] = set()
     for record in records:
         item = scrap_map.get(record.scrap_inventory_id)
-        if not item or item.status != "available":
+        if not item or item.status != "available" or item.id in seen_inventory_ids:
             continue
+        seen_inventory_ids.add(item.id)
         size_label = item.usable_size or (f"φ{item.diameter:g}" if item.diameter is not None else "-")
         key = (item.material, item.thickness, size_label)
         group = grouped.setdefault(
@@ -114,6 +121,8 @@ def product_summary_sort_key_map() -> SummarySortMap:
     return {
         "code": lambda row: natural_sort_key(row["code"] or ""),
         "material": lambda row: natural_sort_key(row["material"] or ""),
+        "product_thickness": lambda row: _minimum_value(row["product_thicknesses"]),
+        "plate_thickness": lambda row: _minimum_value(row["plate_thicknesses"]),
         "quantity": lambda row: row["quantity"],
         "batch_count": lambda row: row["batch_count"],
         "latest": lambda row: row["latest"],

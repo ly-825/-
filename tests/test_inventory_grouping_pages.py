@@ -77,19 +77,23 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         with self.Session() as db:
             db.add_all(
                 [
-                    MaterialInventory(material_code="TNX2", inventory_type="product", material="65Mn", thickness=1.2, shape="circle", quantity=2, status="available"),
-                    MaterialInventory(material_code="TNX10", inventory_type="product", material="65Mn", thickness=1.2, shape="circle", quantity=10, status="available"),
+                    MaterialInventory(material_code="TNX2", inventory_type="product", material="65Mn", thickness=1.2, product_thickness=1.2, plate_thickness=3, shape="circle", quantity=2, status="available"),
+                    MaterialInventory(material_code="TNX10", inventory_type="product", material="65Mn", thickness=1.2, product_thickness=2, plate_thickness=1, shape="circle", quantity=10, status="available"),
                 ]
             )
             db.commit()
 
             quantity_html = inventory_page(sort_by="quantity", sort_dir="desc", db=db).body.decode("utf-8")
             code_html = inventory_page(sort_by="code", sort_dir="asc", db=db).body.decode("utf-8")
+            product_thickness_html = inventory_page(sort_by="product_thickness", sort_dir="desc", db=db).body.decode("utf-8")
+            plate_thickness_html = inventory_page(sort_by="plate_thickness", sort_dir="desc", db=db).body.decode("utf-8")
 
         self.assertLess(quantity_html.index(">TNX10</td>"), quantity_html.index(">TNX2</td>"))
         self.assertLess(code_html.index(">TNX2</td>"), code_html.index(">TNX10</td>"))
         self.assertIn("<strong>10</strong>", quantity_html)
         self.assertIn("<strong>2</strong>", quantity_html)
+        self.assertLess(product_thickness_html.index(">TNX10</td>"), product_thickness_html.index(">TNX2</td>"))
+        self.assertLess(plate_thickness_html.index(">TNX2</td>"), plate_thickness_html.index(">TNX10</td>"))
 
     def test_product_outbound_page_omits_redundant_stock_filter_row(self) -> None:
         with self.Session() as db:
@@ -276,6 +280,7 @@ class InventoryGroupingPagesTest(unittest.TestCase):
             db.add_all(
                 [
                     ScrapGenerationRecord(source_product_code="P-1", scrap_inventory_id=first.id, theoretical_size="φ80", actual_size="φ80", operator_name="王五"),
+                    ScrapGenerationRecord(source_product_code="P-1-补充记录", scrap_inventory_id=first.id, theoretical_size="φ80", actual_size="φ80", operator_name="王五"),
                     ScrapGenerationRecord(source_product_code="P-2", scrap_inventory_id=second.id, theoretical_size="φ80", actual_size="φ80", operator_name="赵六"),
                 ]
             )

@@ -18,9 +18,9 @@ from app.services.inventory_summaries import (
 )
 from app.services.material_matching import scrap_matches_drawing
 from app.services.operation_log import record_operation_log
-from app.services.drawing_search import drawing_sort_key_map, natural_sort_key
+from app.services.drawing_search import drawing_sort_key_map, natural_sort_key, tooth_search_filter
 from app.services.list_sorting import sort_records
-from app.services.product_outbound_analysis import product_flow_analysis_export_rows
+from app.services.product_outbound_analysis import normalize_flow_type, product_flow_analysis_export_rows
 from app.time_utils import china_now
 
 
@@ -299,6 +299,7 @@ def _apply_drawing_filters(query, filters: dict):
             | (ProductDrawing.teeth_count_text.ilike(like))
             | (ProductDrawing.module_text.ilike(like))
             | (ProductDrawing.common_normal_length_text.ilike(like))
+            | tooth_search_filter(keyword)
         )
         query = query.filter(keyword_filter)
     product_category = (filters.get("product_category") or "").strip()
@@ -328,12 +329,7 @@ def _apply_drawing_filters(query, filters: dict):
         query = query.filter(_float_between_filter(ProductDrawing.min_inner_diameter, inner_diameter))
     teeth_count_text = (filters.get("teeth_count") or "").strip()
     if teeth_count_text:
-        teeth_count = _optional_int(teeth_count_text)
-        like = f"%{teeth_count_text}%"
-        if teeth_count is not None:
-            query = query.filter((ProductDrawing.teeth_count == teeth_count) | ProductDrawing.teeth_count_text.ilike(like))
-        else:
-            query = query.filter((ProductDrawing.teeth_count_text.ilike(like)) | ProductDrawing.tooth_type.ilike(like))
+        query = query.filter(tooth_search_filter(teeth_count_text))
     module_text = (filters.get("module") or "").strip()
     if module_text:
         module = _optional_float(module_text)
@@ -472,7 +468,7 @@ def build_export_rows(module: str, filters: dict, db: Session) -> tuple[str, lis
     if module == "scrap_transactions":
         return EXPORT_MODULES[module], *_transaction_rows(db, "scrap", filters)
     if module == "product_outbound_analysis":
-        title = "产品入库分析" if (filters.get("flow_type") or "").strip() == "in" else EXPORT_MODULES[module]
+        title = "产品入库分析" if normalize_flow_type(filters.get("flow_type")) == "in" else EXPORT_MODULES[module]
         return title, *product_flow_analysis_export_rows(db, filters)
     return EXPORT_MODULES[module], *_outbound_report_rows(db, filters)
 

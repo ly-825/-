@@ -3,6 +3,10 @@ from html import escape
 from typing import Any
 
 
+def _is_empty_sort_key(value: Any) -> bool:
+    return value in (None, "", ("",))
+
+
 def sort_records(
     records: Iterable[Any],
     sort_by: str,
@@ -16,8 +20,8 @@ def sort_records(
         return rows, "", ""
 
     key_fn = key_map[field]
-    valued = [row for row in rows if key_fn(row) not in (None, "")]
-    empty = [row for row in rows if key_fn(row) in (None, "")]
+    valued = [row for row in rows if not _is_empty_sort_key(key_fn(row))]
+    empty = [row for row in rows if _is_empty_sort_key(key_fn(row))]
     valued.sort(key=key_fn, reverse=direction == "desc")
     return valued + empty, field, direction
 
