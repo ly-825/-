@@ -24,11 +24,12 @@ from app.database import SessionLocal, get_db
 from app.models import InventoryTransactionRecord, MaterialInventory, OperationLog, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 from app.services.dxf_parser import parse_dxf
 from app.services.drawing_preview import generate_drawing_preview
-from app.services.drawing_search import natural_sort_key, tooth_search_filter
+from app.services.drawing_search import drawing_sort_key_map, natural_sort_key, tooth_search_filter
 from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_drawing
 from app.services.drawing_version import apply_drawing_version
 from app.services.excel_export import build_export_rows, content_disposition, export_filename, log_export, make_workbook_bytes
 from app.services.inventory_service import adjust_inventory_quantity, ensure_drawing_can_be_changed, inventory_write_lock, product_inbound_from_drawing, reject_direct_inventory_write, reverse_inventory_transaction, sync_product_inventory_from_drawing
+from app.services.list_sorting import sort_records, sort_select_options
 from app.services.material_matching import (
     drawing_required_diameter,
     effective_drawing_thickness,
@@ -3700,9 +3701,56 @@ def drawings_page(
     return page("图纸识别", body)
 
 
-def drawing_rows(drawings: list[ProductDrawing]) -> str:
+DRAWING_PARAMETER_LABELS = {
+    "product_thickness": "总成品厚度",
+    "plate_thickness": "钢板厚度",
+    "outer_diameter": "外径",
+    "inner_diameter": "内径",
+    "teeth_count": "齿数",
+    "module": "模数",
+    "pressure_angle": "压力角",
+    "common_normal_length": "公法线",
+    "pin_diameter": "量棒直径",
+    "pin_span": "跨棒距",
+}
+
+
+def drawing_filter_values(drawing: ProductDrawing, filters: dict[str, str]) -> list[str]:
+    teeth_value = f"{drawing.tooth_type or ''}{drawing.teeth_count_text or drawing.teeth_count or ''}"
+    values = {
+        "product_thickness": fmt_option(drawing.product_thickness),
+        "plate_thickness": fmt_option(drawing.plate_thickness),
+        "outer_diameter": fmt_option(drawing.max_outer_diameter),
+        "inner_diameter": fmt_option(drawing.min_inner_diameter),
+        "teeth_count": teeth_value,
+        "module": drawing.module_text or fmt_option(drawing.module),
+        "pressure_angle": f"{drawing.pressure_angle:g}°" if drawing.pressure_angle is not None else "",
+        "common_normal_length": drawing.common_normal_length_text or fmt_option(drawing.common_normal_length),
+        "pin_diameter": fmt_option(drawing.pin_diameter),
+        "pin_span": fmt_option(drawing.pin_span),
+    }
+    return [
+        f"{DRAWING_PARAMETER_LABELS[name]} {values[name]}"
+        for name in DRAWING_PARAMETER_LABELS
+        if filters.get(name, "").strip() and values[name]
+    ]
+
+
+def drawing_result_cell(drawing: ProductDrawing, parameter_filters: dict[str, str]) -> str:
+    if not any(value.strip() for value in parameter_filters.values()):
+        return "已确认" if drawing.confirmed else "待确认"
+    lines = "".join(
+        f'<span class="parameter-line">{html.escape(value)}</span>'
+        for value in drawing_filter_values(drawing, parameter_filters)
+    )
+    return f'<div class="parameter-lines">{lines}</div>'
+
+
+def drawing_rows(drawings: list[ProductDrawing], parameter_filters: dict[str, str] | None = None) -> str:
+    active_parameter_filters = parameter_filters or {}
+    show_parameters = any(value.strip() for value in active_parameter_filters.values())
     rows = "".join(
-        f"<tr><td data-label='产品编号'>{html.escape(d.product_code or '-')}</td><td data-label='产品名称'>{html.escape(d.product_name or '-')}</td><td data-label='分类/材质'>{html.escape(d.product_category or '-')}<br><span class='muted'>{html.escape(d.material or '-')}</span></td><td data-label='版本'>{drawing_version_code(d)}</td><td data-label='状态'>{'已确认' if d.confirmed else '待确认'}</td><td data-label='操作' class='action-col'><a class='btn secondary' href='/admin/drawings/{d.id}'>{'查看' if d.confirmed else '确认'}</a></td></tr>"
+        f"<tr><td data-label='产品编号'>{html.escape(d.product_code or '-')}</td><td data-label='产品名称'>{html.escape(d.product_name or '-')}</td><td data-label='分类/材质'>{html.escape(d.product_category or '-')}<br><span class='muted'>{html.escape(d.material or '-')}</span></td><td data-label='版本'>{drawing_version_code(d)}</td><td data-label='{'筛选参数' if show_parameters else '状态'}'>{drawing_result_cell(d, active_parameter_filters)}</td><td data-label='操作' class='action-col'><a class='btn secondary' href='/admin/drawings/{d.id}'>{'查看' if d.confirmed else '确认'}</a></td></tr>"
         for d in drawings
     )
     return rows or "<tr><td colspan='6'>暂无图纸记录。</td></tr>"
@@ -3724,6 +3772,8 @@ def confirmed_drawings_page(
     common_normal_length: str = "",
     pin_diameter: str = "",
     pin_span: str = "",
+    sort_by: str = "",
+    sort_dir: str = "",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     query = db.query(ProductDrawing).filter(ProductDrawing.confirmed == 1, ProductDrawing.is_active == 1)
@@ -3745,10 +3795,28 @@ def confirmed_drawings_page(
         pin_diameter=pin_diameter,
         pin_span=pin_span,
     )
-    drawings = sorted(
+    default_drawings = sorted(
         query.all(),
         key=lambda drawing: (natural_sort_key(drawing.product_code), -(drawing.version or 1)),
     )
+    drawings, selected_sort_by, selected_sort_dir = sort_records(
+        default_drawings,
+        sort_by,
+        sort_dir,
+        drawing_sort_key_map(),
+    )
+    parameter_filters = {
+        "product_thickness": product_thickness,
+        "plate_thickness": plate_thickness,
+        "outer_diameter": outer_diameter,
+        "inner_diameter": inner_diameter,
+        "teeth_count": teeth_count,
+        "module": module,
+        "pressure_angle": pressure_angle,
+        "common_normal_length": common_normal_length,
+        "pin_diameter": pin_diameter,
+        "pin_span": pin_span,
+    }
     product_code_options = datalist_options(drawing_distinct_options(db, "product_code"))
     product_category_options = datalist_options(drawing_distinct_options(db, "product_category") + ["汽车", "摩托车"])
     material_options = datalist_options(drawing_distinct_options(db, "material"))
@@ -3772,7 +3840,32 @@ def confirmed_drawings_page(
         "common_normal_length": common_normal_length.strip(),
         "pin_diameter": pin_diameter.strip(),
         "pin_span": pin_span.strip(),
+        "sort_by": selected_sort_by,
+        "sort_dir": selected_sort_dir,
     }
+    drawing_sort_options = sort_select_options(
+        {
+            "": "默认排序",
+            "product_code": "产品编号",
+            "product_name": "产品名称",
+            "product_category": "产品分类",
+            "material": "材质",
+            "product_thickness": "总成品厚度",
+            "plate_thickness": "钢板厚度",
+            "outer_diameter": "外径",
+            "inner_diameter": "内径",
+            "teeth_count": "齿数",
+            "module": "模数",
+            "pressure_angle": "压力角",
+            "updated_at": "更新时间",
+        },
+        selected_sort_by,
+    )
+    drawing_sort_dir_options = sort_select_options(
+        {"asc": "升序", "desc": "降序"},
+        selected_sort_dir or "asc",
+    )
+    result_column_title = "筛选参数" if any(value.strip() for value in parameter_filters.values()) else "状态"
     body = f"""
     <div class="top"><div><h1>已确认图纸</h1><p class="muted">这些图纸已经人工确认，可直接用于成品入库，也可按分类和参数导出给客户确认。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a><a class="btn secondary" href="{export_link('product_catalog', export_params)}">导出Excel</a></div></div>
     <section class="card">
@@ -3788,10 +3881,12 @@ def confirmed_drawings_page(
         <input name="module" value="{safe_value(module.strip())}" placeholder="模数" style="width:100px">
         <input name="pressure_angle" value="{safe_value(pressure_angle.strip())}" placeholder="压力角" style="width:110px">
         <input name="common_normal_length" value="{safe_value(common_normal_length.strip())}" placeholder="公法线" style="width:120px">
+        <select name="sort_by" aria-label="排序参数" style="width:150px">{drawing_sort_options}</select>
+        <select name="sort_dir" aria-label="排序方向" style="width:100px">{drawing_sort_dir_options}</select>
         <button class="btn" type="submit">搜索</button>
         <a class="btn secondary" href="/admin/drawings/confirmed">清空</a>
       </form>
-      <table class="compact-list"><thead><tr><th>产品编号</th><th>产品名称</th><th>分类/材质</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table>
+      <table class="compact-list"><thead><tr><th>产品编号</th><th>产品名称</th><th>分类/材质</th><th>版本</th><th>{result_column_title}</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings, parameter_filters)}</tbody></table>
     </section>
     """
     return page("已确认图纸", body)

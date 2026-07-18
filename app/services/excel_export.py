@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing, ScrapGenerationRecord
 from app.services.operation_log import record_operation_log
+from app.services.drawing_search import drawing_sort_key_map, natural_sort_key
+from app.services.list_sorting import sort_records
 from app.services.product_outbound_analysis import product_outbound_analysis_export_rows
 from app.time_utils import china_now
 
@@ -294,7 +296,16 @@ def _apply_drawing_filters(query, filters: dict):
 
 def _product_catalog_rows(db: Session, filters: dict) -> tuple[list[str], list[list[object]]]:
     query = db.query(ProductDrawing).filter(ProductDrawing.confirmed == 1, ProductDrawing.is_active == 1)
-    drawings = _apply_drawing_filters(query, filters).order_by(ProductDrawing.product_code.asc(), ProductDrawing.version.desc()).all()
+    drawings = sorted(
+        _apply_drawing_filters(query, filters).all(),
+        key=lambda drawing: (natural_sort_key(drawing.product_code), -(drawing.version or 1)),
+    )
+    drawings, _, _ = sort_records(
+        drawings,
+        filters.get("sort_by") or "",
+        filters.get("sort_dir") or "",
+        drawing_sort_key_map(),
+    )
     headings = [
         "产品分类",
         "产品型号",

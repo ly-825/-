@@ -65,6 +65,51 @@ class ProductCatalogSearchTest(unittest.TestCase):
             self.assertIn(">CAR-100</td>", html)
             self.assertNotIn(">MOTO-200</td>", html)
 
+    def test_confirmed_drawings_show_actual_filtered_parameters_in_status_column(self) -> None:
+        with self.Session() as db:
+            db.add(
+                ProductDrawing(
+                    product_code="DYN-1",
+                    product_name="动态参数图纸",
+                    dxf_file_url="/tmp/dyn-1.dxf",
+                    module=2,
+                    pressure_angle=30,
+                    confirmed=1,
+                    is_active=1,
+                )
+            )
+            db.commit()
+
+            single_html = confirmed_drawings_page(pressure_angle="30", db=db).body.decode("utf-8")
+            multiple_html = confirmed_drawings_page(pressure_angle="30", module="2", db=db).body.decode("utf-8")
+            text_only_html = confirmed_drawings_page(q="DYN", db=db).body.decode("utf-8")
+
+        self.assertIn("<th>筛选参数</th>", single_html)
+        self.assertIn("压力角 30°", single_html)
+        self.assertIn("压力角 30°", multiple_html)
+        self.assertIn("模数 2", multiple_html)
+        self.assertIn("<th>状态</th>", text_only_html)
+        self.assertIn("已确认", text_only_html)
+
+    def test_product_catalog_export_uses_requested_natural_code_sort(self) -> None:
+        with self.Session() as db:
+            db.add_all(
+                [
+                    ProductDrawing(product_code="TNX10", dxf_file_url="/tmp/tnx10.dxf", confirmed=1, is_active=1),
+                    ProductDrawing(product_code="TNX2", dxf_file_url="/tmp/tnx2.dxf", confirmed=1, is_active=1),
+                    ProductDrawing(product_code="TNX1", dxf_file_url="/tmp/tnx1.dxf", confirmed=1, is_active=1),
+                ]
+            )
+            db.commit()
+
+            _, _, rows = build_export_rows(
+                "product_catalog",
+                {"sort_by": "product_code", "sort_dir": "desc"},
+                db,
+            )
+
+        self.assertEqual([row[1] for row in rows], ["TNX10", "TNX2", "TNX1"])
+
     def test_product_catalog_export_filters_category_and_includes_parameters(self) -> None:
         with self.Session() as db:
             db.add_all(
