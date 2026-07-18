@@ -38,7 +38,12 @@ from app.services.material_matching import (
     scrap_required_diameter,
 )
 from app.services.operation_log import drawing_snapshot, inventory_snapshot, record_operation_log
-from app.services.product_outbound_analysis import OUTBOUND_PURPOSES, analyze_product_outbound, normalize_outbound_purpose
+from app.services.product_outbound_analysis import (
+    OUTBOUND_PURPOSES,
+    analyze_product_flow,
+    normalize_flow_type,
+    normalize_outbound_purpose,
+)
 from app.services.qwen_service import recognize_drawing
 from app.services.scrap_service import find_scrap_batches_for_outbound
 from app.time_utils import china_now
@@ -1070,7 +1075,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
             <a href="/admin/inventory/inbound">成品入库</a>
             <a href="/admin/inventory/outbound">成品出库</a>
             <a href="/admin/inventory/transactions">成品流水</a>
-            <a href="/admin/reports/product-outbound">产品出库分析</a>
+            <a href="/admin/reports/product-outbound">产品出入库分析</a>
           </div>
         </details>
       </nav>
@@ -1418,7 +1423,7 @@ def admin_home(db: Session = Depends(get_db)) -> HTMLResponse:
             <a class="quick-action" href="/admin/inventory/outbound">成品出库<span>›</span></a>
             <a class="quick-action" href="/admin/drawings">上传图纸<span>›</span></a>
             <a class="quick-action" href="/admin/reports/outbound">综合出库统计<span>›</span></a>
-            <a class="quick-action" href="/admin/reports/product-outbound">产品出库分析<span>›</span></a>
+            <a class="quick-action" href="/admin/reports/product-outbound">产品出入库分析<span>›</span></a>
             <a class="quick-action" href="/admin/scraps/outbound">余料出库<span>›</span></a>
           </div>
         </section>
@@ -1828,7 +1833,7 @@ def inventory_page(
     thickness_options = datalist_options(inventory_distinct_options(db, "product", "thickness", quantity_positive=True))
     location_options = datalist_options(inventory_distinct_options(db, "product", "location", quantity_positive=True))
     body = f"""
-    <div class="top"><div><h1>成品库存</h1><p class="muted">只查询成品库存汇总；入库和出库请进入单独页面操作。</p></div><div class="actions"><a class="btn" href="/admin/inventory/inbound">成品入库</a><a class="btn secondary" href="/admin/inventory/outbound">成品出库</a><a class="btn secondary" href="/admin/reports/product-outbound">产品出库分析</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="{export_link('product_inventory', {'q': keyword, 'material': material.strip(), 'thickness': thickness.strip(), 'location': location.strip()})}">导出Excel</a></div></div>
+    <div class="top"><div><h1>成品库存</h1><p class="muted">只查询成品库存汇总；入库和出库请进入单独页面操作。</p></div><div class="actions"><a class="btn" href="/admin/inventory/inbound">成品入库</a><a class="btn secondary" href="/admin/inventory/outbound">成品出库</a><a class="btn secondary" href="/admin/reports/product-outbound">产品出入库分析</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="{export_link('product_inventory', {'q': keyword, 'material': material.strip(), 'thickness': thickness.strip(), 'location': location.strip()})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/inventory" class="actions" style="justify-content:flex-start">
         <input name="q" value="{safe_value(keyword)}" list="product-code-options" placeholder="输入型号筛选" style="width:220px"><datalist id="product-code-options">{product_code_options}</datalist>
@@ -3053,10 +3058,12 @@ def product_outbound_analysis_page(
     end_date: str = "",
     customer: str = "",
     purpose: str = "sales",
+    flow_type: str = "out",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    selected_flow = normalize_flow_type(flow_type)
     try:
-        result = analyze_product_outbound(
+        result = analyze_product_flow(
             db,
             product_code=product_code,
             period=period,
@@ -3064,6 +3071,7 @@ def product_outbound_analysis_page(
             end_date=end_date,
             customer=customer,
             purpose=purpose,
+            flow_type=selected_flow,
         )
     except ValueError:
         raise HTTPException(status_code=400, detail="日期格式错误，请使用YYYY-MM-DD")
@@ -3092,33 +3100,76 @@ def product_outbound_analysis_page(
         for value, label in OUTBOUND_PURPOSES
         if value != "sales"
     )
-    monthly_rows = "".join(
-        f"""
-        <tr>
-          <td>{html.escape(row['month'])}</td>
-          <td><strong>{row['sales_quantity']}</strong></td>
-          <td>{row['quantity']}</td>
-          <td>{row['transaction_count']}</td>
-          <td>{row['customer_count']}</td>
-        </tr>
-        """
-        for row in result["monthly_rows"]
-    )
-    detail_rows = "".join(
-        f"""
-        <tr>
-          <td>{html.escape(row['time'])}</td>
-          <td>{html.escape(row['product_code'])}</td>
-          <td><strong>{row['quantity']}</strong></td>
-          <td>{html.escape(row['customer_name'])}</td>
-          <td>{html.escape(row['purpose_label'])}</td>
-          <td>{html.escape(row['location'])}</td>
-          <td>{html.escape(row['operator_name'])}</td>
-          <td>{html.escape(row['remark'])}</td>
-        </tr>
-        """
-        for row in result["detail_rows"]
-    )
+    if selected_flow == "in":
+        monthly_rows = "".join(
+            f"<tr><td>{html.escape(row['month'])}</td><td><strong>{row['quantity']}</strong></td><td>{row['transaction_count']}</td><td>{row['product_count']}</td></tr>"
+            for row in result["monthly_rows"]
+        )
+        detail_rows = "".join(
+            f"""
+            <tr>
+              <td>{html.escape(row['time'])}</td><td>{html.escape(row['product_code'])}</td>
+              <td><strong>{row['quantity']}</strong></td><td>{html.escape(row['location'])}</td>
+              <td>{html.escape(row['operator_name'])}</td><td>{html.escape(row['remark'])}</td>
+            </tr>
+            """
+            for row in result["detail_rows"]
+        )
+        detail_table = f"<section class='card'><h2>逐单明细</h2><table><thead><tr><th>入库时间</th><th>产品型号</th><th>数量</th><th>库位</th><th>操作人</th><th>备注</th></tr></thead><tbody>{detail_rows or "<tr><td colspan='6'>当前条件暂无入库明细。</td></tr>"}</tbody></table></section>"
+        stats = f"""
+        <section class="grid">
+          <div class="card stat"><span class="muted">入库总量</span><strong>{summary['total_quantity']}</strong></div>
+          <div class="card stat"><span class="muted">入库次数</span><strong>{summary['transaction_count']}</strong></div>
+          <div class="card stat"><span class="muted">涉及型号</span><strong>{summary['product_count']}</strong></div>
+          <div class="card stat"><span class="muted">月均入库</span><strong>{summary['monthly_avg']}</strong></div>
+        </section>"""
+        recommendation = ""
+        monthly_table = f"<section class='card'><h2>月度汇总</h2><table><thead><tr><th>月份</th><th>入库量</th><th>入库次数</th><th>型号数</th></tr></thead><tbody>{monthly_rows or "<tr><td colspan='4'>当前条件暂无月度数据。</td></tr>"}</tbody></table></section>"
+        mode_fields = ""
+        mode_note = ""
+        description = "按产品型号和时间范围查看成品入库情况。"
+    else:
+        monthly_rows = "".join(
+            f"<tr><td>{html.escape(row['month'])}</td><td><strong>{row['sales_quantity']}</strong></td><td>{row['quantity']}</td><td>{row['transaction_count']}</td><td>{row['customer_count']}</td></tr>"
+            for row in result["monthly_rows"]
+        )
+        detail_rows = "".join(
+            f"""
+            <tr>
+              <td>{html.escape(row['time'])}</td><td>{html.escape(row['product_code'])}</td><td><strong>{row['quantity']}</strong></td>
+              <td>{html.escape(row['customer_name'])}</td><td>{html.escape(row['purpose_label'])}</td><td>{html.escape(row['location'])}</td>
+              <td>{html.escape(row['operator_name'])}</td><td>{html.escape(row['remark'])}</td>
+            </tr>
+            """
+            for row in result["detail_rows"]
+        )
+        detail_table = f"<section class='card'><h2>逐单明细</h2><table><thead><tr><th>出库时间</th><th>产品型号</th><th>数量</th><th>客户/去向</th><th>用途</th><th>库位</th><th>操作人</th><th>备注</th></tr></thead><tbody>{detail_rows or "<tr><td colspan='8'>当前条件暂无出库明细。</td></tr>"}</tbody></table></section>"
+        stats = f"""
+        <section class="grid">
+          <div class="card stat"><span class="muted">销售出库量</span><strong>{summary['sales_quantity']}</strong></div>
+          <div class="card stat"><span class="muted">总出库量</span><strong>{summary['total_quantity']}</strong></div>
+          <div class="card stat"><span class="muted">出库次数</span><strong>{summary['transaction_count']}</strong></div>
+          <div class="card stat"><span class="muted">客户数</span><strong>{summary['customer_count']}</strong></div>
+        </section>"""
+        recommendation = f"""
+        <section class="card">
+          <h2>备货建议</h2>
+          <div class="grid">
+            <div><span class="muted">月均销售</span><strong>{summary['monthly_avg']}</strong></div>
+            <div><span class="muted">最近3个月月均</span><strong>{summary['recent_3_month_avg']}</strong></div>
+            <div><span class="muted">最高月销售</span><strong>{summary['peak_month_quantity']}</strong></div>
+            <div><span class="muted">下一年度建议量</span><strong>{summary['suggested_year_quantity']}</strong></div>
+            <div><span class="muted">加10%安全库存</span><strong>{summary['safety_stock_10']}</strong></div>
+            <div><span class="muted">加20%安全库存</span><strong>{summary['safety_stock_20']}</strong></div>
+          </div>
+          <p class="muted">建议量按“月均销售”和“最近3个月月均”两者较高者估算，适合做生产计划初步参考。</p>
+        </section>"""
+        monthly_table = f"<section class='card'><h2>月度汇总</h2><table><thead><tr><th>月份</th><th>销售出库量</th><th>总出库量</th><th>出库次数</th><th>客户数</th></tr></thead><tbody>{monthly_rows or "<tr><td colspan='5'>当前条件暂无月度数据。</td></tr>"}</tbody></table></section>"
+        mode_fields = f"""
+        <div><label>客户/去向</label><input name="customer" value="{html.escape(customer)}" list="analysis-customer-options" placeholder="可按客户筛选"><datalist id="analysis-customer-options">{customer_options}</datalist></div>
+        <div><label>用途</label><select name="purpose">{''.join(purpose_options)}</select></div>"""
+        mode_note = '<p class="muted">选择“销售/发货”时，会把历史未填写用途的成品出库也计入销售口径。</p>'
+        description = "按产品型号、时间范围、客户和用途分析成品出库情况。"
     export_params = {
         "product_code": product_code.strip(),
         "period": period,
@@ -3126,43 +3177,32 @@ def product_outbound_analysis_page(
         "end_date": end_date.strip(),
         "customer": customer.strip(),
         "purpose": purpose.strip(),
+        "flow_type": selected_flow,
     }
     body = f"""
-    <div class="top"><div><h1>产品出库分析</h1><p class="muted">按产品型号、时间范围、客户和用途分析销售/出库情况，用于下一阶段备货参考。当前范围：{html.escape(summary['range_label'])}</p></div><div class="actions"><a class="btn secondary" href="/admin/reports/outbound">综合出库统计</a><a class="btn secondary" href="/admin/inventory">成品库存</a><a class="btn secondary" href="{export_link('product_outbound_analysis', export_params)}">导出Excel</a></div></div>
+    <div class="top"><div><h1>产品出入库分析</h1><p class="muted">{description}当前范围：{html.escape(summary['range_label'])}</p></div><div class="actions"><a class="btn secondary" href="/admin/reports/outbound">综合出库统计</a><a class="btn secondary" href="/admin/inventory">成品库存</a><a class="btn secondary" href="{export_link('product_outbound_analysis', export_params)}">导出Excel</a></div></div>
     <section class="card">
+      <div class="flow-switch" role="group" aria-label="分析类型">
+        <a class="btn {'secondary' if selected_flow != 'in' else ''}" href="/admin/reports/product-outbound?flow_type=in">入库</a>
+        <a class="btn {'secondary' if selected_flow != 'out' else ''}" href="/admin/reports/product-outbound?flow_type=out">出库</a>
+      </div>
       <form method="get" action="/admin/reports/product-outbound" class="form-grid">
+        <input type="hidden" name="flow_type" value="{selected_flow}">
         <div><label>产品型号</label><input name="product_code" value="{safe_value(product_code.strip())}" list="analysis-product-options" placeholder="输入型号筛选"><datalist id="analysis-product-options">{product_options}</datalist></div>
         <div><label>时间范围</label><select name="period">{period_options}</select></div>
         <div><label>开始日期</label><input type="date" name="start_date" value="{html.escape(start_date)}"></div>
         <div><label>结束日期</label><input type="date" name="end_date" value="{html.escape(end_date)}"></div>
-        <div><label>客户/去向</label><input name="customer" value="{html.escape(customer)}" list="analysis-customer-options" placeholder="可按客户筛选"><datalist id="analysis-customer-options">{customer_options}</datalist></div>
-        <div><label>用途</label><select name="purpose">{''.join(purpose_options)}</select></div>
+        {mode_fields}
         <div style="align-self:end"><button class="btn" type="submit">查询分析</button></div>
       </form>
-      <p class="muted">选择“销售/发货”时，会把历史未填写用途的成品出库也计入销售口径。</p>
+      {mode_note}
     </section>
-    <section class="grid">
-      <div class="card stat"><span class="muted">销售出库量</span><strong>{summary['sales_quantity']}</strong></div>
-      <div class="card stat"><span class="muted">总出库量</span><strong>{summary['total_quantity']}</strong></div>
-      <div class="card stat"><span class="muted">出库次数</span><strong>{summary['transaction_count']}</strong></div>
-      <div class="card stat"><span class="muted">客户数</span><strong>{summary['customer_count']}</strong></div>
-    </section>
-    <section class="card">
-      <h2>备货建议</h2>
-      <div class="grid">
-        <div><span class="muted">月均销售</span><strong>{summary['monthly_avg']}</strong></div>
-        <div><span class="muted">最近3个月月均</span><strong>{summary['recent_3_month_avg']}</strong></div>
-        <div><span class="muted">最高月销售</span><strong>{summary['peak_month_quantity']}</strong></div>
-        <div><span class="muted">下一年度建议量</span><strong>{summary['suggested_year_quantity']}</strong></div>
-        <div><span class="muted">加10%安全库存</span><strong>{summary['safety_stock_10']}</strong></div>
-        <div><span class="muted">加20%安全库存</span><strong>{summary['safety_stock_20']}</strong></div>
-      </div>
-      <p class="muted">建议量按“月均销售”和“最近3个月月均”两者较高者估算，适合做生产计划初步参考。</p>
-    </section>
-    <section class="card"><h2>月度汇总</h2><table><thead><tr><th>月份</th><th>销售出库量</th><th>总出库量</th><th>出库次数</th><th>客户数</th></tr></thead><tbody>{monthly_rows or "<tr><td colspan='5'>当前条件暂无月度数据。</td></tr>"}</tbody></table></section>
-    <section class="card"><h2>逐单明细</h2><table><thead><tr><th>出库时间</th><th>产品型号</th><th>数量</th><th>客户/去向</th><th>用途</th><th>库位</th><th>操作人</th><th>备注</th></tr></thead><tbody>{detail_rows or "<tr><td colspan='8'>当前条件暂无出库明细。</td></tr>"}</tbody></table></section>
+    {detail_table}
+    {stats}
+    {recommendation}
+    {monthly_table}
     """
-    return page("产品出库分析", body)
+    return page("产品出入库分析", body)
 
 
 @router.get("/admin/reports/outbound", response_class=HTMLResponse)
@@ -3195,7 +3235,7 @@ def outbound_report_page(period: str = "day", start_date: str = "", end_date: st
         for value, label in (("day", "今天"), ("month", "本月"), ("year", "本年"), ("custom", "自定义时间段"))
     )
     body = f"""
-    <div class="top"><div><h1>综合出库统计</h1><p class="muted">查询天、月、年或某个时间段内的成品、余料和板料出库情况。当前范围：{html.escape(range_label)}</p></div><div class="actions"><a class="btn secondary" href="/admin/reports/product-outbound">产品出库分析</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/raw-plates/transactions">板料流水</a><a class="btn secondary" href="{export_link('outbound_report', {'period': period, 'start_date': start_date.strip(), 'end_date': end_date.strip()})}">导出Excel</a></div></div>
+    <div class="top"><div><h1>综合出库统计</h1><p class="muted">查询天、月、年或某个时间段内的成品、余料和板料出库情况。当前范围：{html.escape(range_label)}</p></div><div class="actions"><a class="btn secondary" href="/admin/reports/product-outbound">产品出入库分析</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/raw-plates/transactions">板料流水</a><a class="btn secondary" href="{export_link('outbound_report', {'period': period, 'start_date': start_date.strip(), 'end_date': end_date.strip()})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/reports/outbound" class="form-grid">
         <div><label>快捷时间</label><select name="period">{period_options}</select></div>

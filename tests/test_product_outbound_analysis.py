@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.admin_pages import product_outbound_analysis_page
 from app.database import Base
 from app.models import InventoryTransactionRecord, MaterialInventory
 from app.services.excel_export import build_export_rows
@@ -234,6 +235,31 @@ class ProductOutboundAnalysisTest(unittest.TestCase):
         self.assertEqual(title, "产品入库分析")
         self.assertIn("入库时间", headings)
         self.assertEqual(rows, [])
+
+    def test_analysis_page_switches_between_inbound_and_outbound_layouts(self) -> None:
+        with self.Session() as db:
+            inbound_html = product_outbound_analysis_page(flow_type="in", db=db).body.decode("utf-8")
+            outbound_html = product_outbound_analysis_page(flow_type="out", db=db).body.decode("utf-8")
+
+        self.assertIn("产品出入库分析", inbound_html)
+        self.assertIn('name="flow_type"', inbound_html)
+        self.assertNotIn('name="customer"', inbound_html)
+        self.assertNotIn('name="purpose"', inbound_html)
+        self.assertNotIn("备货建议", inbound_html)
+        self.assertIn("入库总量", inbound_html)
+        self.assertIn('name="customer"', outbound_html)
+        self.assertIn('name="purpose"', outbound_html)
+        self.assertIn("备货建议", outbound_html)
+        self.assertIn("销售出库量", outbound_html)
+
+    def test_detail_table_is_before_stats_recommendation_and_monthly_summary(self) -> None:
+        with self.Session() as db:
+            html = product_outbound_analysis_page(flow_type="out", db=db).body.decode("utf-8")
+
+        detail_index = html.index("逐单明细")
+        self.assertLess(detail_index, html.index("销售出库量"))
+        self.assertLess(detail_index, html.index("备货建议"))
+        self.assertLess(detail_index, html.index("月度汇总"))
 
 
 if __name__ == "__main__":
