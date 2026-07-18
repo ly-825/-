@@ -138,10 +138,9 @@ class DrawingParameterTextAndProductPaperTest(unittest.TestCase):
 
             self.assertEqual(item.thickness, 2.4)
             self.assertEqual(item.diameter, 120)
-            self.assertIn("<th>总成品厚度</th>", summary_html)
-            self.assertIn("<th>钢板厚度</th>", summary_html)
-            self.assertIn("<td>2.4</td>", summary_html)
-            self.assertIn("<td>1.1</td>", summary_html)
+            self.assertIn("<th>参数信息</th>", summary_html)
+            self.assertIn("<strong>总成品厚度</strong> 2.4", summary_html)
+            self.assertIn("<strong>钢板厚度</strong> 1.1", summary_html)
             self.assertIn("<th>总成品厚度</th>", detail_html)
             self.assertIn("<td>2.4</td>", detail_html)
 
@@ -213,8 +212,8 @@ class DrawingParameterTextAndProductPaperTest(unittest.TestCase):
             detail_html = inventory_product_detail_page("TNX-PAPER", db=db).body.decode("utf-8")
 
             self.assertEqual(item.paper_material, "蓝色纸")
-            self.assertIn("<th>纸材质</th>", summary_html)
-            self.assertIn("<td>蓝色纸</td>", summary_html)
+            self.assertIn("<th>参数信息</th>", summary_html)
+            self.assertIn("<strong>纸材质</strong> 蓝色纸", summary_html)
             self.assertIn("<th>纸材质</th>", detail_html)
             self.assertIn("<td>蓝色纸</td>", detail_html)
 

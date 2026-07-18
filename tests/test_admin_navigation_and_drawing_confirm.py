@@ -317,7 +317,7 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
             pending_html = pending_drawings_page(db=db).body.decode("utf-8")
             detail_html = drawing_detail_page(confirmed.id, db=db).body.decode("utf-8")
 
-            headings = "<th>产品编号</th><th>产品名称</th><th>分类/材质</th><th>版本</th><th>状态</th><th>操作</th>"
+            headings = "<th>产品编号</th><th>产品名称</th><th>分类/材质</th><th>版本</th><th>参数信息</th><th>状态</th><th>操作</th>"
             for html in (confirmed_html, pending_html):
                 self.assertIn(headings, html)
                 self.assertNotIn("<th>厚度</th>", html)
@@ -325,6 +325,8 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
                 self.assertNotIn("<th>齿轮参数</th>", html)
                 self.assertIn('class="compact-list"', html)
             self.assertIn("TNX-COMPACT", confirmed_html)
+            self.assertIn("<strong>总成品厚度</strong> 1.6", confirmed_html)
+            self.assertIn("<strong>钢板厚度</strong> 0.8", confirmed_html)
             self.assertNotIn("TNX-PENDING", confirmed_html)
             self.assertIn("TNX-PENDING", pending_html)
             self.assertIn("总成品厚度", detail_html)
