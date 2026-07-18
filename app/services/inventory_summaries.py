@@ -1,21 +1,13 @@
-from collections.abc import Callable
 from typing import Any
 
 from app.models import MaterialInventory, ScrapGenerationRecord
-from app.services.drawing_search import natural_sort_key
 
 
 SummaryRow = dict[str, Any]
-SummarySortMap = dict[str, Callable[[SummaryRow], Any]]
 
 
 def _latest_time(item: MaterialInventory):
     return item.updated_at or item.created_at
-
-
-def _minimum_value(values: set):
-    present = [value for value in values if value is not None]
-    return min(present) if present else None
 
 
 def product_summary_rows(
@@ -139,39 +131,3 @@ def scrap_summary_rows(
         if item_time and (not group["latest"] or item_time > group["latest"]):
             group["latest"] = item_time
     return list(grouped.values())
-
-
-def product_summary_sort_key_map() -> SummarySortMap:
-    return {
-        "code": lambda row: natural_sort_key(row["code"] or ""),
-        "material": lambda row: natural_sort_key(row["material"] or ""),
-        "product_thickness": lambda row: _minimum_value(row["product_thicknesses"]),
-        "plate_thickness": lambda row: _minimum_value(row["plate_thicknesses"]),
-        "quantity": lambda row: row["quantity"],
-        "batch_count": lambda row: row["batch_count"],
-        "latest": lambda row: row["latest"],
-    }
-
-
-def raw_plate_summary_sort_key_map() -> SummarySortMap:
-    return {
-        "spec_name": lambda row: natural_sort_key(row["spec_name"] or ""),
-        "material": lambda row: natural_sort_key(row["material"] or ""),
-        "length": lambda row: row["length"],
-        "width": lambda row: row["width"],
-        "thickness": lambda row: row["thickness"],
-        "quantity": lambda row: row["quantity"],
-        "batch_count": lambda row: row["batch_count"],
-        "latest": lambda row: row["latest"],
-    }
-
-
-def scrap_summary_sort_key_map() -> SummarySortMap:
-    return {
-        "material": lambda row: natural_sort_key(row["material"] or ""),
-        "thickness": lambda row: row["thickness"],
-        "usable_size": lambda row: natural_sort_key(row["usable_size"] or ""),
-        "quantity": lambda row: row["quantity"],
-        "batch_count": lambda row: row["batch_count"],
-        "latest": lambda row: row["latest"],
-    }

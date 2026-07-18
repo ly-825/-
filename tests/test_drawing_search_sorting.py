@@ -70,25 +70,20 @@ class DrawingSearchSortingTest(unittest.TestCase):
         self.assertLess(html.index(">A2</td>"), html.index(">A10</td>"))
         self.assertLess(html.index(">A10</td>"), html.index(">B1</td>"))
 
-    def test_confirmed_drawings_support_allow_list_sorting(self) -> None:
+    def test_confirmed_drawings_ignore_legacy_sort_parameters(self) -> None:
         with self.Session() as db:
             self.add_drawings(db)
 
-            descending = confirmed_drawings_page(
+            html = confirmed_drawings_page(
                 sort_by="product_code",
                 sort_dir="desc",
                 db=db,
             ).body.decode("utf-8")
-            fallback = confirmed_drawings_page(
-                sort_by="__bad__",
-                sort_dir="desc",
-                db=db,
-            ).body.decode("utf-8")
 
-        self.assertLess(descending.index(">B1</td>"), descending.index(">A10</td>"))
-        self.assertLess(descending.index(">A10</td>"), descending.index(">A2</td>"))
-        self.assertLess(fallback.index(">A2</td>"), fallback.index(">A10</td>"))
-        self.assertLess(fallback.index(">A10</td>"), fallback.index(">B1</td>"))
+        self.assertNotIn('name="sort_by"', html)
+        self.assertNotIn('name="sort_dir"', html)
+        self.assertLess(html.index(">A2</td>"), html.index(">A10</td>"))
+        self.assertLess(html.index(">A10</td>"), html.index(">B1</td>"))
 
     def test_combined_tooth_type_and_count_work_in_dedicated_and_general_search(self) -> None:
         with self.Session() as db:

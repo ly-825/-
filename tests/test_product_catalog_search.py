@@ -93,7 +93,7 @@ class ProductCatalogSearchTest(unittest.TestCase):
         self.assertIn('<span class="parameter-line matched"><strong>产品编号</strong> DYN-1</span>', text_only_html)
         self.assertIn("已确认", text_only_html)
 
-    def test_product_catalog_export_uses_requested_natural_code_sort(self) -> None:
+    def test_product_catalog_export_ignores_legacy_sort_and_uses_natural_code(self) -> None:
         with self.Session() as db:
             db.add_all(
                 [
@@ -110,7 +110,7 @@ class ProductCatalogSearchTest(unittest.TestCase):
                 db,
             )
 
-        self.assertEqual([row[1] for row in rows], ["TNX10", "TNX2", "TNX1"])
+        self.assertEqual([row[1] for row in rows], ["TNX1", "TNX2", "TNX10"])
 
     def test_product_catalog_export_matches_page_for_combined_tooth_filter(self) -> None:
         with self.Session() as db:
@@ -153,13 +153,13 @@ class ProductCatalogSearchTest(unittest.TestCase):
             db.commit()
 
             _, product_headings, product_rows = build_export_rows("product_inventory", {"sort_by": "quantity", "sort_dir": "desc"}, db)
-            _, raw_headings, raw_rows = build_export_rows("raw_plate_inventory", {"sort_by": "quantity", "sort_dir": "desc"}, db)
-            _, scrap_headings, scrap_rows = build_export_rows("scrap_inventory", {"sort_by": "quantity", "sort_dir": "desc"}, db)
+            _, raw_headings, raw_rows = build_export_rows("raw_plate_inventory", {"sort_by": "quantity", "sort_dir": "asc"}, db)
+            _, scrap_headings, scrap_rows = build_export_rows("scrap_inventory", {"sort_by": "quantity", "sort_dir": "asc"}, db)
 
         self.assertEqual(product_headings[:2], ["产品型号", "库存数量"])
-        self.assertEqual([(row[0], row[1]) for row in product_rows], [("TNX10", 10), ("TNX2", 5)])
+        self.assertEqual([(row[0], row[1]) for row in product_rows], [("TNX2", 5), ("TNX10", 10)])
         self.assertIn("批次数", raw_headings)
-        self.assertEqual([(row[1], row[5]) for row in raw_rows], [("65Mn", 10), ("Q235", 5)])
+        self.assertEqual([(row[1], row[5]) for row in raw_rows], [("Q235", 5), ("65Mn", 10)])
         self.assertIn("批次数", scrap_headings)
         self.assertEqual([(row[0], row[3]) for row in scrap_rows], [("65Mn", 10), ("Q235", 2)])
 

@@ -24,21 +24,17 @@ from app.database import SessionLocal, get_db
 from app.models import InventoryTransactionRecord, MaterialInventory, OperationLog, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 from app.services.dxf_parser import parse_dxf
 from app.services.drawing_preview import generate_drawing_preview
-from app.services.drawing_search import drawing_sort_key_map, natural_sort_key, tooth_search_filter
+from app.services.drawing_search import natural_sort_key, tooth_search_filter
 from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_drawing
 from app.services.drawing_version import apply_drawing_version
 from app.services.excel_export import build_export_rows, content_disposition, export_filename, log_export, make_workbook_bytes
 from app.services.inventory_service import adjust_inventory_quantity, ensure_drawing_can_be_changed, inventory_write_lock, product_inbound_from_drawing, reject_direct_inventory_write, reverse_inventory_transaction, sync_product_inventory_from_drawing
 from app.services.inventory_summaries import (
     product_summary_rows,
-    product_summary_sort_key_map,
     raw_plate_summary_rows,
-    raw_plate_summary_sort_key_map,
     resolved_raw_plate_model,
     scrap_summary_rows,
-    scrap_summary_sort_key_map,
 )
-from app.services.list_sorting import sort_records, sort_select_options
 from app.services.material_matching import (
     drawing_required_diameter,
     effective_drawing_thickness,
@@ -1016,9 +1012,6 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .parameter-line {{ display:block; overflow-wrap:anywhere; line-height:1.35; }}
     .parameter-line.matched {{ color:var(--primary); font-weight:700; border-left:3px solid var(--primary); padding-left:7px; }}
     .parameter-line strong {{ color:inherit; }}
-    .sort-controls {{ display:flex; flex:0 1 auto; gap:8px; align-items:center; flex-wrap:wrap; }}
-    .sort-controls > div {{ min-width:0; }}
-    .sort-controls select {{ width:auto; min-width:112px; max-width:180px; }}
     .flow-switch {{ display:inline-flex; gap:4px; flex-wrap:wrap; margin-bottom:14px; }}
     textarea {{ min-height:86px; padding:10px 12px; resize:vertical; line-height:1.5; }}
     .btn {{ display:inline-flex; align-items:center; justify-content:center; height:42px; padding:0 16px; border-radius:12px; border:none; background:var(--primary); color:white; font-weight:700; cursor:pointer; }}
@@ -1070,7 +1063,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     pre {{ white-space:pre-wrap; word-break:break-all; background:#0f172a; color:#dbeafe; padding:16px; border-radius:14px; overflow:auto; }}
     @media (max-width:1100px) {{ .workbench-layout,.inventory-overview {{ grid-template-columns:1fr; }} }}
     @media (max-width:900px) {{ .layout {{ grid-template-columns:1fr; }} aside {{ position:static; max-height:none; }} .top {{ align-items:flex-start; flex-direction:column; }} .top > .actions {{ width:100%; }} .grid,.form-grid,.quick-action-grid,.flow-summary {{ grid-template-columns:1fr; }} .workbench-head {{ flex-direction:column; }} .workbench-date {{ width:100%; text-align:left; }} .announcement-bar {{ align-items:flex-start; flex-direction:column; }} .announcement-bar a,.announcement-close {{ width:100%; }} .assistant-launcher {{ right:16px; bottom:16px; }} .assistant-panel {{ right:16px; bottom:84px; max-height:calc(100vh - 104px); }} }}
-    @media (max-width:700px) {{ main {{ padding:18px 14px; }} .card {{ padding:14px; }} .sort-controls {{ width:100%; }} .sort-controls > div,.sort-controls select,.sort-controls .btn {{ flex:1 1 120px; min-width:0; max-width:none; }} .parameter-lines {{ text-align:left; }} .compact-list,.compact-list tbody,.compact-list tr,.compact-list td,.mobile-list,.mobile-list tbody,.mobile-list tr,.mobile-list td {{ display:block; width:100%; }} .compact-list thead,.mobile-list thead {{ display:none; }} .compact-list tr,.mobile-list tr {{ padding:10px 12px; border-bottom:1px solid var(--line); }} .compact-list td,.mobile-list td {{ display:grid; grid-template-columns:82px minmax(0,1fr); gap:10px; padding:7px 0; border:0; background:transparent !important; text-align:left; }} .compact-list td::before,.mobile-list td::before {{ content:attr(data-label); color:var(--muted); font-weight:800; }} .compact-list td.cell-clip,.mobile-list td.cell-clip {{ max-width:none; white-space:normal; }} .compact-list .action-col,.mobile-list .action-col {{ position:static; min-width:0; box-shadow:none; }} .compact-list .btn,.mobile-list .btn {{ width:100%; }} }}
+    @media (max-width:700px) {{ main {{ padding:18px 14px; }} .card {{ padding:14px; }} .parameter-lines {{ text-align:left; }} .compact-list,.compact-list tbody,.compact-list tr,.compact-list td,.mobile-list,.mobile-list tbody,.mobile-list tr,.mobile-list td {{ display:block; width:100%; }} .compact-list thead,.mobile-list thead {{ display:none; }} .compact-list tr,.mobile-list tr {{ padding:10px 12px; border-bottom:1px solid var(--line); }} .compact-list td,.mobile-list td {{ display:grid; grid-template-columns:82px minmax(0,1fr); gap:10px; padding:7px 0; border:0; background:transparent !important; text-align:left; }} .compact-list td::before,.mobile-list td::before {{ content:attr(data-label); color:var(--muted); font-weight:800; }} .compact-list td.cell-clip,.mobile-list td.cell-clip {{ max-width:none; white-space:normal; }} .compact-list .action-col,.mobile-list .action-col {{ position:static; min-width:0; box-shadow:none; }} .compact-list .btn,.mobile-list .btn {{ width:100%; }} }}
   </style>
 </head>
 <body>
@@ -1860,14 +1853,7 @@ def inventory_page(
         if drawing.product_code and drawing.product_code not in product_names:
             product_names[drawing.product_code] = drawing.product_name or "-"
     grouped_rows = product_summary_rows(items, product_names)
-    grouped_rows, selected_sort_by, selected_sort_dir = sort_records(
-        grouped_rows,
-        sort_by,
-        sort_dir,
-        product_summary_sort_key_map(),
-    )
-    if not selected_sort_by:
-        grouped_rows.sort(key=lambda value: natural_sort_key(value["code"]))
+    grouped_rows.sort(key=lambda value: natural_sort_key(value["code"]))
     row_parts = []
     for group in grouped_rows:
         product_thickness_text = joined_summary_values(group["product_thicknesses"])
@@ -1908,11 +1894,6 @@ def inventory_page(
             f"<td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe='')}'>查看明细</a></td></tr>"
         )
     rows = "".join(row_parts)
-    sort_options = sort_select_options(
-        {"": "默认顺序", "code": "产品型号", "material": "材质", "product_thickness": "总成品厚度", "plate_thickness": "钢板厚度", "quantity": "总数量", "batch_count": "批次数", "latest": "最近更新"},
-        selected_sort_by,
-    )
-    direction_options = sort_select_options({"asc": "升序", "desc": "降序"}, selected_sort_dir or "asc")
     product_codes = inventory_distinct_options(db, "product", "material_code", quantity_positive=True)
     source_codes = inventory_distinct_options(db, "product", "source_product_code", quantity_positive=True)
     product_code_options = datalist_options(product_codes + source_codes)
@@ -1921,7 +1902,7 @@ def inventory_page(
     plate_thickness_options = datalist_options(inventory_distinct_options(db, "product", "plate_thickness", quantity_positive=True))
     location_options = datalist_options(inventory_distinct_options(db, "product", "location", quantity_positive=True))
     body = f"""
-    <div class="top"><div><h1>成品库存</h1><p class="muted">只查询成品库存汇总；入库和出库请进入单独页面操作。</p></div><div class="actions"><a class="btn" href="/admin/inventory/inbound">成品入库</a><a class="btn secondary" href="/admin/inventory/outbound">成品出库</a><a class="btn secondary" href="/admin/reports/product-outbound">产品出入库分析</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="{export_link('product_inventory', {'q': keyword, 'material': material.strip(), 'product_thickness': product_thickness.strip(), 'plate_thickness': plate_thickness.strip(), 'location': location.strip(), 'sort_by': selected_sort_by, 'sort_dir': selected_sort_dir})}">导出Excel</a></div></div>
+    <div class="top"><div><h1>成品库存</h1><p class="muted">只查询成品库存汇总；入库和出库请进入单独页面操作。</p></div><div class="actions"><a class="btn" href="/admin/inventory/inbound">成品入库</a><a class="btn secondary" href="/admin/inventory/outbound">成品出库</a><a class="btn secondary" href="/admin/reports/product-outbound">产品出入库分析</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="{export_link('product_inventory', {'q': keyword, 'material': material.strip(), 'product_thickness': product_thickness.strip(), 'plate_thickness': plate_thickness.strip(), 'location': location.strip()})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/inventory" class="actions" style="justify-content:flex-start">
         <input name="q" value="{safe_value(keyword)}" list="product-code-options" placeholder="输入型号筛选" style="width:220px"><datalist id="product-code-options">{product_code_options}</datalist>
@@ -1930,8 +1911,6 @@ def inventory_page(
         <input name="product_thickness" value="{safe_value(product_thickness.strip())}" list="product-thickness-options" placeholder="总成品厚度" style="width:130px"><datalist id="product-thickness-options">{product_thickness_options}</datalist>
         <input name="plate_thickness" value="{safe_value(plate_thickness.strip())}" list="product-plate-thickness-options" placeholder="钢板厚度" style="width:130px"><datalist id="product-plate-thickness-options">{plate_thickness_options}</datalist>
         <input name="location" value="{safe_value(location.strip())}" list="product-location-options" placeholder="库位" style="width:150px"><datalist id="product-location-options">{location_options}</datalist>
-        <select name="sort_by" aria-label="排序参数">{sort_options}</select>
-        <select name="sort_dir" aria-label="排序方式">{direction_options}</select>
         <button class="btn" type="submit">搜索库存</button>
         <a class="btn secondary" href="/admin/inventory">清空</a>
       </form>
@@ -1986,14 +1965,7 @@ def raw_plates_page(
         for spec in db.query(RawPlateSpecification).filter(RawPlateSpecification.is_active == 1).all()
     }
     grouped_rows = raw_plate_summary_rows(items, spec_names)
-    grouped_rows, selected_sort_by, selected_sort_dir = sort_records(
-        grouped_rows,
-        sort_by,
-        sort_dir,
-        raw_plate_summary_sort_key_map(),
-    )
-    if not selected_sort_by:
-        grouped_rows.sort(key=lambda group: (natural_sort_key(group["spec_name"]), natural_sort_key(group["material"]), group["thickness"] or 0))
+    grouped_rows.sort(key=lambda group: (natural_sort_key(group["spec_name"]), natural_sort_key(group["material"]), group["thickness"] or 0))
     summary_parts = []
     for group in grouped_rows:
         length_text = fmt_option(group["length"])
@@ -2043,11 +2015,6 @@ def raw_plates_page(
             f"<td><a class='btn secondary' href='/admin/raw-plates/detail?{detail_query}'>查看明细</a></td></tr>"
         )
     summary_rows = "".join(summary_parts)
-    sort_options = sort_select_options(
-        {"": "默认顺序", "spec_name": "规格名称", "material": "材质", "length": "长度", "width": "宽度", "thickness": "厚度", "quantity": "总块数", "batch_count": "批次数", "latest": "最近更新"},
-        selected_sort_by,
-    )
-    direction_options = sort_select_options({"asc": "升序", "desc": "降序"}, selected_sort_dir or "asc")
     batch_options = datalist_options(inventory_distinct_options(db, "raw_plate", "material_code", quantity_positive=True))
     material_options = datalist_options(inventory_distinct_options(db, "raw_plate", "material", quantity_positive=True))
     length_options = datalist_options(inventory_distinct_options(db, "raw_plate", "length", quantity_positive=True))
@@ -2055,7 +2022,7 @@ def raw_plates_page(
     thickness_options = datalist_options(inventory_distinct_options(db, "raw_plate", "thickness", quantity_positive=True))
     location_options = datalist_options(inventory_distinct_options(db, "raw_plate", "location", quantity_positive=True))
     body = f"""
-    <div class="top"><div><h1>板料库存</h1><p class="muted">查看按重量换算入库的原料钢板库存。</p></div><div class="actions"><a class="btn" href="/admin/raw-plates/inbound">板料入库</a><a class="btn secondary" href="/admin/raw-plates/outbound">板料出库</a><a class="btn secondary" href="{export_link('raw_plate_inventory', {'q': keyword, 'material': material.strip(), 'length': length.strip(), 'width': width.strip(), 'thickness': thickness.strip(), 'location': location.strip(), 'sort_by': selected_sort_by, 'sort_dir': selected_sort_dir})}">导出Excel</a></div></div>
+    <div class="top"><div><h1>板料库存</h1><p class="muted">查看按重量换算入库的原料钢板库存。</p></div><div class="actions"><a class="btn" href="/admin/raw-plates/inbound">板料入库</a><a class="btn secondary" href="/admin/raw-plates/outbound">板料出库</a><a class="btn secondary" href="{export_link('raw_plate_inventory', {'q': keyword, 'material': material.strip(), 'length': length.strip(), 'width': width.strip(), 'thickness': thickness.strip(), 'location': location.strip()})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/raw-plates" class="actions" style="justify-content:flex-start">
         <input name="q" value="{safe_value(keyword)}" list="raw-plate-batch-options" placeholder="输入批次/材质/尺寸/库位" style="width:220px"><datalist id="raw-plate-batch-options">{batch_options}</datalist>
@@ -2064,8 +2031,6 @@ def raw_plates_page(
         <input name="width" value="{safe_value(width.strip())}" list="raw-plate-width-options" placeholder="宽度" style="width:120px"><datalist id="raw-plate-width-options">{width_options}</datalist>
         <input name="thickness" value="{safe_value(thickness.strip())}" list="raw-plate-thickness-options" placeholder="厚度" style="width:120px"><datalist id="raw-plate-thickness-options">{thickness_options}</datalist>
         <input name="location" value="{safe_value(location.strip())}" list="raw-plate-location-options" placeholder="库位" style="width:150px"><datalist id="raw-plate-location-options">{location_options}</datalist>
-        <select name="sort_by" aria-label="排序参数">{sort_options}</select>
-        <select name="sort_dir" aria-label="排序方式">{direction_options}</select>
         <button class="btn" type="submit">搜索板料</button>
         <a class="btn secondary" href="/admin/raw-plates">清空</a>
       </form>
@@ -4122,12 +4087,7 @@ def confirmed_drawings_page(
         query.all(),
         key=lambda drawing: (natural_sort_key(drawing.product_code), -(drawing.version or 1)),
     )
-    drawings, selected_sort_by, selected_sort_dir = sort_records(
-        default_drawings,
-        sort_by,
-        sort_dir,
-        drawing_sort_key_map(),
-    )
+    drawings = default_drawings
     parameter_filters = {
         "product_thickness": product_thickness,
         "plate_thickness": plate_thickness,
@@ -4163,31 +4123,7 @@ def confirmed_drawings_page(
         "common_normal_length": common_normal_length.strip(),
         "pin_diameter": pin_diameter.strip(),
         "pin_span": pin_span.strip(),
-        "sort_by": selected_sort_by,
-        "sort_dir": selected_sort_dir,
     }
-    drawing_sort_options = sort_select_options(
-        {
-            "": "默认排序",
-            "product_code": "产品编号",
-            "product_name": "产品名称",
-            "product_category": "产品分类",
-            "material": "材质",
-            "product_thickness": "总成品厚度",
-            "plate_thickness": "钢板厚度",
-            "outer_diameter": "外径",
-            "inner_diameter": "内径",
-            "teeth_count": "齿数",
-            "module": "模数",
-            "pressure_angle": "压力角",
-            "updated_at": "更新时间",
-        },
-        selected_sort_by,
-    )
-    drawing_sort_dir_options = sort_select_options(
-        {"asc": "升序", "desc": "降序"},
-        selected_sort_dir or "asc",
-    )
     body = f"""
     <div class="top"><div><h1>已确认图纸</h1><p class="muted">这些图纸已经人工确认，可直接用于成品入库，也可按分类和参数导出给客户确认。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a><a class="btn secondary" href="{export_link('product_catalog', export_params)}">导出Excel</a></div></div>
     <section class="card">
@@ -4203,8 +4139,6 @@ def confirmed_drawings_page(
         <input name="module" value="{safe_value(module.strip())}" placeholder="模数" style="width:100px">
         <input name="pressure_angle" value="{safe_value(pressure_angle.strip())}" placeholder="压力角" style="width:110px">
         <input name="common_normal_length" value="{safe_value(common_normal_length.strip())}" placeholder="公法线" style="width:120px">
-        <select name="sort_by" aria-label="排序参数" style="width:150px">{drawing_sort_options}</select>
-        <select name="sort_dir" aria-label="排序方向" style="width:100px">{drawing_sort_dir_options}</select>
         <button class="btn" type="submit">搜索</button>
         <a class="btn secondary" href="/admin/drawings/confirmed">清空</a>
       </form>
@@ -4660,14 +4594,7 @@ def scraps_page(
             continue
         filtered_records.append(record)
     grouped_rows = scrap_summary_rows(filtered_records, scrap_map)
-    grouped_rows, selected_sort_by, selected_sort_dir = sort_records(
-        grouped_rows,
-        sort_by,
-        sort_dir,
-        scrap_summary_sort_key_map(),
-    )
-    if not selected_sort_by:
-        grouped_rows.sort(key=lambda group: (str(group["material"]), group["thickness"] or 0, str(group["usable_size"])))
+    grouped_rows.sort(key=lambda group: (natural_sort_key(group["material"]), group["thickness"] or 0, natural_sort_key(group["usable_size"])))
     spec_parts = []
     for group in grouped_rows:
         source_text = joined_summary_values(group["source_codes"])
@@ -4715,18 +4642,13 @@ def scraps_page(
             f"<td><a class='btn secondary' href='/admin/scraps/detail?{detail_query}'>查看明细</a></td></tr>"
         )
     spec_rows = "".join(spec_parts)
-    sort_options = sort_select_options(
-        {"": "默认顺序", "material": "材质", "thickness": "厚度", "usable_size": "可用尺寸", "quantity": "总数量", "batch_count": "批次数", "latest": "最近更新"},
-        selected_sort_by,
-    )
-    direction_options = sort_select_options({"asc": "升序", "desc": "降序"}, selected_sort_dir or "asc")
     source_product_options = datalist_options([record.source_product_code for record in records])
     material_options = datalist_options(inventory_distinct_options(db, "scrap", "material", quantity_positive=True, status="available"))
     thickness_options = datalist_options(inventory_distinct_options(db, "scrap", "thickness", quantity_positive=True, status="available"))
     diameter_options = datalist_options(inventory_distinct_options(db, "scrap", "diameter", quantity_positive=True, status="available"))
     location_options = datalist_options(inventory_distinct_options(db, "scrap", "location", quantity_positive=True, status="available"))
     body = f"""
-    <div class='top'><div><h1>余料库存</h1><p class='muted'>按材质、厚度和可用尺寸汇总余料，点击明细查看每批来源和出入库流水。</p></div><div class="actions"><a class="btn" href="/admin/scraps/outbound">余料出库</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/scraps/pending">待入库余料</a><a class="btn secondary" href="{export_link('scrap_inventory', {'source_product_code': source_product_code.strip(), 'drawing_id': drawing_id, 'material': material.strip(), 'thickness': thickness.strip(), 'required_diameter': required_diameter.strip(), 'location': location.strip(), 'sort_by': selected_sort_by, 'sort_dir': selected_sort_dir})}">导出Excel</a></div></div>
+    <div class='top'><div><h1>余料库存</h1><p class='muted'>按材质、厚度和可用尺寸汇总余料，点击明细查看每批来源和出入库流水。</p></div><div class="actions"><a class="btn" href="/admin/scraps/outbound">余料出库</a><a class="btn secondary" href="/admin/scraps/transactions">余料流水</a><a class="btn secondary" href="/admin/scraps/pending">待入库余料</a><a class="btn secondary" href="{export_link('scrap_inventory', {'source_product_code': source_product_code.strip(), 'drawing_id': drawing_id, 'material': material.strip(), 'thickness': thickness.strip(), 'required_diameter': required_diameter.strip(), 'location': location.strip()})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/scraps" class="actions" style="justify-content:flex-start">
         <input name="source_product_code" value="{safe_value(source_product_code.strip())}" list="scrap-source-product-options" placeholder="输入来源/材质/尺寸/库位" style="width:220px"><datalist id="scrap-source-product-options">{source_product_options}</datalist>
@@ -4736,8 +4658,6 @@ def scraps_page(
         <input name="thickness" value="{safe_value(thickness.strip())}" list="scrap-thickness-options" placeholder="厚度" style="width:120px"><datalist id="scrap-thickness-options">{thickness_options}</datalist>
         <input name="required_diameter" value="{safe_value(required_diameter.strip())}" list="scrap-diameter-options" placeholder="直径≥" style="width:120px"><datalist id="scrap-diameter-options">{diameter_options}</datalist>
         <input name="location" value="{safe_value(location.strip())}" list="scrap-location-options" placeholder="库位" style="width:140px"><datalist id="scrap-location-options">{location_options}</datalist>
-        <select name="sort_by" aria-label="排序参数">{sort_options}</select>
-        <select name="sort_dir" aria-label="排序方式">{direction_options}</select>
         <button class="btn" type="submit">搜索余料</button>
         <a class="btn secondary" href="/admin/scraps">清空</a>
       </form>

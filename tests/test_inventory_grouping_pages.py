@@ -85,7 +85,7 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         self.assertLess(options_html.index("TNX1｜"), options_html.index("TNX2｜"))
         self.assertLess(options_html.index("TNX2｜"), options_html.index("TNX10｜"))
 
-    def test_product_inventory_sorts_by_quantity_and_natural_code(self) -> None:
+    def test_product_inventory_ignores_legacy_sorting_and_uses_natural_code(self) -> None:
         with self.Session() as db:
             db.add_all(
                 [
@@ -95,17 +95,13 @@ class InventoryGroupingPagesTest(unittest.TestCase):
             )
             db.commit()
 
-            quantity_html = inventory_page(sort_by="quantity", sort_dir="desc", db=db).body.decode("utf-8")
-            code_html = inventory_page(sort_by="code", sort_dir="asc", db=db).body.decode("utf-8")
-            product_thickness_html = inventory_page(sort_by="product_thickness", sort_dir="desc", db=db).body.decode("utf-8")
-            plate_thickness_html = inventory_page(sort_by="plate_thickness", sort_dir="desc", db=db).body.decode("utf-8")
+            html = inventory_page(sort_by="quantity", sort_dir="desc", db=db).body.decode("utf-8")
 
-        self.assertLess(quantity_html.index(">TNX10</td>"), quantity_html.index(">TNX2</td>"))
-        self.assertLess(code_html.index(">TNX2</td>"), code_html.index(">TNX10</td>"))
-        self.assertIn("<strong>10</strong>", quantity_html)
-        self.assertIn("<strong>2</strong>", quantity_html)
-        self.assertLess(product_thickness_html.index(">TNX10</td>"), product_thickness_html.index(">TNX2</td>"))
-        self.assertLess(plate_thickness_html.index(">TNX2</td>"), plate_thickness_html.index(">TNX10</td>"))
+        self.assertNotIn('name="sort_by"', html)
+        self.assertNotIn('name="sort_dir"', html)
+        self.assertLess(html.index(">TNX2</td>"), html.index(">TNX10</td>"))
+        self.assertIn("<strong>10</strong>", html)
+        self.assertIn("<strong>2</strong>", html)
 
     def test_product_inventory_keeps_base_info_and_highlights_actual_filter_values(self) -> None:
         with self.Session() as db:
@@ -220,7 +216,7 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         self.assertIn('<button class="btn" type="submit">确认出库</button>', html)
         self.assertIn("<h2>当前可出库成品库存</h2>", html)
 
-    def test_raw_plate_specifications_support_selected_sorting(self) -> None:
+    def test_raw_plate_specifications_ignore_legacy_sorting(self) -> None:
         with self.Session() as db:
             db.add_all(
                 [
@@ -230,11 +226,11 @@ class InventoryGroupingPagesTest(unittest.TestCase):
             )
             db.commit()
 
-            material_html = raw_plate_specifications_page(sort_by="material", sort_dir="asc", db=db).body.decode("utf-8")
-            thickness_html = raw_plate_specifications_page(sort_by="thickness", sort_dir="desc", db=db).body.decode("utf-8")
+            html = raw_plate_specifications_page(sort_by="thickness", sort_dir="desc", db=db).body.decode("utf-8")
 
-        self.assertLess(material_html.index(">65Mn</td>"), material_html.index(">Q235</td>"))
-        self.assertLess(thickness_html.index(">10</td>"), thickness_html.index(">2</td>"))
+        self.assertNotIn('name="sort_by"', html)
+        self.assertNotIn('name="sort_dir"', html)
+        self.assertLess(html.index(">S2</td>"), html.index(">S10</td>"))
 
     def test_raw_plate_stock_groups_spec_and_temporary_batches_with_detail_link(self) -> None:
         with self.Session() as db:
@@ -433,19 +429,21 @@ class InventoryGroupingPagesTest(unittest.TestCase):
             self.assertEqual(records[fixed.id].after_quantity, fixed.quantity)
             self.assertEqual(records[manual.id].after_quantity, manual.quantity)
 
-    def test_raw_plate_summary_sorts_by_total_quantity_descending(self) -> None:
+    def test_raw_plate_summary_ignores_legacy_sorting_and_uses_model_order(self) -> None:
         with self.Session() as db:
             db.add_all(
                 [
-                    MaterialInventory(material_code="R2", inventory_type="raw_plate", material="Q235", thickness=2, length=1000, width=500, shape="rectangle", quantity=2, status="available"),
-                    MaterialInventory(material_code="R10", inventory_type="raw_plate", material="65Mn", thickness=3, length=2000, width=1000, shape="rectangle", quantity=10, status="available"),
+                    MaterialInventory(raw_plate_model="A-MODEL", material_code="R2", inventory_type="raw_plate", material="Q235", thickness=2, length=1000, width=500, shape="rectangle", quantity=2, status="available"),
+                    MaterialInventory(raw_plate_model="Z-MODEL", material_code="R10", inventory_type="raw_plate", material="65Mn", thickness=3, length=2000, width=1000, shape="rectangle", quantity=10, status="available"),
                 ]
             )
             db.commit()
 
             html = raw_plates_page(sort_by="quantity", sort_dir="desc", db=db).body.decode("utf-8")
 
-        self.assertLess(html.index(">65Mn</td>"), html.index(">Q235</td>"))
+        self.assertNotIn('name="sort_by"', html)
+        self.assertNotIn('name="sort_dir"', html)
+        self.assertLess(html.index(">A-MODEL</td>"), html.index(">Z-MODEL</td>"))
         self.assertIn("<strong>10</strong>", html)
         self.assertIn("<strong>2</strong>", html)
 
@@ -559,7 +557,7 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         self.assertNotIn("<h2>余料明细</h2>", html)
         self.assertIn('placeholder="输入来源/材质/尺寸/库位"', html)
 
-    def test_scrap_summary_sorts_by_total_quantity_descending(self) -> None:
+    def test_scrap_summary_ignores_legacy_sorting(self) -> None:
         with self.Session() as db:
             small = MaterialInventory(inventory_type="scrap", material="Q235", thickness=2, diameter=50, usable_size="φ50", shape="round", quantity=2, status="available")
             large = MaterialInventory(inventory_type="scrap", material="65Mn", thickness=3, diameter=80, usable_size="φ80", shape="round", quantity=10, status="available")
@@ -573,9 +571,11 @@ class InventoryGroupingPagesTest(unittest.TestCase):
             )
             db.commit()
 
-            html = scraps_page(sort_by="quantity", sort_dir="desc", db=db).body.decode("utf-8")
+            html = scraps_page(sort_by="quantity", sort_dir="asc", db=db).body.decode("utf-8")
 
-        self.assertLess(html.index(">65Mn</td>"), html.index(">Q235</td>"))
+        self.assertNotIn('name="sort_by"', html)
+        self.assertNotIn('name="sort_dir"', html)
+        self.assertLess(html.index("<strong>材质</strong> 65Mn"), html.index("<strong>材质</strong> Q235"))
         self.assertIn("<strong>10</strong>", html)
         self.assertIn("<strong>2</strong>", html)
 

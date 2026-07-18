@@ -10,16 +10,12 @@ from sqlalchemy.orm import Session
 from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 from app.services.inventory_summaries import (
     product_summary_rows,
-    product_summary_sort_key_map,
     raw_plate_summary_rows,
-    raw_plate_summary_sort_key_map,
     scrap_summary_rows,
-    scrap_summary_sort_key_map,
 )
 from app.services.material_matching import scrap_matches_drawing
 from app.services.operation_log import record_operation_log
-from app.services.drawing_search import drawing_sort_key_map, natural_sort_key, tooth_search_filter
-from app.services.list_sorting import sort_records
+from app.services.drawing_search import natural_sort_key, tooth_search_filter
 from app.services.product_outbound_analysis import normalize_flow_type, product_flow_analysis_export_rows
 from app.time_utils import china_now
 
@@ -125,18 +121,6 @@ def _apply_inventory_filters(query, filters: dict, inventory_type: str):
         if width is not None:
             query = query.filter(MaterialInventory.width == width)
     return query
-
-
-def _sorted_summary_rows(rows: list[dict], filters: dict, key_map: dict, default_key) -> list[dict]:
-    sorted_rows, selected_field, _ = sort_records(
-        rows,
-        filters.get("sort_by") or "",
-        filters.get("sort_dir") or "",
-        key_map,
-    )
-    if not selected_field:
-        sorted_rows.sort(key=default_key)
-    return sorted_rows
 
 
 def _joined_numbers(values: set) -> str:
@@ -372,12 +356,6 @@ def _product_catalog_rows(db: Session, filters: dict) -> tuple[list[str], list[l
         _apply_drawing_filters(query, filters).all(),
         key=lambda drawing: (natural_sort_key(drawing.product_code), -(drawing.version or 1)),
     )
-    drawings, _, _ = sort_records(
-        drawings,
-        filters.get("sort_by") or "",
-        filters.get("sort_dir") or "",
-        drawing_sort_key_map(),
-    )
     headings = [
         "产品分类",
         "产品型号",
@@ -437,12 +415,7 @@ def build_export_rows(module: str, filters: dict, db: Session) -> tuple[str, lis
         return EXPORT_MODULES[module], *_product_catalog_rows(db, filters)
     if module == "product_inventory":
         items = _apply_inventory_filters(db.query(MaterialInventory), filters, "product").order_by(MaterialInventory.created_at.desc()).all()
-        groups = _sorted_summary_rows(
-            product_summary_rows(items),
-            filters,
-            product_summary_sort_key_map(),
-            lambda row: natural_sort_key(row["code"]),
-        )
+        groups = sorted(product_summary_rows(items), key=lambda row: natural_sort_key(row["code"]))
         rows = [[group["code"], group["quantity"], group["material"], _joined_numbers(group["product_thicknesses"]), _joined_numbers(group["plate_thicknesses"]), " / ".join(sorted(group["paper_materials"])), group["batch_count"], " / ".join(sorted(group["locations"])), _fmt_time(group["latest"])] for group in groups]
         return EXPORT_MODULES[module], ["产品型号", "库存数量", "材质", "总成品厚度", "钢板厚度", "纸材质", "批次数", "库位", "最近更新时间"], rows
     if module == "raw_plate_inventory":
@@ -451,21 +424,17 @@ def build_export_rows(module: str, filters: dict, db: Session) -> tuple[str, lis
             (spec.material, spec.length, spec.width, spec.thickness): spec.spec_name
             for spec in db.query(RawPlateSpecification).filter(RawPlateSpecification.is_active == 1).all()
         }
-        groups = _sorted_summary_rows(
+        groups = sorted(
             raw_plate_summary_rows(items, spec_names),
-            filters,
-            raw_plate_summary_sort_key_map(),
-            lambda row: (str(row["material"]), row["thickness"] or 0, row["length"] or 0, row["width"] or 0),
+            key=lambda row: (natural_sort_key(row["spec_name"]), natural_sort_key(row["material"]), row["thickness"] or 0),
         )
         rows = [[group["spec_name"], group["material"], _fmt_num(group["length"]), _fmt_num(group["width"]), _fmt_num(group["thickness"]), group["quantity"], group["batch_count"], " / ".join(sorted(group["locations"])), _fmt_time(group["latest"])] for group in groups]
         return EXPORT_MODULES[module], ["规格", "材质", "长度", "宽度", "厚度", "总块数", "批次数", "库位", "最近更新时间"], rows
     if module == "scrap_inventory":
         records, scrap_map = _scrap_inventory_export_records(db, filters)
-        groups = _sorted_summary_rows(
+        groups = sorted(
             scrap_summary_rows(records, scrap_map),
-            filters,
-            scrap_summary_sort_key_map(),
-            lambda row: (str(row["material"]), row["thickness"] or 0, str(row["usable_size"])),
+            key=lambda row: (natural_sort_key(row["material"]), row["thickness"] or 0, natural_sort_key(row["usable_size"])),
         )
         rows = [[group["material"], _fmt_num(group["thickness"]), group["usable_size"], group["quantity"], group["batch_count"], " / ".join(sorted(group["locations"])), _fmt_time(group["latest"])] for group in groups]
         return EXPORT_MODULES[module], ["材质", "厚度", "可用尺寸", "总数量", "批次数", "库位", "最近更新时间"], rows
