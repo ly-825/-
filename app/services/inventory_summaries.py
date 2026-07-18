@@ -56,11 +56,15 @@ def raw_plate_summary_rows(
 ) -> list[SummaryRow]:
     grouped: dict[tuple, SummaryRow] = {}
     for item in items:
-        key = (item.material, item.length, item.width, item.thickness)
+        if item.quantity <= 0:
+            continue
+        spec_key = (item.material, item.length, item.width, item.thickness)
+        model = item.raw_plate_model or spec_names.get(spec_key) or "临时规格"
+        key = (model, *spec_key)
         group = grouped.setdefault(
             key,
             {
-                "spec_name": spec_names.get(key) or "临时规格",
+                "spec_name": model,
                 "material": item.material,
                 "length": item.length,
                 "width": item.width,
@@ -79,6 +83,14 @@ def raw_plate_summary_rows(
         if item_time and (not group["latest"] or item_time > group["latest"]):
             group["latest"] = item_time
     return list(grouped.values())
+
+
+def resolved_raw_plate_model(
+    item: MaterialInventory,
+    spec_names: dict[tuple, str],
+) -> str:
+    key = (item.material, item.length, item.width, item.thickness)
+    return item.raw_plate_model or spec_names.get(key) or "临时规格"
 
 
 def scrap_summary_rows(

@@ -4,7 +4,19 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.admin_pages import confirmed_drawing_options, inventory_outbound_page, inventory_page, page, raw_plate_group_detail_page, raw_plate_specifications_page, raw_plates_page, scrap_group_detail_page, scraps_page
+from app.admin_pages import (
+    confirmed_drawing_options,
+    create_raw_plate_from_page,
+    inventory_outbound_page,
+    inventory_page,
+    page,
+    raw_plate_group_detail_page,
+    raw_plate_specifications_page,
+    raw_plates_page,
+    scrap_group_detail_page,
+    scraps_page,
+    update_raw_plate_from_page,
+)
 from app.database import Base
 from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 
@@ -168,6 +180,157 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         self.assertIn("/admin/raw-plates/detail?", html)
         self.assertNotIn("<h2>板料批次明细</h2>", html)
         self.assertIn('placeholder="输入批次/材质/尺寸/库位"', html)
+
+    def test_raw_plate_summary_prefers_saved_model_and_hides_zero_stock(self) -> None:
+        with self.Session() as db:
+            db.add_all(
+                [
+                    MaterialInventory(
+                        raw_plate_model="MODEL-X",
+                        material_code="B1",
+                        inventory_type="raw_plate",
+                        material="65Mn",
+                        thickness=2,
+                        length=1000,
+                        width=500,
+                        shape="rectangle",
+                        quantity=3,
+                        status="available",
+                    ),
+                    MaterialInventory(
+                        material_code="B2",
+                        inventory_type="raw_plate",
+                        material="Q235",
+                        thickness=4,
+                        length=2000,
+                        width=1000,
+                        shape="rectangle",
+                        quantity=0,
+                        status="used",
+                    ),
+                ]
+            )
+            db.commit()
+
+            html = raw_plates_page(db=db).body.decode("utf-8")
+
+        self.assertIn("MODEL-X", html)
+        self.assertNotIn("临时规格", html)
+
+    def test_raw_plate_model_can_change_without_changing_dimensions_or_quantity(self) -> None:
+        with self.Session() as db:
+            item = MaterialInventory(
+                material_code="BATCH-1",
+                inventory_type="raw_plate",
+                material="65Mn",
+                thickness=2,
+                length=1000,
+                width=500,
+                shape="rectangle",
+                quantity=3,
+                status="available",
+            )
+            db.add(item)
+            db.flush()
+            db.add(
+                InventoryTransactionRecord(
+                    inventory_id=item.id,
+                    transaction_type="out",
+                    quantity=1,
+                    before_quantity=4,
+                    after_quantity=3,
+                )
+            )
+            db.commit()
+
+            update_raw_plate_from_page(
+                item.id,
+                material_code="BATCH-1",
+                raw_plate_model="MODEL-NEW",
+                material="Q235",
+                length=9,
+                width=9,
+                thickness=9,
+                location="A1",
+                status="available",
+                operator_name="张三",
+                remark="补型号",
+                _lock=None,
+                db=db,
+            )
+            db.refresh(item)
+
+            self.assertEqual(
+                (
+                    item.raw_plate_model,
+                    item.material,
+                    item.length,
+                    item.width,
+                    item.thickness,
+                    item.quantity,
+                ),
+                ("MODEL-NEW", "65Mn", 1000, 500, 2, 3),
+            )
+
+    def test_raw_plate_inbound_saves_selected_or_manual_model(self) -> None:
+        with self.Session() as db:
+            spec = RawPlateSpecification(
+                spec_name="S-2",
+                material="65Mn",
+                length=1000,
+                width=500,
+                thickness=2,
+                density=7.85,
+            )
+            db.add(spec)
+            db.commit()
+
+            create_raw_plate_from_page(
+                raw_plate_spec_id=str(spec.id),
+                raw_plate_model="IGNORED",
+                material_code="FIXED-1",
+                material="错误材质",
+                total_weight_ton=0.1,
+                length=9,
+                width=9,
+                thickness=9,
+                density=1,
+                location="A1",
+                operator_name="张三",
+                remark="固定规格",
+                _lock=None,
+                db=db,
+            )
+            create_raw_plate_from_page(
+                raw_plate_spec_id="",
+                raw_plate_model="CUSTOM-2",
+                material_code="MANUAL-1",
+                material="Q235",
+                total_weight_ton=0.1,
+                length=1000,
+                width=500,
+                thickness=2,
+                density=7.85,
+                location="A2",
+                operator_name="李四",
+                remark="手工规格",
+                _lock=None,
+                db=db,
+            )
+
+            fixed = db.query(MaterialInventory).filter_by(material_code="FIXED-1").one()
+            manual = db.query(MaterialInventory).filter_by(material_code="MANUAL-1").one()
+            records = {
+                record.inventory_id: record
+                for record in db.query(InventoryTransactionRecord).filter(
+                    InventoryTransactionRecord.inventory_id.in_([fixed.id, manual.id])
+                )
+            }
+
+            self.assertEqual((fixed.raw_plate_model, fixed.material, fixed.length), ("S-2", "65Mn", 1000))
+            self.assertEqual(manual.raw_plate_model, "CUSTOM-2")
+            self.assertEqual(records[fixed.id].after_quantity, fixed.quantity)
+            self.assertEqual(records[manual.id].after_quantity, manual.quantity)
 
     def test_raw_plate_summary_sorts_by_total_quantity_descending(self) -> None:
         with self.Session() as db:

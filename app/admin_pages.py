@@ -34,6 +34,7 @@ from app.services.inventory_summaries import (
     product_summary_sort_key_map,
     raw_plate_summary_rows,
     raw_plate_summary_sort_key_map,
+    resolved_raw_plate_model,
     scrap_summary_rows,
     scrap_summary_sort_key_map,
 )
@@ -1876,12 +1877,16 @@ def raw_plates_page(
     sort_dir: str = "",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    query = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "raw_plate")
+    query = db.query(MaterialInventory).filter(
+        MaterialInventory.inventory_type == "raw_plate",
+        MaterialInventory.quantity > 0,
+    )
     keyword = q.strip()
     if keyword:
         like = f"%{keyword}%"
         query = query.filter(
             (MaterialInventory.material_code.ilike(like))
+            | (MaterialInventory.raw_plate_model.ilike(like))
             | (MaterialInventory.material.ilike(like))
             | (MaterialInventory.location.ilike(like))
             | (MaterialInventory.usable_size.ilike(like))
@@ -1912,7 +1917,7 @@ def raw_plates_page(
         raw_plate_summary_sort_key_map(),
     )
     if not selected_sort_by:
-        grouped_rows.sort(key=lambda group: (str(group["material"]), group["thickness"] or 0, group["length"] or 0, group["width"] or 0))
+        grouped_rows.sort(key=lambda group: (natural_sort_key(group["spec_name"]), natural_sort_key(group["material"]), group["thickness"] or 0))
     summary_rows = "".join(
         f"""
         <tr>
@@ -1924,7 +1929,7 @@ def raw_plates_page(
           <td><strong>{group['quantity']}</strong></td>
           <td>{group['batch_count']}</td>
           <td>{html.escape(' / '.join(sorted(group['locations'])) or '-')}</td>
-          <td><a class="btn secondary" href="/admin/raw-plates/detail?{build_query({'material': group['material'], 'length': group['length'], 'width': group['width'], 'thickness': group['thickness']})}">查看明细</a></td>
+          <td><a class="btn secondary" href="/admin/raw-plates/detail?{build_query({'model': group['spec_name'], 'material': group['material'], 'length': group['length'], 'width': group['width'], 'thickness': group['thickness']})}">查看明细</a></td>
         </tr>
         """
         for group in grouped_rows
@@ -1963,6 +1968,7 @@ def raw_plates_page(
 
 @router.get("/admin/raw-plates/detail", response_class=HTMLResponse)
 def raw_plate_group_detail_page(
+    model: str = "",
     material: str = "",
     length: str = "",
     width: str = "",
@@ -1975,7 +1981,7 @@ def raw_plate_group_detail_page(
     thickness_value = optional_float(thickness)
     if not material_value or length_value is None or width_value is None or thickness_value is None:
         raise HTTPException(status_code=400, detail="板料规格参数错误")
-    items = (
+    candidate_items = (
         db.query(MaterialInventory)
         .filter(
             MaterialInventory.inventory_type == "raw_plate",
@@ -1987,6 +1993,16 @@ def raw_plate_group_detail_page(
         .order_by(MaterialInventory.created_at.asc())
         .all()
     )
+    spec_names = {
+        (spec.material, spec.length, spec.width, spec.thickness): spec.spec_name
+        for spec in db.query(RawPlateSpecification).filter(RawPlateSpecification.is_active == 1).all()
+    }
+    model_value = model.strip()
+    items = [
+        item
+        for item in candidate_items
+        if not model_value or resolved_raw_plate_model(item, spec_names) == model_value
+    ]
     item_ids = [item.id for item in items]
     records = (
         db.query(InventoryTransactionRecord)
@@ -1995,7 +2011,7 @@ def raw_plate_group_detail_page(
         .all()
     ) if item_ids else []
     item_map = {item.id: item for item in items}
-    total_quantity = sum(item.quantity for item in items)
+    total_quantity = sum(max(0, item.quantity) for item in items)
     batch_rows = "".join(
         f"""
         <tr>
@@ -2005,7 +2021,7 @@ def raw_plate_group_detail_page(
           <td>{html.escape(item.status or '-')}</td>
           <td>{item.created_at}</td>
           <td>{item.updated_at}</td>
-          <td><a class="btn secondary" href="/admin/raw-plates/{item.id}/edit">修改</a></td>
+          <td>{f'<a class="btn secondary" href="/admin/raw-plates/{item.id}/edit">修改</a>' if item.quantity > 0 else '-'}</td>
         </tr>
         """
         for item in items
@@ -2027,7 +2043,7 @@ def raw_plate_group_detail_page(
         """
         for record in records
     )
-    title = f"{material_value} {length_value:g}×{width_value:g}×{thickness_value:g}mm"
+    title = f"{model_value + '｜' if model_value else ''}{material_value} {length_value:g}×{width_value:g}×{thickness_value:g}mm"
     body = f"""
     <div class="top"><div><h1>板料明细：{html.escape(title)}</h1><p class="muted">当前总块数：<strong>{total_quantity}</strong>，按该材质和长宽厚汇总所有固定规格与临时规格批次。</p></div><div class="actions"><a class="btn secondary" href="/admin/raw-plates">返回板料库存</a><a class="btn secondary" href="/admin/raw-plates/transactions">板料流水</a></div></div>
     <section class="card"><h2>批次明细</h2><table><thead><tr><th>批次编号</th><th>剩余块数</th><th>库位</th><th>状态</th><th>创建时间</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{batch_rows or "<tr><td colspan='7'>暂无该规格板料批次。</td></tr>"}</tbody></table></section>
@@ -2041,16 +2057,24 @@ def edit_raw_plate_page(inventory_id: int, db: Session = Depends(get_db)) -> HTM
     item = db.get(MaterialInventory, inventory_id)
     if not item or item.inventory_type != "raw_plate":
         raise HTTPException(status_code=404, detail="板料库存不存在")
+    if item.quantity <= 0:
+        raise HTTPException(status_code=400, detail="零库存板料不能补填型号")
+    spec_names = {
+        (spec.material, spec.length, spec.width, spec.thickness): spec.spec_name
+        for spec in db.query(RawPlateSpecification).filter(RawPlateSpecification.is_active == 1).all()
+    }
+    model_value = resolved_raw_plate_model(item, spec_names)
     has_out_record = db.query(InventoryTransactionRecord).filter(
         InventoryTransactionRecord.inventory_id == item.id,
         InventoryTransactionRecord.transaction_type == "out",
     ).first() is not None
     disabled = "readonly" if has_out_record else ""
-    tip = "该批次已有出库流水，只允许修改批次号和库位，规格信息不允许修改。" if has_out_record else "该批次暂无出库流水，可修改批次号、材质、长宽厚、库位和状态。"
+    tip = "该批次已有出库流水，只允许修改板料型号、批次号和库位，规格信息不允许修改。" if has_out_record else "该批次暂无出库流水，可修改板料型号、批次号、材质、长宽厚、库位和状态。"
     body = f"""
     <div class="top"><div><h1>修改板料批次</h1><p class="muted">{tip}</p></div><div class="actions"><a class="btn secondary" href="/admin/raw-plates">返回板料库存</a></div></div>
     <section class="card">
       <form method="post" action="/admin/raw-plates/{item.id}/edit" class="form-grid">
+        <div><label>板料型号</label><input name="raw_plate_model" value="{html.escape(model_value)}" maxlength="100" required></div>
         <div><label>批次编号</label><input name="material_code" value="{html.escape(item.material_code or '')}"></div>
         <div><label>材质</label><input name="material" value="{html.escape(item.material)}" {disabled} required></div>
         <div><label>长度 mm</label><input name="length" type="number" step="0.01" min="0.01" value="{item.length or ''}" {disabled} required></div>
@@ -2070,6 +2094,7 @@ def edit_raw_plate_page(inventory_id: int, db: Session = Depends(get_db)) -> HTM
 @router.post("/admin/raw-plates/{inventory_id}/edit")
 def update_raw_plate_from_page(
     inventory_id: int,
+    raw_plate_model: str = Form(""),
     material_code: str = Form(""),
     material: str = Form(""),
     length: float | None = Form(None),
@@ -2085,11 +2110,19 @@ def update_raw_plate_from_page(
     item = db.get(MaterialInventory, inventory_id)
     if not item or item.inventory_type != "raw_plate":
         raise HTTPException(status_code=404, detail="板料库存不存在")
+    if item.quantity <= 0:
+        raise HTTPException(status_code=400, detail="零库存板料不能补填型号")
+    model_value = raw_plate_model.strip()
+    if not model_value:
+        raise HTTPException(status_code=400, detail="板料型号不能为空")
+    if len(model_value) > 100:
+        raise HTTPException(status_code=400, detail="板料型号不能超过100个字符")
     has_out_record = db.query(InventoryTransactionRecord).filter(
         InventoryTransactionRecord.inventory_id == item.id,
         InventoryTransactionRecord.transaction_type == "out",
     ).first() is not None
     before_data = inventory_snapshot(item)
+    item.raw_plate_model = model_value
     item.material_code = material_code.strip() or None
     item.location = location.strip() or None
     if not has_out_record:
@@ -2289,7 +2322,7 @@ def toggle_raw_plate_specification(spec_id: int, db: Session = Depends(get_db)) 
 def raw_plate_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
     specs = db.query(RawPlateSpecification).filter(RawPlateSpecification.is_active == 1).order_by(RawPlateSpecification.spec_name.asc()).all()
     spec_options = "".join(
-        f"<option value='{spec.id}' data-material='{html.escape(spec.material)}' data-length='{spec.length:g}' data-width='{spec.width:g}' data-thickness='{spec.thickness:g}' data-density='{spec.density:g}'>{html.escape(spec.spec_name)}｜{html.escape(spec.material)}｜{spec.length:g}×{spec.width:g}×{spec.thickness:g}</option>"
+        f"<option value='{spec.id}' data-model='{html.escape(spec.spec_name)}' data-material='{html.escape(spec.material)}' data-length='{spec.length:g}' data-width='{spec.width:g}' data-thickness='{spec.thickness:g}' data-density='{spec.density:g}'>{html.escape(spec.spec_name)}｜{html.escape(spec.material)}｜{spec.length:g}×{spec.width:g}×{spec.thickness:g}</option>"
         for spec in specs
     )
     material_candidates = datalist_options(inventory_distinct_options(db, "raw_plate", "material") + [spec.material for spec in specs])
@@ -2299,7 +2332,8 @@ def raw_plate_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
     <section class="card">
       <form method="post" action="/admin/raw-plates/inbound" class="form-grid" data-confirm-flow="true" data-confirm-title="确认板料入库" data-confirm-note="系统会按总重量、长宽厚和密度换算块数，并生成板料入库流水。">
         <div><label>筛选板料规格</label><input type="search" data-select-filter="raw-plate-spec-select" placeholder="输入规格、材质或尺寸"></div>
-        <div><label>选择板料规格</label><select id="raw-plate-spec-select"><option value="">手动输入/临时规格</option>{spec_options}</select></div>
+        <div><label>选择板料规格</label><select id="raw-plate-spec-select" name="raw_plate_spec_id"><option value="">手动输入/临时规格</option>{spec_options}</select></div>
+        <div><label>板料型号</label><input id="raw-plate-model" name="raw_plate_model" maxlength="100" placeholder="可手动填写，留空则为临时规格"></div>
         <div><label>板料编号/批次号</label><input name="material_code" placeholder="例如 采购批次/炉号/自编号，不填自动生成"></div>
         <div><label>材质</label><input id="raw-plate-material" name="material" list="raw-plate-material-options" placeholder="例如 45#钢 / Q235" required><datalist id="raw-plate-material-options">{material_candidates}</datalist></div>
         <div><label>总重量 吨</label><input name="total_weight_ton" type="number" step="0.001" min="0.001" required></div>
@@ -2319,6 +2353,7 @@ def raw_plate_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
       rawPlateSpecSelect.addEventListener('change', () => {{
         const option = rawPlateSpecSelect.selectedOptions[0];
         if (!option || !option.value) return;
+        document.getElementById('raw-plate-model').value = option.dataset.model || '';
         document.getElementById('raw-plate-material').value = option.dataset.material || '';
         document.getElementById('raw-plate-length').value = option.dataset.length || '';
         document.getElementById('raw-plate-width').value = option.dataset.width || '';
@@ -2332,6 +2367,8 @@ def raw_plate_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
 
 @router.post("/admin/raw-plates/inbound")
 def create_raw_plate_from_page(
+    raw_plate_spec_id: str = Form(""),
+    raw_plate_model: str = Form(""),
     material_code: str = Form(""),
     material: str = Form(...),
     total_weight_ton: float = Form(...),
@@ -2345,6 +2382,20 @@ def create_raw_plate_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    selected_spec = None
+    spec_id_value = raw_plate_spec_id.strip()
+    if spec_id_value:
+        if not spec_id_value.isdigit():
+            raise HTTPException(status_code=400, detail="板料规格无效")
+        selected_spec = db.get(RawPlateSpecification, int(spec_id_value))
+        if not selected_spec or not selected_spec.is_active:
+            raise HTTPException(status_code=400, detail="板料规格不存在或已停用")
+        raw_plate_model = selected_spec.spec_name
+        material = selected_spec.material
+        length = selected_spec.length
+        width = selected_spec.width
+        thickness = selected_spec.thickness
+        density = selected_spec.density
     if total_weight_ton <= 0 or length <= 0 or width <= 0 or thickness <= 0 or density <= 0:
         raise HTTPException(status_code=400, detail="总重量、长宽厚和密度必须大于0")
     single_weight_kg = length * width * thickness * density / 1_000_000
@@ -2354,11 +2405,15 @@ def create_raw_plate_from_page(
         raise HTTPException(status_code=400, detail="总重量不足一块板料")
     remaining_weight_kg = total_weight_kg - quantity * single_weight_kg
     material_value = material.strip()
+    raw_plate_model_value = raw_plate_model.strip() or None
+    if raw_plate_model_value and len(raw_plate_model_value) > 100:
+        raise HTTPException(status_code=400, detail="板料型号不能超过100个字符")
     location_value = location.strip() or None
     batch_code = material_code.strip() or f"RAW-{china_now().strftime('%Y%m%d%H%M%S')}"
     usable_size = f"{length:g}×{width:g}×{thickness:g}mm"
     item = MaterialInventory(
         material_code=batch_code,
+        raw_plate_model=raw_plate_model_value,
         inventory_type="raw_plate",
         material=material_value,
         thickness=thickness,

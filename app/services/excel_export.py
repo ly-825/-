@@ -94,6 +94,7 @@ def _apply_inventory_filters(query, filters: dict, inventory_type: str):
         like = f"%{keyword}%"
         query = query.filter(
             (MaterialInventory.material_code.ilike(like))
+            | (MaterialInventory.raw_plate_model.ilike(like))
             | (MaterialInventory.material.ilike(like))
             | (MaterialInventory.location.ilike(like))
             | (MaterialInventory.usable_size.ilike(like))
@@ -110,6 +111,7 @@ def _apply_inventory_filters(query, filters: dict, inventory_type: str):
     if location:
         query = query.filter(MaterialInventory.location.ilike(f"%{location}%"))
     if inventory_type == "raw_plate":
+        query = query.filter(MaterialInventory.quantity > 0)
         length = _optional_float(filters.get("length"))
         if length is not None:
             query = query.filter(MaterialInventory.length == length)
