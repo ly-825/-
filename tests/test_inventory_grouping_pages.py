@@ -107,6 +107,107 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         self.assertLess(product_thickness_html.index(">TNX10</td>"), product_thickness_html.index(">TNX2</td>"))
         self.assertLess(plate_thickness_html.index(">TNX2</td>"), plate_thickness_html.index(">TNX10</td>"))
 
+    def test_product_inventory_keeps_base_info_and_highlights_actual_filter_values(self) -> None:
+        with self.Session() as db:
+            drawing = ProductDrawing(
+                product_code="TNX-P3",
+                product_name="内纸片",
+                dxf_file_url="/tmp/tnx-p3.dxf",
+                confirmed=1,
+                is_active=1,
+            )
+            db.add(drawing)
+            db.add(
+                MaterialInventory(
+                    material_code="TNX-P3",
+                    inventory_type="product",
+                    material="65Mn",
+                    thickness=1.2,
+                    product_thickness=3,
+                    plate_thickness=1.2,
+                    paper_material="蓝纸",
+                    shape="circle",
+                    quantity=12,
+                    location="C1",
+                    status="available",
+                )
+            )
+            db.commit()
+
+            html = inventory_page(product_thickness="3", db=db).body.decode("utf-8")
+
+        self.assertIn("<th>产品型号</th>", html)
+        self.assertIn("<th>产品名称</th>", html)
+        self.assertIn("<th>库存数量</th>", html)
+        self.assertIn("<th>参数信息</th>", html)
+        self.assertIn(">TNX-P3</td>", html)
+        self.assertIn(">内纸片</td>", html)
+        self.assertIn('<span class="parameter-line matched"><strong>总成品厚度</strong> 3</span>', html)
+        self.assertIn("钢板厚度", html)
+
+    def test_material_pages_highlight_search_values_and_keep_base_info(self) -> None:
+        with self.Session() as db:
+            db.add(
+                RawPlateSpecification(
+                    spec_name="RP-2",
+                    material="65Mn",
+                    length=1000,
+                    width=500,
+                    thickness=2,
+                    density=7.85,
+                )
+            )
+            db.add(
+                MaterialInventory(
+                    raw_plate_model="RP-2",
+                    material_code="RAW-B1",
+                    inventory_type="raw_plate",
+                    material="65Mn",
+                    thickness=2,
+                    length=1000,
+                    width=500,
+                    shape="rectangle",
+                    quantity=8,
+                    location="R1",
+                    status="available",
+                )
+            )
+            scrap = MaterialInventory(
+                inventory_type="scrap",
+                material="65Mn",
+                thickness=2,
+                diameter=80,
+                usable_size="φ80",
+                shape="round",
+                quantity=4,
+                location="S1",
+                status="available",
+                source_product_code="TNX-SOURCE",
+            )
+            db.add(scrap)
+            db.flush()
+            db.add(
+                ScrapGenerationRecord(
+                    source_product_code="TNX-SOURCE",
+                    scrap_inventory_id=scrap.id,
+                )
+            )
+            db.commit()
+
+            raw_html = raw_plates_page(thickness="2", db=db).body.decode("utf-8")
+            scrap_html = scraps_page(material="65Mn", db=db).body.decode("utf-8")
+            spec_html = raw_plate_specifications_page(thickness="2", db=db).body.decode("utf-8")
+
+        for page_html in (raw_html, scrap_html, spec_html):
+            self.assertIn("<th>参数信息</th>", page_html)
+        self.assertIn("<th>板料型号</th>", raw_html)
+        self.assertIn("<th>库存数量</th>", raw_html)
+        self.assertIn('<span class="parameter-line matched"><strong>厚度</strong> 2</span>', raw_html)
+        self.assertIn("<th>来源型号</th>", scrap_html)
+        self.assertIn('<span class="parameter-line matched"><strong>材质</strong> 65Mn</span>', scrap_html)
+        self.assertIn("<th>规格型号</th>", spec_html)
+        self.assertIn('<span class="parameter-line matched"><strong>厚度</strong> 2</span>', spec_html)
+
     def test_product_outbound_page_omits_redundant_stock_filter_row(self) -> None:
         with self.Session() as db:
             html = inventory_outbound_page(db=db).body.decode("utf-8")

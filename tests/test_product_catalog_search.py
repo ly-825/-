@@ -84,11 +84,13 @@ class ProductCatalogSearchTest(unittest.TestCase):
             multiple_html = confirmed_drawings_page(pressure_angle="30", module="2", db=db).body.decode("utf-8")
             text_only_html = confirmed_drawings_page(q="DYN", db=db).body.decode("utf-8")
 
-        self.assertIn("<th>筛选参数</th>", single_html)
-        self.assertIn("压力角 30°", single_html)
-        self.assertIn("压力角 30°", multiple_html)
-        self.assertIn("模数 2", multiple_html)
-        self.assertIn("<th>状态</th>", text_only_html)
+        self.assertIn("<th>参数信息</th>", single_html)
+        self.assertIn("<th>状态</th>", single_html)
+        self.assertIn("<strong>压力角</strong> 30°", single_html)
+        self.assertIn("<strong>压力角</strong> 30°", multiple_html)
+        self.assertIn("<strong>模数</strong> 2", multiple_html)
+        self.assertIn("<th>参数信息</th>", text_only_html)
+        self.assertIn('<span class="parameter-line matched"><strong>产品编号</strong> DYN-1</span>', text_only_html)
         self.assertIn("已确认", text_only_html)
 
     def test_product_catalog_export_uses_requested_natural_code_sort(self) -> None:

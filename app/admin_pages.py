@@ -55,6 +55,7 @@ from app.services.product_outbound_analysis import (
 )
 from app.services.qwen_service import recognize_drawing
 from app.services.scrap_service import find_scrap_batches_for_outbound
+from app.services.search_context import build_parameter_summary, keyword_parameter_matches
 from app.time_utils import china_now
 
 router = APIRouter()
@@ -236,6 +237,27 @@ def fmt_option(value: object) -> str:
     if isinstance(value, float):
         return f"{value:g}"
     return str(value)
+
+
+def joined_summary_values(values: set[object]) -> str:
+    return " / ".join(
+        fmt_option(value)
+        for value in sorted(
+            (value for value in values if value not in (None, "")),
+            key=natural_sort_key,
+        )
+    )
+
+
+def render_parameter_summary(
+    matched: list[tuple[str, str]],
+    defaults: list[tuple[str, str]],
+) -> str:
+    lines = "".join(
+        f'<span class="parameter-line{" matched" if is_matched else ""}"><strong>{html.escape(label)}</strong> {html.escape(value)}</span>'
+        for label, value, is_matched in build_parameter_summary(matched, defaults)
+    )
+    return f'<div class="parameter-lines">{lines or "-"}</div>'
 
 
 def select_options(values: list[object], selected: str = "", blank_label: str = "全部") -> str:
@@ -992,6 +1014,8 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .inline-input-group > input {{ flex:1 1 auto; min-width:0; border-top-left-radius:0; border-bottom-left-radius:0; }}
     .parameter-lines {{ display:grid; gap:3px; min-width:0; }}
     .parameter-line {{ display:block; overflow-wrap:anywhere; line-height:1.35; }}
+    .parameter-line.matched {{ color:var(--primary); font-weight:700; border-left:3px solid var(--primary); padding-left:7px; }}
+    .parameter-line strong {{ color:inherit; }}
     .sort-controls {{ display:flex; flex:0 1 auto; gap:8px; align-items:center; flex-wrap:wrap; }}
     .sort-controls > div {{ min-width:0; }}
     .sort-controls select {{ width:auto; min-width:112px; max-width:180px; }}
@@ -1787,6 +1811,8 @@ def inventory_page(
     inventory_type: str = "",
     status: str = "",
     material: str = "",
+    product_thickness: str = "",
+    plate_thickness: str = "",
     thickness: str = "",
     location: str = "",
     sort_by: str = "",
@@ -1811,13 +1837,29 @@ def inventory_page(
         query = query.filter(MaterialInventory.inventory_type == "product")
     if material.strip():
         query = query.filter(MaterialInventory.material.ilike(f"%{material.strip()}%"))
+    product_thickness_value = optional_float(product_thickness)
+    if product_thickness_value is not None:
+        query = query.filter(MaterialInventory.product_thickness == product_thickness_value)
+    plate_thickness_value = optional_float(plate_thickness)
+    if plate_thickness_value is not None:
+        query = query.filter(MaterialInventory.plate_thickness == plate_thickness_value)
     thickness_value = optional_float(thickness)
     if thickness_value is not None:
         query = query.filter(MaterialInventory.thickness == thickness_value)
     if location.strip():
         query = query.filter(MaterialInventory.location.ilike(f"%{location.strip()}%"))
     items = query.order_by(MaterialInventory.created_at.desc()).all()
-    grouped_rows = product_summary_rows(items)
+    active_drawings = (
+        db.query(ProductDrawing)
+        .filter(ProductDrawing.confirmed == 1, ProductDrawing.is_active == 1)
+        .order_by(ProductDrawing.version.desc())
+        .all()
+    )
+    product_names: dict[str, str] = {}
+    for drawing in active_drawings:
+        if drawing.product_code and drawing.product_code not in product_names:
+            product_names[drawing.product_code] = drawing.product_name or "-"
+    grouped_rows = product_summary_rows(items, product_names)
     grouped_rows, selected_sort_by, selected_sort_dir = sort_records(
         grouped_rows,
         sort_by,
@@ -1826,14 +1868,46 @@ def inventory_page(
     )
     if not selected_sort_by:
         grouped_rows.sort(key=lambda value: natural_sort_key(value["code"]))
-    rows = "".join(
-        f"""
-        <tr>
-          <td>{group['code']}</td><td>{group['material']}</td><td>{' / '.join(fmt_option(value) for value in sorted(value for value in group['product_thicknesses'] if value is not None)) or '-'}</td><td>{' / '.join(fmt_option(value) for value in sorted(value for value in group['plate_thicknesses'] if value is not None)) or '-'}</td><td>{' / '.join(sorted(group['paper_materials'])) or '-'}</td><td><strong>{group['quantity']}</strong></td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td>{group['latest'] or '-'}</td><td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe="")}'>查看明细</a></td>
-        </tr>
-        """
-        for group in grouped_rows
-    )
+    row_parts = []
+    for group in grouped_rows:
+        product_thickness_text = joined_summary_values(group["product_thicknesses"])
+        plate_thickness_text = joined_summary_values(group["plate_thicknesses"])
+        paper_text = joined_summary_values(group["paper_materials"])
+        location_text = joined_summary_values(group["locations"])
+        candidates = [
+            ("产品型号", str(group["code"])),
+            ("产品名称", str(group["name"])),
+            ("材质", str(group["material"] or "")),
+            ("纸材质", paper_text),
+            ("库位", location_text),
+        ]
+        matched = keyword_parameter_matches(keyword, candidates)
+        if material.strip():
+            matched.append(("材质", str(group["material"] or "")))
+        if product_thickness.strip():
+            matched.append(("总成品厚度", product_thickness_text))
+        if plate_thickness.strip():
+            matched.append(("钢板厚度", plate_thickness_text))
+        if thickness.strip():
+            matched.append(("旧厚度", fmt_option(thickness_value)))
+        if location.strip():
+            matched.append(("库位", location_text))
+        parameters = render_parameter_summary(
+            matched,
+            [
+                ("总成品厚度", product_thickness_text),
+                ("钢板厚度", plate_thickness_text),
+                ("材质", str(group["material"] or "")),
+                ("纸材质", paper_text),
+            ],
+        )
+        row_parts.append(
+            f"<tr><td>{html.escape(str(group['code']))}</td><td>{html.escape(str(group['name']))}</td>"
+            f"<td><strong>{group['quantity']}</strong></td><td>{parameters}</td>"
+            f"<td>{html.escape(location_text or '-')}</td><td>{group['latest'] or '-'}</td><td>有库存</td>"
+            f"<td><a class='btn secondary' href='/admin/inventory/product/{quote(str(group['code']), safe='')}'>查看明细</a></td></tr>"
+        )
+    rows = "".join(row_parts)
     sort_options = sort_select_options(
         {"": "默认顺序", "code": "产品型号", "material": "材质", "product_thickness": "总成品厚度", "plate_thickness": "钢板厚度", "quantity": "总数量", "batch_count": "批次数", "latest": "最近更新"},
         selected_sort_by,
@@ -1843,16 +1917,18 @@ def inventory_page(
     source_codes = inventory_distinct_options(db, "product", "source_product_code", quantity_positive=True)
     product_code_options = datalist_options(product_codes + source_codes)
     material_options = datalist_options(inventory_distinct_options(db, "product", "material", quantity_positive=True))
-    thickness_options = datalist_options(inventory_distinct_options(db, "product", "thickness", quantity_positive=True))
+    product_thickness_options = datalist_options(inventory_distinct_options(db, "product", "product_thickness", quantity_positive=True))
+    plate_thickness_options = datalist_options(inventory_distinct_options(db, "product", "plate_thickness", quantity_positive=True))
     location_options = datalist_options(inventory_distinct_options(db, "product", "location", quantity_positive=True))
     body = f"""
-    <div class="top"><div><h1>成品库存</h1><p class="muted">只查询成品库存汇总；入库和出库请进入单独页面操作。</p></div><div class="actions"><a class="btn" href="/admin/inventory/inbound">成品入库</a><a class="btn secondary" href="/admin/inventory/outbound">成品出库</a><a class="btn secondary" href="/admin/reports/product-outbound">产品出入库分析</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="{export_link('product_inventory', {'q': keyword, 'material': material.strip(), 'thickness': thickness.strip(), 'location': location.strip(), 'sort_by': selected_sort_by, 'sort_dir': selected_sort_dir})}">导出Excel</a></div></div>
+    <div class="top"><div><h1>成品库存</h1><p class="muted">只查询成品库存汇总；入库和出库请进入单独页面操作。</p></div><div class="actions"><a class="btn" href="/admin/inventory/inbound">成品入库</a><a class="btn secondary" href="/admin/inventory/outbound">成品出库</a><a class="btn secondary" href="/admin/reports/product-outbound">产品出入库分析</a><a class="btn secondary" href="/admin/inventory/transactions">成品流水</a><a class="btn secondary" href="{export_link('product_inventory', {'q': keyword, 'material': material.strip(), 'product_thickness': product_thickness.strip(), 'plate_thickness': plate_thickness.strip(), 'location': location.strip(), 'sort_by': selected_sort_by, 'sort_dir': selected_sort_dir})}">导出Excel</a></div></div>
     <section class="card">
       <form method="get" action="/admin/inventory" class="actions" style="justify-content:flex-start">
         <input name="q" value="{safe_value(keyword)}" list="product-code-options" placeholder="输入型号筛选" style="width:220px"><datalist id="product-code-options">{product_code_options}</datalist>
         <input type="hidden" name="inventory_type" value="product">
         <input name="material" value="{safe_value(material.strip())}" list="product-material-options" placeholder="材质" style="width:150px"><datalist id="product-material-options">{material_options}</datalist>
-        <input name="thickness" value="{safe_value(thickness.strip())}" list="product-thickness-options" placeholder="厚度" style="width:130px"><datalist id="product-thickness-options">{thickness_options}</datalist>
+        <input name="product_thickness" value="{safe_value(product_thickness.strip())}" list="product-thickness-options" placeholder="总成品厚度" style="width:130px"><datalist id="product-thickness-options">{product_thickness_options}</datalist>
+        <input name="plate_thickness" value="{safe_value(plate_thickness.strip())}" list="product-plate-thickness-options" placeholder="钢板厚度" style="width:130px"><datalist id="product-plate-thickness-options">{plate_thickness_options}</datalist>
         <input name="location" value="{safe_value(location.strip())}" list="product-location-options" placeholder="库位" style="width:150px"><datalist id="product-location-options">{location_options}</datalist>
         <select name="sort_by" aria-label="排序参数">{sort_options}</select>
         <select name="sort_dir" aria-label="排序方式">{direction_options}</select>
@@ -1860,7 +1936,7 @@ def inventory_page(
         <a class="btn secondary" href="/admin/inventory">清空</a>
       </form>
     </section>
-    <section class="card"><h2>成品汇总</h2><table class="mobile-list"><thead><tr><th>产品编号</th><th>材质</th><th>总成品厚度</th><th>钢板厚度</th><th>纸材质</th><th>总数量</th><th>库位</th><th>最近更新时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无成品库存。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>成品汇总</h2><table class="mobile-list"><thead><tr><th>产品型号</th><th>产品名称</th><th>库存数量</th><th>参数信息</th><th>库位</th><th>最近更新</th><th>状态</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='8'>暂无成品库存。</td></tr>"}</tbody></table></section>
     """
     return page("成品管理", body)
 
@@ -1918,22 +1994,55 @@ def raw_plates_page(
     )
     if not selected_sort_by:
         grouped_rows.sort(key=lambda group: (natural_sort_key(group["spec_name"]), natural_sort_key(group["material"]), group["thickness"] or 0))
-    summary_rows = "".join(
-        f"""
-        <tr>
-          <td>{html.escape(str(group['spec_name']))}</td>
-          <td>{html.escape(str(group['material']))}</td>
-          <td>{group['length'] or '-'}</td>
-          <td>{group['width'] or '-'}</td>
-          <td>{group['thickness']}</td>
-          <td><strong>{group['quantity']}</strong></td>
-          <td>{group['batch_count']}</td>
-          <td>{html.escape(' / '.join(sorted(group['locations'])) or '-')}</td>
-          <td><a class="btn secondary" href="/admin/raw-plates/detail?{build_query({'model': group['spec_name'], 'material': group['material'], 'length': group['length'], 'width': group['width'], 'thickness': group['thickness']})}">查看明细</a></td>
-        </tr>
-        """
-        for group in grouped_rows
-    )
+    summary_parts = []
+    for group in grouped_rows:
+        length_text = fmt_option(group["length"])
+        width_text = fmt_option(group["width"])
+        thickness_text = fmt_option(group["thickness"])
+        location_text = joined_summary_values(group["locations"])
+        candidates = [
+            ("板料型号", str(group["spec_name"])),
+            ("批次号", joined_summary_values(group["batch_codes"])),
+            ("材质", str(group["material"])),
+            ("规格", f"{length_text}×{width_text}×{thickness_text}mm"),
+            ("库位", location_text),
+        ]
+        matched = keyword_parameter_matches(keyword, candidates)
+        if material.strip():
+            matched.append(("材质", str(group["material"])))
+        if length.strip():
+            matched.append(("长度", length_text))
+        if width.strip():
+            matched.append(("宽度", width_text))
+        if thickness.strip():
+            matched.append(("厚度", thickness_text))
+        if location.strip():
+            matched.append(("库位", location_text))
+        parameters = render_parameter_summary(
+            matched,
+            [
+                ("长度", length_text),
+                ("宽度", width_text),
+                ("厚度", thickness_text),
+                ("材质", str(group["material"])),
+            ],
+        )
+        detail_query = build_query(
+            {
+                "model": group["spec_name"],
+                "material": group["material"],
+                "length": group["length"],
+                "width": group["width"],
+                "thickness": group["thickness"],
+            }
+        )
+        summary_parts.append(
+            f"<tr><td>{html.escape(str(group['spec_name']))}</td><td>{html.escape(str(group['material']))}</td>"
+            f"<td><strong>{group['quantity']}</strong></td><td>{parameters}</td>"
+            f"<td>{html.escape(location_text or '-')}</td><td>{group['batch_count']}</td>"
+            f"<td><a class='btn secondary' href='/admin/raw-plates/detail?{detail_query}'>查看明细</a></td></tr>"
+        )
+    summary_rows = "".join(summary_parts)
     sort_options = sort_select_options(
         {"": "默认顺序", "spec_name": "规格名称", "material": "材质", "length": "长度", "width": "宽度", "thickness": "厚度", "quantity": "总块数", "batch_count": "批次数", "latest": "最近更新"},
         selected_sort_by,
@@ -1961,7 +2070,7 @@ def raw_plates_page(
         <a class="btn secondary" href="/admin/raw-plates">清空</a>
       </form>
     </section>
-    <section class="card"><h2>板料规格汇总</h2><table class="mobile-list"><thead><tr><th>规格</th><th>材质</th><th>长mm</th><th>宽mm</th><th>厚mm</th><th>总块数</th><th>批次数</th><th>库位</th><th>操作</th></tr></thead><tbody>{summary_rows or "<tr><td colspan='9'>暂无板料库存。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>板料规格汇总</h2><table class="mobile-list"><thead><tr><th>板料型号</th><th>材质</th><th>库存数量</th><th>参数信息</th><th>库位</th><th>批次数</th><th>操作</th></tr></thead><tbody>{summary_rows or "<tr><td colspan='7'>暂无板料库存。</td></tr>"}</tbody></table></section>
     """
     return page("板料库存", body)
 
@@ -2152,60 +2261,83 @@ def update_raw_plate_from_page(
 
 @router.get("/admin/raw-plate-specifications", response_class=HTMLResponse)
 def raw_plate_specifications_page(
+    q: str = "",
+    material: str = "",
+    length: str = "",
+    width: str = "",
+    thickness: str = "",
     sort_by: str = "",
     sort_dir: str = "",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    specs = db.query(RawPlateSpecification).order_by(RawPlateSpecification.is_active.desc(), RawPlateSpecification.created_at.desc()).all()
-    specs, selected_sort_by, selected_sort_dir = sort_records(
-        specs,
-        sort_by,
-        sort_dir,
-        {
-            "spec_name": lambda spec: natural_sort_key(spec.spec_name or ""),
-            "material": lambda spec: natural_sort_key(spec.material or ""),
-            "length": lambda spec: spec.length,
-            "width": lambda spec: spec.width,
-            "thickness": lambda spec: spec.thickness,
-            "density": lambda spec: spec.density,
-            "status": lambda spec: spec.is_active,
-            "created_at": lambda spec: spec.created_at,
-        },
-    )
-    sort_options = sort_select_options(
-        {
-            "": "默认顺序",
-            "spec_name": "规格名称",
-            "material": "材质",
-            "length": "长度",
-            "width": "宽度",
-            "thickness": "厚度",
-            "density": "密度",
-            "status": "状态",
-            "created_at": "创建时间",
-        },
-        selected_sort_by,
-    )
-    direction_options = sort_select_options(
-        {"asc": "升序", "desc": "降序"},
-        selected_sort_dir or "asc",
-    )
-    rows = "".join(
-        f"""
-        <tr>
-          <td>{spec.spec_name}</td><td>{spec.material}</td><td>{spec.length:g}</td><td>{spec.width:g}</td><td>{spec.thickness:g}</td><td>{spec.density:g}</td><td>{'启用' if spec.is_active else '停用'}</td><td>{spec.remark or '-'}</td>
-          <td><div class="actions" style="gap:6px;justify-content:flex-start"><a class="btn secondary" href="/admin/raw-plate-specifications/{spec.id}/edit">修改</a><form method="post" action="/admin/raw-plate-specifications/{spec.id}/toggle"><button class="btn secondary" type="submit">{'停用' if spec.is_active else '启用'}</button></form></div></td>
-        </tr>
-        """
-        for spec in specs
-    )
+    query = db.query(RawPlateSpecification)
+    keyword = q.strip()
+    if keyword:
+        like = f"%{keyword}%"
+        query = query.filter(
+            RawPlateSpecification.spec_name.ilike(like)
+            | RawPlateSpecification.material.ilike(like)
+            | RawPlateSpecification.remark.ilike(like)
+        )
+    if material.strip():
+        query = query.filter(RawPlateSpecification.material.ilike(f"%{material.strip()}%"))
+    length_value = optional_float(length)
+    if length_value is not None:
+        query = query.filter(RawPlateSpecification.length == length_value)
+    width_value = optional_float(width)
+    if width_value is not None:
+        query = query.filter(RawPlateSpecification.width == width_value)
+    thickness_value = optional_float(thickness)
+    if thickness_value is not None:
+        query = query.filter(RawPlateSpecification.thickness == thickness_value)
+    specs = query.all()
+    specs.sort(key=lambda spec: (-int(bool(spec.is_active)), natural_sort_key(spec.spec_name)))
+    row_parts = []
+    for spec in specs:
+        length_text = fmt_option(spec.length)
+        width_text = fmt_option(spec.width)
+        thickness_text = fmt_option(spec.thickness)
+        candidates = [
+            ("规格型号", spec.spec_name),
+            ("材质", spec.material),
+            ("备注", spec.remark or ""),
+        ]
+        matched = keyword_parameter_matches(keyword, candidates)
+        if material.strip():
+            matched.append(("材质", spec.material))
+        if length.strip():
+            matched.append(("长度", length_text))
+        if width.strip():
+            matched.append(("宽度", width_text))
+        if thickness.strip():
+            matched.append(("厚度", thickness_text))
+        parameters = render_parameter_summary(
+            matched,
+            [
+                ("长度", length_text),
+                ("宽度", width_text),
+                ("厚度", thickness_text),
+                ("密度", fmt_option(spec.density)),
+            ],
+        )
+        row_parts.append(
+            f"<tr><td>{html.escape(spec.spec_name)}</td><td>{html.escape(spec.material)}</td><td>{parameters}</td>"
+            f"<td>{'启用' if spec.is_active else '停用'}</td><td>{html.escape(spec.remark or '-')}</td>"
+            f"<td><div class='actions' style='gap:6px;justify-content:flex-start'><a class='btn secondary' href='/admin/raw-plate-specifications/{spec.id}/edit'>修改</a>"
+            f"<form method='post' action='/admin/raw-plate-specifications/{spec.id}/toggle'><button class='btn secondary' type='submit'>{'停用' if spec.is_active else '启用'}</button></form></div></td></tr>"
+        )
+    rows = "".join(row_parts)
     body = f"""
     <div class="top"><div><h1>板料规格</h1><p class="muted">维护常用固定板料型号，入库时可直接选择带出材质、长宽厚和密度。</p></div><div class="actions"><a class="btn secondary" href="/admin/raw-plates/inbound">板料入库</a></div></div>
     <section class="card">
-      <form method="get" action="/admin/raw-plate-specifications" class="sort-controls">
-        <div><label>排序参数</label><select name="sort_by">{sort_options}</select></div>
-        <div><label>排序方式</label><select name="sort_dir">{direction_options}</select></div>
-        <div style="align-self:end"><button class="btn secondary" type="submit">排序</button></div>
+      <form method="get" action="/admin/raw-plate-specifications" class="actions" style="justify-content:flex-start">
+        <input name="q" value="{safe_value(keyword)}" placeholder="型号/材质/备注" style="width:210px">
+        <input name="material" value="{safe_value(material.strip())}" placeholder="材质" style="width:130px">
+        <input name="length" value="{safe_value(length.strip())}" placeholder="长度" style="width:110px">
+        <input name="width" value="{safe_value(width.strip())}" placeholder="宽度" style="width:110px">
+        <input name="thickness" value="{safe_value(thickness.strip())}" placeholder="厚度" style="width:110px">
+        <button class="btn" type="submit">搜索规格</button>
+        <a class="btn secondary" href="/admin/raw-plate-specifications">清空</a>
       </form>
     </section>
     <section class="card">
@@ -2220,7 +2352,7 @@ def raw_plate_specifications_page(
         <div style="align-self:end"><button class="btn" type="submit">保存规格</button></div>
       </form>
     </section>
-    <section class="card"><table class="mobile-list"><thead><tr><th>规格名称</th><th>材质</th><th>长mm</th><th>宽mm</th><th>厚mm</th><th>密度</th><th>状态</th><th>备注</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='9'>暂无板料规格。</td></tr>"}</tbody></table></section>
+    <section class="card"><table class="mobile-list"><thead><tr><th>规格型号</th><th>材质</th><th>参数信息</th><th>状态</th><th>备注</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='6'>暂无板料规格。</td></tr>"}</tbody></table></section>
     """
     return page("板料规格", body)
 
@@ -3871,9 +4003,9 @@ DRAWING_PARAMETER_LABELS = {
 }
 
 
-def drawing_filter_values(drawing: ProductDrawing, filters: dict[str, str]) -> list[str]:
+def drawing_parameter_values(drawing: ProductDrawing) -> dict[str, str]:
     teeth_value = f"{drawing.tooth_type or ''}{drawing.teeth_count_text or drawing.teeth_count or ''}"
-    values = {
+    return {
         "product_thickness": fmt_option(drawing.product_thickness),
         "plate_thickness": fmt_option(drawing.plate_thickness),
         "outer_diameter": fmt_option(drawing.max_outer_diameter),
@@ -3885,31 +4017,66 @@ def drawing_filter_values(drawing: ProductDrawing, filters: dict[str, str]) -> l
         "pin_diameter": fmt_option(drawing.pin_diameter),
         "pin_span": fmt_option(drawing.pin_span),
     }
+
+
+def drawing_filter_values(
+    drawing: ProductDrawing,
+    filters: dict[str, str],
+) -> list[tuple[str, str]]:
+    values = drawing_parameter_values(drawing)
     return [
-        f"{DRAWING_PARAMETER_LABELS[name]} {values[name]}"
+        (DRAWING_PARAMETER_LABELS[name], values[name])
         for name in DRAWING_PARAMETER_LABELS
         if filters.get(name, "").strip() and values[name]
     ]
 
 
-def drawing_result_cell(drawing: ProductDrawing, parameter_filters: dict[str, str]) -> str:
-    if not any(value.strip() for value in parameter_filters.values()):
-        return "已确认" if drawing.confirmed else "待确认"
-    lines = "".join(
-        f'<span class="parameter-line">{html.escape(value)}</span>'
-        for value in drawing_filter_values(drawing, parameter_filters)
-    )
-    return f'<div class="parameter-lines">{lines}</div>'
-
-
-def drawing_rows(drawings: list[ProductDrawing], parameter_filters: dict[str, str] | None = None) -> str:
+def drawing_rows(
+    drawings: list[ProductDrawing],
+    parameter_filters: dict[str, str] | None = None,
+    keyword: str = "",
+    field_filters: dict[str, str] | None = None,
+) -> str:
     active_parameter_filters = parameter_filters or {}
-    show_parameters = any(value.strip() for value in active_parameter_filters.values())
-    rows = "".join(
-        f"<tr><td data-label='产品编号'>{html.escape(d.product_code or '-')}</td><td data-label='产品名称'>{html.escape(d.product_name or '-')}</td><td data-label='分类/材质'>{html.escape(d.product_category or '-')}<br><span class='muted'>{html.escape(d.material or '-')}</span></td><td data-label='版本'>{drawing_version_code(d)}</td><td data-label='{'筛选参数' if show_parameters else '状态'}'>{drawing_result_cell(d, active_parameter_filters)}</td><td data-label='操作' class='action-col'><a class='btn secondary' href='/admin/drawings/{d.id}'>{'查看' if d.confirmed else '确认'}</a></td></tr>"
-        for d in drawings
-    )
-    return rows or "<tr><td colspan='6'>暂无图纸记录。</td></tr>"
+    active_field_filters = field_filters or {}
+    row_parts = []
+    for drawing in drawings:
+        values = drawing_parameter_values(drawing)
+        candidates = [
+            ("产品编号", drawing.product_code or ""),
+            ("产品名称", drawing.product_name or ""),
+            ("产品分类", drawing.product_category or ""),
+            ("材质", drawing.material or ""),
+            ("备注", drawing.remark or ""),
+            ("齿数", values["teeth_count"]),
+            ("模数", values["module"]),
+            ("公法线", values["common_normal_length"]),
+        ]
+        matched = keyword_parameter_matches(keyword, candidates)
+        if active_field_filters.get("product_category", "").strip():
+            matched.append(("产品分类", drawing.product_category or ""))
+        if active_field_filters.get("material", "").strip():
+            matched.append(("材质", drawing.material or ""))
+        matched.extend(drawing_filter_values(drawing, active_parameter_filters))
+        parameters = render_parameter_summary(
+            matched,
+            [
+                ("总成品厚度", values["product_thickness"]),
+                ("钢板厚度", values["plate_thickness"]),
+                ("材质", drawing.material or ""),
+                ("齿数", values["teeth_count"]),
+                ("模数", values["module"]),
+            ],
+        )
+        status_text = "已确认" if drawing.confirmed else "待确认"
+        row_parts.append(
+            f"<tr><td data-label='产品编号'>{html.escape(drawing.product_code or '-')}</td>"
+            f"<td data-label='产品名称'>{html.escape(drawing.product_name or '-')}</td>"
+            f"<td data-label='分类/材质'>{html.escape(drawing.product_category or '-')}<br><span class='muted'>{html.escape(drawing.material or '-')}</span></td>"
+            f"<td data-label='版本'>{drawing_version_code(drawing)}</td><td data-label='参数信息'>{parameters}</td>"
+            f"<td data-label='状态'>{status_text}</td><td data-label='操作' class='action-col'><a class='btn secondary' href='/admin/drawings/{drawing.id}'>{'查看' if drawing.confirmed else '确认'}</a></td></tr>"
+        )
+    return "".join(row_parts) or "<tr><td colspan='7'>暂无图纸记录。</td></tr>"
 
 
 @router.get("/admin/drawings/confirmed", response_class=HTMLResponse)
@@ -4021,7 +4188,6 @@ def confirmed_drawings_page(
         {"asc": "升序", "desc": "降序"},
         selected_sort_dir or "asc",
     )
-    result_column_title = "筛选参数" if any(value.strip() for value in parameter_filters.values()) else "状态"
     body = f"""
     <div class="top"><div><h1>已确认图纸</h1><p class="muted">这些图纸已经人工确认，可直接用于成品入库，也可按分类和参数导出给客户确认。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/pending">待确认图纸</a><a class="btn secondary" href="{export_link('product_catalog', export_params)}">导出Excel</a></div></div>
     <section class="card">
@@ -4042,7 +4208,7 @@ def confirmed_drawings_page(
         <button class="btn" type="submit">搜索</button>
         <a class="btn secondary" href="/admin/drawings/confirmed">清空</a>
       </form>
-      <table class="compact-list"><thead><tr><th>产品编号</th><th>产品名称</th><th>分类/材质</th><th>版本</th><th>{result_column_title}</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings, parameter_filters)}</tbody></table>
+      <table class="compact-list"><thead><tr><th>产品编号</th><th>产品名称</th><th>分类/材质</th><th>版本</th><th>参数信息</th><th>状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings, parameter_filters, keyword, {'product_category': product_category, 'material': material})}</tbody></table>
     </section>
     """
     return page("已确认图纸", body)
@@ -4056,7 +4222,7 @@ def pending_drawings_page(db: Session = Depends(get_db)) -> HTMLResponse:
     )
     body = f"""
     <div class="top"><div><h1>待确认图纸</h1><p class="muted">这些图纸需要人工检查并保存确认结果。</p></div><div class="actions"><a class="btn secondary" href="/admin/drawings">全部图纸</a><a class="btn secondary" href="/admin/drawings/confirmed">已确认图纸</a></div></div>
-    <section class="card"><table class="compact-list"><thead><tr><th>产品编号</th><th>产品名称</th><th>分类/材质</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table></section>
+    <section class="card"><table class="compact-list"><thead><tr><th>产品编号</th><th>产品名称</th><th>分类/材质</th><th>版本</th><th>参数信息</th><th>状态</th><th>操作</th></tr></thead><tbody>{drawing_rows(drawings)}</tbody></table></section>
     """
     return page("待确认图纸", body)
 
@@ -4502,20 +4668,53 @@ def scraps_page(
     )
     if not selected_sort_by:
         grouped_rows.sort(key=lambda group: (str(group["material"]), group["thickness"] or 0, str(group["usable_size"])))
-    spec_rows = "".join(
-        f"""
-        <tr>
-          <td>{html.escape(str(group['material']))}</td>
-          <td>{group['thickness']}</td>
-          <td>{html.escape(str(group['usable_size']))}</td>
-          <td><strong>{group['quantity']}</strong></td>
-          <td>{group['batch_count']}</td>
-          <td>{html.escape(' / '.join(sorted(group['locations'])) or '-')}</td>
-          <td><a class="btn secondary" href="/admin/scraps/detail?{build_query({'material': group['material'], 'thickness': group['thickness'], 'usable_size': group['usable_size']})}">查看明细</a></td>
-        </tr>
-        """
-        for group in grouped_rows
-    )
+    spec_parts = []
+    for group in grouped_rows:
+        source_text = joined_summary_values(group["source_codes"])
+        thickness_text = fmt_option(group["thickness"])
+        size_text = str(group["usable_size"] or "")
+        diameter_text = fmt_option(group["diameter"])
+        location_text = joined_summary_values(group["locations"])
+        candidates = [
+            ("来源型号", source_text),
+            ("材质", str(group["material"])),
+            ("厚度", thickness_text),
+            ("可用尺寸", size_text),
+            ("库位", location_text),
+        ]
+        matched = keyword_parameter_matches(source_product_code, candidates)
+        if material.strip():
+            matched.append(("材质", str(group["material"])))
+        if thickness.strip():
+            matched.append(("厚度", thickness_text))
+        if required_diameter.strip():
+            matched.append(("直径", diameter_text))
+        if location.strip():
+            matched.append(("库位", location_text))
+        if selected_drawing:
+            matched.append(("匹配图纸", selected_drawing.product_code or "-"))
+        parameters = render_parameter_summary(
+            matched,
+            [
+                ("厚度", thickness_text),
+                ("可用尺寸", size_text),
+                ("材质", str(group["material"])),
+                ("直径", diameter_text),
+            ],
+        )
+        detail_query = build_query(
+            {
+                "material": group["material"],
+                "thickness": group["thickness"],
+                "usable_size": group["usable_size"],
+            }
+        )
+        spec_parts.append(
+            f"<tr><td>{html.escape(source_text or '-')}</td><td><strong>{group['quantity']}</strong></td>"
+            f"<td>{parameters}</td><td>{html.escape(location_text or '-')}</td><td>{group['batch_count']}</td>"
+            f"<td><a class='btn secondary' href='/admin/scraps/detail?{detail_query}'>查看明细</a></td></tr>"
+        )
+    spec_rows = "".join(spec_parts)
     sort_options = sort_select_options(
         {"": "默认顺序", "material": "材质", "thickness": "厚度", "usable_size": "可用尺寸", "quantity": "总数量", "batch_count": "批次数", "latest": "最近更新"},
         selected_sort_by,
@@ -4544,7 +4743,7 @@ def scraps_page(
       </form>
     </section>
     {f'<section class="card"><strong>当前按图纸匹配：</strong>{selected_drawing.product_code or "-"}，图纸外径/外框 {required_drawing_diameter or "-"}，需要余料直径 ≥ {required_scrap_diameter:g}，厚度 {drawing_required_thickness or "-"}，材质 {selected_drawing.material or "-"}</section>' if selected_drawing and required_scrap_diameter is not None else ''}
-    <section class='card'><h2>按规格汇总</h2><table class="mobile-list"><thead><tr><th>材质</th><th>厚度</th><th>可用尺寸</th><th>总数量</th><th>批次数</th><th>库位</th><th>操作</th></tr></thead><tbody>{spec_rows or "<tr><td colspan='7'>暂无余料。</td></tr>"}</tbody></table></section>
+    <section class='card'><h2>按规格汇总</h2><table class="mobile-list"><thead><tr><th>来源型号</th><th>库存数量</th><th>参数信息</th><th>库位</th><th>批次数</th><th>操作</th></tr></thead><tbody>{spec_rows or "<tr><td colspan='6'>暂无余料。</td></tr>"}</tbody></table></section>
     """
     return page("余料库存", body)
 

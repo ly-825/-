@@ -18,7 +18,11 @@ def _minimum_value(values: set):
     return min(present) if present else None
 
 
-def product_summary_rows(items: list[MaterialInventory]) -> list[SummaryRow]:
+def product_summary_rows(
+    items: list[MaterialInventory],
+    product_names: dict[str, str] | None = None,
+) -> list[SummaryRow]:
+    names = product_names or {}
     grouped: dict[str, SummaryRow] = {}
     for item in items:
         code = item.material_code or item.source_product_code or "未编号"
@@ -26,6 +30,7 @@ def product_summary_rows(items: list[MaterialInventory]) -> list[SummaryRow]:
             code,
             {
                 "code": code,
+                "name": names.get(code) or "-",
                 "material": item.material,
                 "product_thicknesses": set(),
                 "plate_thicknesses": set(),
@@ -72,6 +77,7 @@ def raw_plate_summary_rows(
                 "quantity": 0,
                 "batch_count": 0,
                 "locations": set(),
+                "batch_codes": set(),
                 "latest": _latest_time(item),
             },
         )
@@ -79,6 +85,8 @@ def raw_plate_summary_rows(
         group["batch_count"] += 1
         if item.location:
             group["locations"].add(item.location)
+        if item.material_code:
+            group["batch_codes"].add(item.material_code)
         item_time = _latest_time(item)
         if item_time and (not group["latest"] or item_time > group["latest"]):
             group["latest"] = item_time
@@ -101,7 +109,7 @@ def scrap_summary_rows(
     seen_inventory_ids: set[int] = set()
     for record in records:
         item = scrap_map.get(record.scrap_inventory_id)
-        if not item or item.status != "available" or item.id in seen_inventory_ids:
+        if not item or item.status != "available" or item.quantity <= 0 or item.id in seen_inventory_ids:
             continue
         seen_inventory_ids.add(item.id)
         size_label = item.usable_size or (f"φ{item.diameter:g}" if item.diameter is not None else "-")
@@ -116,6 +124,7 @@ def scrap_summary_rows(
                 "quantity": 0,
                 "batch_count": 0,
                 "locations": set(),
+                "source_codes": set(),
                 "latest": _latest_time(item),
             },
         )
@@ -123,6 +132,9 @@ def scrap_summary_rows(
         group["batch_count"] += 1
         if item.location and item.location not in ("待入库", "未入库"):
             group["locations"].add(item.location)
+        source_code = record.source_product_code or item.source_product_code
+        if source_code:
+            group["source_codes"].add(source_code)
         item_time = _latest_time(item)
         if item_time and (not group["latest"] or item_time > group["latest"]):
             group["latest"] = item_time

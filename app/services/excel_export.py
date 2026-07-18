@@ -107,6 +107,12 @@ def _apply_inventory_filters(query, filters: dict, inventory_type: str):
     thickness = _optional_float(filters.get("thickness"))
     if thickness is not None:
         query = query.filter(MaterialInventory.thickness == thickness)
+    product_thickness = _optional_float(filters.get("product_thickness"))
+    if product_thickness is not None:
+        query = query.filter(MaterialInventory.product_thickness == product_thickness)
+    plate_thickness = _optional_float(filters.get("plate_thickness"))
+    if plate_thickness is not None:
+        query = query.filter(MaterialInventory.plate_thickness == plate_thickness)
     location = (filters.get("location") or "").strip()
     if location:
         query = query.filter(MaterialInventory.location.ilike(f"%{location}%"))
