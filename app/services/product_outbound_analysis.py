@@ -74,7 +74,11 @@ def _record_is_sales(record: InventoryTransactionRecord) -> bool:
     return record.outbound_purpose in SALES_PURPOSES
 
 
-def analyze_product_outbound(
+def normalize_flow_type(value: str | None) -> str:
+    return "in" if (value or "").strip().lower() == "in" else "out"
+
+
+def analyze_product_flow(
     db: Session,
     product_code: str = "",
     period: str = "recent_365",
@@ -82,12 +86,14 @@ def analyze_product_outbound(
     end_date: str = "",
     customer: str = "",
     purpose: str = "",
+    flow_type: str = "out",
 ) -> dict:
+    normalized_flow = normalize_flow_type(flow_type)
     start, end, range_label = product_outbound_period_range(period, start_date, end_date)
     records = (
         db.query(InventoryTransactionRecord)
         .filter(
-            InventoryTransactionRecord.transaction_type == "out",
+            InventoryTransactionRecord.transaction_type == normalized_flow,
             InventoryTransactionRecord.reversed_transaction_id.is_(None),
             InventoryTransactionRecord.created_at >= start,
             InventoryTransactionRecord.created_at < end,
@@ -102,11 +108,12 @@ def analyze_product_outbound(
     } if inventory_ids else {}
 
     product_filter = product_code.strip()
-    customer_filter = customer.strip()
-    purpose_filter = purpose.strip()
+    customer_filter = customer.strip() if normalized_flow == "out" else ""
+    purpose_filter = purpose.strip() if normalized_flow == "out" else ""
     detail_rows = []
     monthly: dict[str, dict] = {}
     customers = set()
+    products = set()
     total_quantity = 0
     sales_quantity = 0
 
@@ -120,23 +127,32 @@ def analyze_product_outbound(
         customer_name = record.customer_name or ""
         if customer_filter and customer_filter not in customer_name:
             continue
-        if purpose_filter == "sales":
+        if normalized_flow == "out" and purpose_filter == "sales":
             if not _record_is_sales(record):
                 continue
-        elif purpose_filter and record.outbound_purpose != purpose_filter:
+        elif normalized_flow == "out" and purpose_filter and record.outbound_purpose != purpose_filter:
             continue
 
-        purpose_key = record.outbound_purpose or "sales"
-        purpose_label = outbound_purpose_label(record.outbound_purpose)
+        purpose_key = record.outbound_purpose or ("sales" if normalized_flow == "out" else "in")
+        purpose_label = outbound_purpose_label(record.outbound_purpose) if normalized_flow == "out" else "入库"
         month = record.created_at.strftime("%Y-%m") if record.created_at else "-"
         group = monthly.setdefault(
             month,
-            {"month": month, "quantity": 0, "sales_quantity": 0, "transaction_count": 0, "customers": set()},
+            {
+                "month": month,
+                "quantity": 0,
+                "sales_quantity": 0,
+                "transaction_count": 0,
+                "customers": set(),
+                "products": set(),
+            },
         )
         group["quantity"] += record.quantity
         group["transaction_count"] += 1
+        group["products"].add(code)
         total_quantity += record.quantity
-        if _record_is_sales(record):
+        products.add(code)
+        if normalized_flow == "out" and _record_is_sales(record):
             group["sales_quantity"] += record.quantity
             sales_quantity += record.quantity
         if customer_name:
@@ -168,12 +184,25 @@ def analyze_product_outbound(
                 "sales_quantity": row["sales_quantity"],
                 "transaction_count": row["transaction_count"],
                 "customer_count": len(row["customers"]),
+                "product_count": len(row["products"]),
             }
         )
     months = _month_span(start, end)
-    monthly_avg = round(sales_quantity / months, 1) if months else 0
+    base_quantity = sales_quantity if normalized_flow == "out" else total_quantity
+    monthly_avg = round(base_quantity / months, 1) if months else 0
     recent_months = monthly_rows[-3:]
-    recent_avg = round(sum(row["sales_quantity"] for row in recent_months) / len(recent_months), 1) if recent_months else 0
+    recent_avg = (
+        round(
+            sum(
+                row["sales_quantity"] if normalized_flow == "out" else row["quantity"]
+                for row in recent_months
+            )
+            / len(recent_months),
+            1,
+        )
+        if recent_months
+        else 0
+    )
     base_avg = max(monthly_avg, recent_avg)
     suggested_year_quantity = int(round(base_avg * 12)) if base_avg else 0
     summary = {
@@ -183,15 +212,23 @@ def analyze_product_outbound(
         "sales_quantity": sales_quantity,
         "transaction_count": len(detail_rows),
         "customer_count": len(customers),
+        "product_count": len(products),
         "month_count": months,
         "monthly_avg": monthly_avg,
         "recent_3_month_avg": recent_avg,
-        "peak_month_quantity": max((row["sales_quantity"] for row in monthly_rows), default=0),
+        "peak_month_quantity": max(
+            (
+                row["sales_quantity"] if normalized_flow == "out" else row["quantity"]
+                for row in monthly_rows
+            ),
+            default=0,
+        ),
         "suggested_year_quantity": suggested_year_quantity,
         "safety_stock_10": int(round(suggested_year_quantity * 1.1)) if suggested_year_quantity else 0,
         "safety_stock_20": int(round(suggested_year_quantity * 1.2)) if suggested_year_quantity else 0,
     }
     return {
+        "flow_type": normalized_flow,
         "summary": summary,
         "monthly_rows": monthly_rows,
         "detail_rows": detail_rows,
@@ -200,8 +237,29 @@ def analyze_product_outbound(
     }
 
 
-def product_outbound_analysis_export_rows(db: Session, filters: dict) -> tuple[list[str], list[list[object]]]:
-    result = analyze_product_outbound(
+def analyze_product_outbound(
+    db: Session,
+    product_code: str = "",
+    period: str = "recent_365",
+    start_date: str = "",
+    end_date: str = "",
+    customer: str = "",
+    purpose: str = "",
+) -> dict:
+    return analyze_product_flow(
+        db,
+        product_code=product_code,
+        period=period,
+        start_date=start_date,
+        end_date=end_date,
+        customer=customer,
+        purpose=purpose,
+        flow_type="out",
+    )
+
+
+def product_flow_analysis_export_rows(db: Session, filters: dict) -> tuple[list[str], list[list[object]]]:
+    result = analyze_product_flow(
         db,
         product_code=filters.get("product_code") or "",
         period=filters.get("period") or "recent_365",
@@ -209,7 +267,26 @@ def product_outbound_analysis_export_rows(db: Session, filters: dict) -> tuple[l
         end_date=filters.get("end_date") or "",
         customer=filters.get("customer") or "",
         purpose=filters.get("purpose") or "",
+        flow_type=filters.get("flow_type") or "out",
     )
+    if result["flow_type"] == "in":
+        rows = [
+            [
+                row["transaction_id"],
+                row["time"],
+                row["product_code"],
+                row["quantity"],
+                row["location"],
+                row["material"],
+                row["thickness"],
+                row["operator_name"],
+                row["remark"],
+                result["summary"]["range_label"],
+            ]
+            for row in result["detail_rows"]
+        ]
+        return ["流水号", "入库时间", "产品型号", "入库数量", "库位", "材质", "厚度", "操作人", "备注", "时间范围"], rows
+
     rows = [
         [
             row["transaction_id"],
@@ -228,3 +305,8 @@ def product_outbound_analysis_export_rows(db: Session, filters: dict) -> tuple[l
         for row in result["detail_rows"]
     ]
     return ["流水号", "出库时间", "产品型号", "出库数量", "客户/去向", "用途", "库位", "材质", "厚度", "操作人", "备注", "时间范围"], rows
+
+
+def product_outbound_analysis_export_rows(db: Session, filters: dict) -> tuple[list[str], list[list[object]]]:
+    outbound_filters = {**filters, "flow_type": "out"}
+    return product_flow_analysis_export_rows(db, outbound_filters)

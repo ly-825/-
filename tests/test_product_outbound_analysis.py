@@ -6,7 +6,12 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app.models import InventoryTransactionRecord, MaterialInventory
-from app.services.product_outbound_analysis import analyze_product_outbound
+from app.services.excel_export import build_export_rows
+from app.services.product_outbound_analysis import (
+    analyze_product_flow,
+    analyze_product_outbound,
+    product_flow_analysis_export_rows,
+)
 
 
 class ProductOutboundAnalysisTest(unittest.TestCase):
@@ -121,6 +126,114 @@ class ProductOutboundAnalysisTest(unittest.TestCase):
 
             self.assertEqual(result["summary"]["total_quantity"], 12)
             self.assertEqual(result["detail_rows"][0]["customer_name"], "客户B")
+
+    def test_inbound_analysis_excludes_outbound_reversed_and_non_product_records(self) -> None:
+        with self.Session() as db:
+            product = MaterialInventory(
+                material_code="IN-1",
+                inventory_type="product",
+                material="65Mn",
+                thickness=1.2,
+                shape="circle",
+                quantity=10,
+                location="A-01",
+                status="available",
+            )
+            raw_plate = MaterialInventory(
+                material_code="RAW-1",
+                inventory_type="raw_plate",
+                material="65Mn",
+                thickness=1.2,
+                length=1000,
+                width=500,
+                shape="rectangle",
+                quantity=7,
+                status="available",
+            )
+            db.add_all([product, raw_plate])
+            db.flush()
+            db.add_all(
+                [
+                    InventoryTransactionRecord(
+                        inventory_id=product.id,
+                        transaction_type="in",
+                        quantity=10,
+                        before_quantity=0,
+                        after_quantity=10,
+                        operator_name="张三",
+                        remark="成品入库",
+                        created_at=datetime(2026, 4, 1, 9, 0),
+                    ),
+                    InventoryTransactionRecord(
+                        inventory_id=product.id,
+                        transaction_type="out",
+                        quantity=3,
+                        before_quantity=10,
+                        after_quantity=7,
+                        created_at=datetime(2026, 4, 2, 9, 0),
+                    ),
+                    InventoryTransactionRecord(
+                        inventory_id=product.id,
+                        transaction_type="in",
+                        quantity=5,
+                        before_quantity=0,
+                        after_quantity=5,
+                        reversed_transaction_id=99,
+                        created_at=datetime(2026, 4, 3, 9, 0),
+                    ),
+                    InventoryTransactionRecord(
+                        inventory_id=raw_plate.id,
+                        transaction_type="in",
+                        quantity=7,
+                        before_quantity=0,
+                        after_quantity=7,
+                        created_at=datetime(2026, 4, 4, 9, 0),
+                    ),
+                ]
+            )
+            db.commit()
+
+            result = analyze_product_flow(
+                db,
+                flow_type="in",
+                start_date="2026-04-01",
+                end_date="2026-04-30",
+            )
+            headings, export_rows = product_flow_analysis_export_rows(
+                db,
+                {
+                    "flow_type": "in",
+                    "start_date": "2026-04-01",
+                    "end_date": "2026-04-30",
+                },
+            )
+
+        self.assertEqual(result["flow_type"], "in")
+        self.assertEqual(result["summary"]["total_quantity"], 10)
+        self.assertEqual(result["summary"]["transaction_count"], 1)
+        self.assertEqual(result["summary"]["product_count"], 1)
+        self.assertEqual(result["detail_rows"][0]["product_code"], "IN-1")
+        self.assertEqual(result["detail_rows"][0]["purpose_label"], "入库")
+        self.assertIn("入库时间", headings)
+        self.assertIn("入库数量", headings)
+        self.assertEqual(len(export_rows), 1)
+        self.assertEqual(export_rows[0][2], "IN-1")
+
+    def test_inbound_analysis_export_uses_inbound_title(self) -> None:
+        with self.Session() as db:
+            title, headings, rows = build_export_rows(
+                "product_outbound_analysis",
+                {
+                    "flow_type": "in",
+                    "start_date": "2026-04-01",
+                    "end_date": "2026-04-30",
+                },
+                db,
+            )
+
+        self.assertEqual(title, "产品入库分析")
+        self.assertIn("入库时间", headings)
+        self.assertEqual(rows, [])
 
 
 if __name__ == "__main__":

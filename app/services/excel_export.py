@@ -11,7 +11,7 @@ from app.models import InventoryTransactionRecord, MaterialInventory, ProductDra
 from app.services.operation_log import record_operation_log
 from app.services.drawing_search import drawing_sort_key_map, natural_sort_key
 from app.services.list_sorting import sort_records
-from app.services.product_outbound_analysis import product_outbound_analysis_export_rows
+from app.services.product_outbound_analysis import product_flow_analysis_export_rows
 from app.time_utils import china_now
 
 
@@ -392,7 +392,8 @@ def build_export_rows(module: str, filters: dict, db: Session) -> tuple[str, lis
     if module == "scrap_transactions":
         return EXPORT_MODULES[module], *_transaction_rows(db, "scrap", filters)
     if module == "product_outbound_analysis":
-        return EXPORT_MODULES[module], *product_outbound_analysis_export_rows(db, filters)
+        title = "产品入库分析" if (filters.get("flow_type") or "").strip() == "in" else EXPORT_MODULES[module]
+        return title, *product_flow_analysis_export_rows(db, filters)
     return EXPORT_MODULES[module], *_outbound_report_rows(db, filters)
 
 
