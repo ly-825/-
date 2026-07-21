@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 
-from app import admin_pages
+from app import admin_pages, paper_admin_pages
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.home import render_home
@@ -32,6 +32,7 @@ app.include_router(drawings.router, prefix="/api/drawings", tags=["图纸识别"
 app.include_router(inventory.router, prefix="/api/inventory", tags=["库存管理"])
 app.include_router(mobile.router, prefix="/api/mobile", tags=["小程序接口"])
 app.include_router(admin_pages.router, tags=["中文后台"])
+app.include_router(paper_admin_pages.router, tags=["纸材后台"])
 
 
 @app.get("/", summary="中文首页", include_in_schema=False)

@@ -1111,6 +1111,16 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
             <a href="/admin/scraps/transactions">余料流水</a>
           </div>
         </details>
+        <details class="nav-section" data-nav-section="paper-material">
+          <summary>纸材材料管理</summary>
+          <div class="nav-items">
+            <a href="/admin/paper-specifications">纸材规格</a>
+            <a href="/admin/paper-materials/inbound">纸材入库</a>
+            <a href="/admin/paper-materials/outbound">纸材出库</a>
+            <a href="/admin/paper-materials">纸材库存</a>
+            <a href="/admin/paper-materials/transactions">纸材流水</a>
+          </div>
+        </details>
         <details class="nav-section" data-nav-section="finished-product">
           <summary>成品管理</summary>
           <div class="nav-items">

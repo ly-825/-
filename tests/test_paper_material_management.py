@@ -8,6 +8,15 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app.models import PaperInventoryBatch, PaperInventoryTransaction, PaperSpecification
+from app.paper_admin_pages import (
+    create_paper_inbound,
+    create_paper_specification,
+    paper_inbound_page,
+    paper_specifications_page,
+    toggle_paper_specification,
+    update_paper_specification,
+)
+from app.admin_pages import page
 from app.schema_migrations import ensure_runtime_schema
 from app.services.paper_inventory import (
     normalize_paper_specification,
@@ -229,6 +238,118 @@ class PaperInventoryServiceTest(unittest.TestCase):
             self.assertEqual(second.quantity, 3)
             self.assertEqual(first.unit_price, original_price)
             self.assertEqual(reversal.reversed_transaction_id, records[0].id)
+
+
+class PaperSpecificationAndInboundPagesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+        Base.metadata.create_all(self.engine)
+        self.Session = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
+
+    def test_navigation_has_independent_paper_material_section(self) -> None:
+        html = page("测试", "").body.decode("utf-8")
+
+        steel = html.index("<summary>钢板材料管理</summary>")
+        paper = html.index("<summary>纸材材料管理</summary>")
+        links = [
+            html.index('href="/admin/paper-specifications">纸材规格'),
+            html.index('href="/admin/paper-materials/inbound">纸材入库'),
+            html.index('href="/admin/paper-materials/outbound">纸材出库'),
+            html.index('href="/admin/paper-materials">纸材库存'),
+            html.index('href="/admin/paper-materials/transactions">纸材流水'),
+        ]
+
+        self.assertLess(steel, paper)
+        self.assertEqual(links, sorted(links))
+
+    def test_specification_page_switches_fields_and_generates_sheet_model(self) -> None:
+        with self.Session() as db:
+            create_paper_specification(
+                paper_type="sheet",
+                model="不能采用这个名字",
+                material_name="白纸",
+                thickness=0.5,
+                inner_diameter=None,
+                outer_diameter=None,
+                length=400,
+                width=400,
+                remark="",
+                db=db,
+            )
+            create_paper_specification(
+                paper_type="roll",
+                model="Tnx236.2A",
+                material_name="蓝纸",
+                thickness=0.6,
+                inner_diameter=80,
+                outer_diameter=120,
+                length=None,
+                width=None,
+                remark="",
+                db=db,
+            )
+            html = paper_specifications_page(db=db).body.decode("utf-8")
+            models = {spec.model for spec in db.query(PaperSpecification).all()}
+            roll = db.query(PaperSpecification).filter_by(paper_type="roll").one()
+            update_paper_specification(
+                spec_id=roll.id,
+                paper_type="sheet",
+                model="ignored-again",
+                material_name="蓝纸",
+                thickness=0.8,
+                inner_diameter=None,
+                outer_diameter=None,
+                length=500,
+                width=300,
+                is_active=1,
+                remark="改为纸张",
+                db=db,
+            )
+            toggle_paper_specification(roll.id, db=db)
+            db.refresh(roll)
+
+        self.assertEqual(models, {"0.5×400×400", "Tnx236.2A"})
+        self.assertIn('name="paper_type"', html)
+        self.assertIn('class="paper-roll-fields"', html)
+        self.assertIn('class="paper-sheet-fields"', html)
+        self.assertIn("0.5×400×400", html)
+        self.assertEqual(roll.model, "0.8×500×300")
+        self.assertEqual(roll.is_active, 0)
+
+    def test_inbound_saves_quantity_price_snapshot_and_transaction(self) -> None:
+        with self.Session() as db:
+            spec = PaperSpecification(
+                paper_type="roll",
+                model="Tnx236.2A",
+                material_name="蓝纸",
+                thickness=0.5,
+                inner_diameter=80,
+                outer_diameter=120,
+                is_active=1,
+            )
+            db.add(spec)
+            db.commit()
+
+            inbound_html = paper_inbound_page(db=db).body.decode("utf-8")
+            create_paper_inbound(
+                specification_id=spec.id,
+                batch_code="PAPER-20260721",
+                quantity=20,
+                unit_price="12.30",
+                location="P-A01",
+                operator_name="张三",
+                remark="采购入库",
+                _lock=None,
+                db=db,
+            )
+            batch = db.query(PaperInventoryBatch).one()
+            transaction = db.query(PaperInventoryTransaction).one()
+
+        self.assertIn("元/圈", inbound_html)
+        self.assertEqual(batch.quantity, 20)
+        self.assertEqual(batch.unit_price, Decimal("12.30"))
+        self.assertEqual(batch.model, "Tnx236.2A")
+        self.assertEqual(transaction.after_quantity, 20)
 
 
 if __name__ == "__main__":
