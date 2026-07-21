@@ -11,6 +11,9 @@ TIMESTAMP_COLUMNS = {
     "material_inventory": ("created_at", "updated_at"),
     "inventory_transaction_records": ("created_at",),
     "raw_plate_specifications": ("created_at", "updated_at"),
+    "paper_specifications": ("created_at", "updated_at"),
+    "paper_inventory_batches": ("created_at", "updated_at"),
+    "paper_inventory_transactions": ("created_at",),
     "product_drawings": ("created_at", "updated_at"),
     "scrap_generation_records": ("registered_at",),
     "operation_logs": ("created_at",),
@@ -163,6 +166,78 @@ def ensure_runtime_schema(engine: Engine) -> None:
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_raw_plate_specifications_material ON raw_plate_specifications (material)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_raw_plate_specifications_thickness ON raw_plate_specifications (thickness)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_raw_plate_specifications_is_active ON raw_plate_specifications (is_active)"))
+        if "paper_specifications" not in tables:
+            connection.execute(text("""
+                CREATE TABLE paper_specifications (
+                    id INTEGER PRIMARY KEY,
+                    paper_type VARCHAR(20) NOT NULL,
+                    model VARCHAR(100) NOT NULL,
+                    material_name VARCHAR(100) NOT NULL,
+                    thickness FLOAT NOT NULL,
+                    inner_diameter FLOAT,
+                    outer_diameter FLOAT,
+                    length FLOAT,
+                    width FLOAT,
+                    remark VARCHAR(255),
+                    is_active INTEGER DEFAULT 1,
+                    created_at DATETIME,
+                    updated_at DATETIME
+                )
+            """))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_specifications_paper_type ON paper_specifications (paper_type)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_specifications_model ON paper_specifications (model)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_specifications_material_name ON paper_specifications (material_name)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_specifications_thickness ON paper_specifications (thickness)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_specifications_is_active ON paper_specifications (is_active)"))
+        if "paper_inventory_batches" not in tables:
+            connection.execute(text("""
+                CREATE TABLE paper_inventory_batches (
+                    id INTEGER PRIMARY KEY,
+                    specification_id INTEGER NOT NULL REFERENCES paper_specifications(id),
+                    batch_code VARCHAR(100) NOT NULL,
+                    paper_type VARCHAR(20) NOT NULL,
+                    model VARCHAR(100) NOT NULL,
+                    material_name VARCHAR(100) NOT NULL,
+                    thickness FLOAT NOT NULL,
+                    inner_diameter FLOAT,
+                    outer_diameter FLOAT,
+                    length FLOAT,
+                    width FLOAT,
+                    quantity INTEGER NOT NULL,
+                    unit_price NUMERIC(12, 2) NOT NULL,
+                    location VARCHAR(100),
+                    status VARCHAR(20) DEFAULT 'available',
+                    created_at DATETIME,
+                    updated_at DATETIME
+                )
+            """))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_batches_specification_id ON paper_inventory_batches (specification_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_batches_batch_code ON paper_inventory_batches (batch_code)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_batches_paper_type ON paper_inventory_batches (paper_type)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_batches_model ON paper_inventory_batches (model)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_batches_material_name ON paper_inventory_batches (material_name)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_batches_thickness ON paper_inventory_batches (thickness)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_batches_location ON paper_inventory_batches (location)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_batches_status ON paper_inventory_batches (status)"))
+        if "paper_inventory_transactions" not in tables:
+            connection.execute(text("""
+                CREATE TABLE paper_inventory_transactions (
+                    id INTEGER PRIMARY KEY,
+                    inventory_id INTEGER NOT NULL REFERENCES paper_inventory_batches(id),
+                    transaction_type VARCHAR(20) NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    before_quantity INTEGER NOT NULL,
+                    after_quantity INTEGER NOT NULL,
+                    reversed_transaction_id INTEGER,
+                    operator_name VARCHAR(100),
+                    customer_name VARCHAR(100),
+                    remark VARCHAR(255),
+                    created_at DATETIME
+                )
+            """))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_transactions_inventory_id ON paper_inventory_transactions (inventory_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_transactions_transaction_type ON paper_inventory_transactions (transaction_type)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_transactions_reversed_transaction_id ON paper_inventory_transactions (reversed_transaction_id)"))
         if engine.dialect.name == "sqlite" and not migration_applied(connection, CHINA_TIME_MIGRATION):
             shift_existing_utc_timestamps_to_china_time(connection, tables, table_columns)
             mark_migration_applied(connection, CHINA_TIME_MIGRATION)

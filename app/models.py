@@ -1,6 +1,7 @@
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -66,6 +67,62 @@ class RawPlateSpecification(Base):
     is_active: Mapped[int] = mapped_column(Integer, default=1, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=china_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=china_now, onupdate=china_now)
+
+
+class PaperSpecification(Base):
+    __tablename__ = "paper_specifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    paper_type: Mapped[str] = mapped_column(String(20), index=True)
+    model: Mapped[str] = mapped_column(String(100), index=True)
+    material_name: Mapped[str] = mapped_column(String(100), index=True)
+    thickness: Mapped[float] = mapped_column(Float, index=True)
+    inner_diameter: Mapped[float | None] = mapped_column(Float, nullable=True)
+    outer_diameter: Mapped[float | None] = mapped_column(Float, nullable=True)
+    length: Mapped[float | None] = mapped_column(Float, nullable=True)
+    width: Mapped[float | None] = mapped_column(Float, nullable=True)
+    remark: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=china_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=china_now, onupdate=china_now)
+
+
+class PaperInventoryBatch(Base):
+    __tablename__ = "paper_inventory_batches"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    specification_id: Mapped[int] = mapped_column(ForeignKey("paper_specifications.id"), index=True)
+    batch_code: Mapped[str] = mapped_column(String(100), index=True)
+    paper_type: Mapped[str] = mapped_column(String(20), index=True)
+    model: Mapped[str] = mapped_column(String(100), index=True)
+    material_name: Mapped[str] = mapped_column(String(100), index=True)
+    thickness: Mapped[float] = mapped_column(Float, index=True)
+    inner_diameter: Mapped[float | None] = mapped_column(Float, nullable=True)
+    outer_diameter: Mapped[float | None] = mapped_column(Float, nullable=True)
+    length: Mapped[float | None] = mapped_column(Float, nullable=True)
+    width: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quantity: Mapped[int] = mapped_column(Integer)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    location: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="available", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=china_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=china_now, onupdate=china_now)
+
+
+class PaperInventoryTransaction(Base):
+    __tablename__ = "paper_inventory_transactions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    inventory_id: Mapped[int] = mapped_column(ForeignKey("paper_inventory_batches.id"), index=True)
+    transaction_type: Mapped[str] = mapped_column(String(20), index=True)
+    quantity: Mapped[int] = mapped_column(Integer)
+    before_quantity: Mapped[int] = mapped_column(Integer)
+    after_quantity: Mapped[int] = mapped_column(Integer)
+    reversed_transaction_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    operator_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    customer_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    remark: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=china_now)
 
 
 class ProductDrawing(Base):
