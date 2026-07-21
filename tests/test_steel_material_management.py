@@ -6,13 +6,15 @@ from sqlalchemy.orm import sessionmaker
 
 from app.admin_pages import (
     create_raw_plate_specification,
+    page,
     raw_plate_inbound_page,
     raw_plate_outbound_page,
     raw_plate_specifications_page,
+    raw_plate_transactions_page,
     raw_plates_page,
 )
 from app.database import Base
-from app.models import MaterialInventory, RawPlateSpecification
+from app.models import InventoryTransactionRecord, MaterialInventory, RawPlateSpecification
 
 from app.services.material_formats import (
     format_steel_thickness,
@@ -123,6 +125,53 @@ class SteelMaterialPagesTest(unittest.TestCase):
         self.assertNotIn("LEGACY-Z", stock)
         self.assertLess(outbound.index("<td>140</td>"), outbound.index("<td>270</td>"))
         self.assertLess(outbound.index("<td>270</td>"), outbound.index("<td>130</td>"))
+
+    def test_steel_navigation_and_outbound_layout_follow_workflow_order(self) -> None:
+        with self.Session() as db:
+            navigation = page("测试", "").body.decode("utf-8")
+            outbound = raw_plate_outbound_page(db=db).body.decode("utf-8")
+
+        self.assertIn("<summary>钢板材料管理</summary>", navigation)
+        search_start = outbound.index('<form method="get" action="/admin/raw-plates/outbound"')
+        search_end = outbound.index("</form>", search_start)
+        search_html = outbound[search_start:search_end]
+        self.assertLess(search_html.index('name="thickness"'), search_html.index('name="material"'))
+        self.assertLess(search_html.index('name="width"'), search_html.index('name="length"'))
+        self.assertLess(outbound.index("<h2>当前可用规格</h2>"), outbound.index("<h2>确认出库</h2>"))
+
+    def test_steel_transactions_use_wide_non_wrapping_columns(self) -> None:
+        with self.Session() as db:
+            item = MaterialInventory(
+                material_code="RAW-202607210001",
+                inventory_type="raw_plate",
+                material="50#",
+                thickness=2.3,
+                length=1140,
+                width=145,
+                usable_size="2.3×145×1140mm",
+                shape="rectangle",
+                quantity=200,
+                status="available",
+            )
+            db.add(item)
+            db.flush()
+            db.add(
+                InventoryTransactionRecord(
+                    inventory_id=item.id,
+                    transaction_type="in",
+                    quantity=200,
+                    before_quantity=0,
+                    after_quantity=200,
+                )
+            )
+            db.commit()
+
+            transaction_html = raw_plate_transactions_page(db=db).body.decode("utf-8")
+            shell_html = page("测试", "").body.decode("utf-8")
+
+        self.assertIn('<table class="wide-transaction-table">', transaction_html)
+        self.assertIn('class="nowrap-cell">RAW-202607210001</td>', transaction_html)
+        self.assertIn(".wide-transaction-table { min-width:1400px;", shell_html)
 
 
 if __name__ == "__main__":

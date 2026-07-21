@@ -977,6 +977,9 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .table-scroll {{ width:100%; max-width:100%; overflow:auto; max-height:68vh; border:1px solid var(--line); border-radius:16px; }}
     .table-scroll table {{ margin:0; min-width:0; }}
     .table-scroll tr:last-child td {{ border-bottom:0; }}
+    .wide-transaction-table {{ min-width:1400px; }}
+    .wide-transaction-table .nowrap-cell {{ white-space:nowrap; overflow-wrap:normal; }}
+    .wide-transaction-table .remark-cell {{ min-width:220px; white-space:normal; }}
     .num-col {{ text-align:right; font-variant-numeric:tabular-nums; }}
     .action-col {{ position:sticky; right:0; z-index:2; min-width:116px; background:#fff; box-shadow:-10px 0 18px rgba(20,32,55,.05); }}
     th.action-col {{ z-index:4; background:#fbfcff; }}
@@ -1094,7 +1097,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
           <a href="/admin/plans">计划管理</a>
         </div>
         <details class="nav-section" data-nav-section="material">
-          <summary>材料管理</summary>
+          <summary>钢板材料管理</summary>
           <div class="nav-items">
             <a href="/admin/raw-plate-specifications">板料规格</a>
             <a href="/admin/raw-plates/inbound">板料入库</a>
@@ -2637,15 +2640,16 @@ def raw_plate_outbound_page(
     <div class="top"><div><h1>板料出库</h1><p class="muted">按材质和长宽厚申请出库，系统自动按最早入库批次先进先出扣减。</p></div><div class="actions"><a class="btn secondary" href="/admin/raw-plates">返回板料库存</a><a class="btn secondary" href="/admin/raw-plates/transactions">板料流水</a></div></div>
     <section class="card">
       <form method="get" action="/admin/raw-plates/outbound" class="actions" style="justify-content:flex-start">
-        <input name="material" value="{safe_value(material.strip())}" list="raw-out-material-options" placeholder="材质" style="width:150px"><datalist id="raw-out-material-options">{material_options}</datalist>
-        <input name="length" value="{safe_value(length.strip())}" list="raw-out-length-options" placeholder="长度" style="width:120px"><datalist id="raw-out-length-options">{length_options}</datalist>
-        <input name="width" value="{safe_value(width.strip())}" list="raw-out-width-options" placeholder="宽度" style="width:120px"><datalist id="raw-out-width-options">{width_options}</datalist>
         <input name="thickness" value="{safe_value(thickness.strip())}" list="raw-out-thickness-options" placeholder="厚度" style="width:120px"><datalist id="raw-out-thickness-options">{thickness_options}</datalist>
+        <input name="material" value="{safe_value(material.strip())}" list="raw-out-material-options" placeholder="材质" style="width:150px"><datalist id="raw-out-material-options">{material_options}</datalist>
+        <input name="width" value="{safe_value(width.strip())}" list="raw-out-width-options" placeholder="宽度" style="width:120px"><datalist id="raw-out-width-options">{width_options}</datalist>
+        <input name="length" value="{safe_value(length.strip())}" list="raw-out-length-options" placeholder="长度" style="width:120px"><datalist id="raw-out-length-options">{length_options}</datalist>
         <input name="location" value="{safe_value(location.strip())}" list="raw-out-filter-location-options" placeholder="库位" style="width:140px"><datalist id="raw-out-filter-location-options">{location_options}</datalist>
         <button class="btn" type="submit">查看可用规格</button>
         <a class="btn secondary" href="/admin/raw-plates/outbound">清空</a>
       </form>
     </section>
+    <section class="card"><h2>当前可用规格</h2><table><thead><tr><th>材质</th><th>长mm</th><th>宽mm</th><th>厚mm</th><th>可出库总块数</th><th>批次数</th><th>库位</th><th>操作</th></tr></thead><tbody>{summary_rows or "<tr><td colspan='8'>暂无可出库板料。</td></tr>"}</tbody></table></section>
     <section class="card">
       <h2>确认出库</h2>
       <p class="muted">先在下方“当前可用规格”里点击“选择出库”，系统会自动带入规格信息。</p>
@@ -2663,7 +2667,6 @@ def raw_plate_outbound_page(
         <div style="align-self:end"><button class="btn" type="submit">确认出库</button></div>
       </form>
     </section>
-    <section class="card"><h2>当前可用规格</h2><table><thead><tr><th>材质</th><th>长mm</th><th>宽mm</th><th>厚mm</th><th>可出库总块数</th><th>批次数</th><th>库位</th><th>操作</th></tr></thead><tbody>{summary_rows or "<tr><td colspan='8'>暂无可出库板料。</td></tr>"}</tbody></table></section>
     """
     return page("板料出库", body)
 
@@ -2794,7 +2797,25 @@ def raw_plate_transactions_page(q: str = "", material: str = "", transaction_typ
               <button class="btn secondary" type="submit">撤回</button>
             </form>
             """
-        rows += f"<tr><td>{item.material_code or '-'}</td><td>{item.material}</td><td>{item.usable_size or '-'}</td><td>{item.location or '-'}</td><td>{transaction_label(record.transaction_type)}</td><td>{record.quantity}</td><td>{record.before_quantity}</td><td>{record.after_quantity}</td><td>{record.customer_name or '-'}</td><td>{record.operator_name or '-'}</td><td>{record.remark or '-'}</td><td>{record.created_at}</td><td>{reverse_form}</td></tr>"
+        nowrap_values = (
+            item.material_code or "-",
+            item.material,
+            item.usable_size or "-",
+            item.location or "-",
+            transaction_label(record.transaction_type),
+            record.quantity,
+            record.before_quantity,
+            record.after_quantity,
+            record.customer_name or "-",
+            record.operator_name or "-",
+        )
+        nowrap_cells = "".join(
+            f'<td class="nowrap-cell">{html.escape(str(value))}</td>' for value in nowrap_values
+        )
+        rows += (
+            f"<tr>{nowrap_cells}<td class='remark-cell'>{html.escape(record.remark or '-')}</td>"
+            f"<td class='nowrap-cell'>{record.created_at}</td><td class='nowrap-cell'>{reverse_form}</td></tr>"
+        )
     material_options = datalist_options(inventory_distinct_options(db, "raw_plate", "material"))
     type_options = "".join(
         f"<option value='{value}' {'selected' if transaction_type == value else ''}>{label}</option>"
@@ -2811,7 +2832,7 @@ def raw_plate_transactions_page(q: str = "", material: str = "", transaction_typ
         <a class="btn secondary" href="/admin/raw-plates/transactions">清空</a>
       </form>
     </section>
-    <section class="card"><table><thead><tr><th>批次编号</th><th>材质</th><th>尺寸</th><th>库位</th><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>客户/去向</th><th>操作人</th><th>备注</th><th>时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='13'>暂无板料流水。</td></tr>"}</tbody></table></section>
+    <section class="card"><table class="wide-transaction-table"><thead><tr><th>批次编号</th><th>材质</th><th>尺寸</th><th>库位</th><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>客户/去向</th><th>操作人</th><th>备注</th><th>时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='13'>暂无板料流水。</td></tr>"}</tbody></table></section>
     """
     return page("板料流水", body)
 
