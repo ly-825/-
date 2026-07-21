@@ -138,6 +138,7 @@ class SteelMaterialPagesTest(unittest.TestCase):
         self.assertLess(search_html.index('name="thickness"'), search_html.index('name="material"'))
         self.assertLess(search_html.index('name="width"'), search_html.index('name="length"'))
         self.assertLess(outbound.index("<h2>当前可用规格</h2>"), outbound.index("<h2>确认出库</h2>"))
+        self.assertIn("先在上方“当前可用规格”里点击“选择出库”", outbound)
 
     def test_steel_transactions_use_wide_non_wrapping_columns(self) -> None:
         with self.Session() as db:
@@ -171,7 +172,7 @@ class SteelMaterialPagesTest(unittest.TestCase):
 
         self.assertIn('<table class="wide-transaction-table">', transaction_html)
         self.assertIn('class="nowrap-cell">RAW-202607210001</td>', transaction_html)
-        self.assertIn(".wide-transaction-table { min-width:1400px;", shell_html)
+        self.assertIn(".table-scroll table.wide-transaction-table { min-width:1400px;", shell_html)
 
 
 if __name__ == "__main__":

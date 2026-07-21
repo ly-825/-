@@ -27,8 +27,9 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
 
         self.assertLess(home_html.index('href="/admin">后台首页'), home_html.index("<summary>图纸管理</summary>"))
         self.assertLess(home_html.index("<summary>图纸管理</summary>"), home_html.index('href="/admin/plans">计划管理'))
-        self.assertLess(home_html.index('href="/admin/plans">计划管理'), home_html.index("<summary>材料管理</summary>"))
-        self.assertLess(home_html.index("<summary>材料管理</summary>"), home_html.index("<summary>成品管理</summary>"))
+        self.assertLess(home_html.index('href="/admin/plans">计划管理'), home_html.index("<summary>钢板材料管理</summary>"))
+        self.assertLess(home_html.index("<summary>钢板材料管理</summary>"), home_html.index("<summary>纸材材料管理</summary>"))
+        self.assertLess(home_html.index("<summary>纸材材料管理</summary>"), home_html.index("<summary>成品管理</summary>"))
         self.assertIn('href="/admin/reports/outbound">综合出库统计', home_html)
         self.assertIn('href="/admin/reports/product-outbound">产品出入库分析', home_html)
 

@@ -7,7 +7,15 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from sqlalchemy.orm import Session
 
-from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
+from app.models import (
+    InventoryTransactionRecord,
+    MaterialInventory,
+    PaperInventoryBatch,
+    PaperInventoryTransaction,
+    ProductDrawing,
+    RawPlateSpecification,
+    ScrapGenerationRecord,
+)
 from app.services.inventory_summaries import (
     product_summary_rows,
     raw_plate_summary_rows,
@@ -18,15 +26,18 @@ from app.services.material_formats import format_steel_thickness, steel_dimensio
 from app.services.operation_log import record_operation_log
 from app.services.drawing_search import natural_sort_key, tooth_search_filter
 from app.services.product_outbound_analysis import normalize_flow_type, product_flow_analysis_export_rows
+from app.services.paper_inventory import PAPER_TYPE_LABELS, PAPER_UNITS, paper_batch_size, paper_inventory_groups
 from app.time_utils import china_now
 
 
 EXPORT_MODULES = {
     "product_inventory": "产品库存",
     "raw_plate_inventory": "板料库存",
+    "paper_inventory": "纸材库存",
     "scrap_inventory": "余料库存",
     "product_transactions": "产品流水",
     "raw_plate_transactions": "板料流水",
+    "paper_transactions": "纸材流水",
     "scrap_transactions": "余料流水",
     "outbound_report": "出库统计",
     "product_outbound_analysis": "产品出库分析",
@@ -419,6 +430,26 @@ def build_export_rows(module: str, filters: dict, db: Session) -> tuple[str, lis
         groups = sorted(product_summary_rows(items), key=lambda row: natural_sort_key(row["code"]))
         rows = [[group["code"], group["quantity"], group["material"], _joined_numbers(group["product_thicknesses"]), _joined_numbers(group["plate_thicknesses"]), " / ".join(sorted(group["paper_materials"])), group["batch_count"], " / ".join(sorted(group["locations"])), _fmt_time(group["latest"])] for group in groups]
         return EXPORT_MODULES[module], ["产品型号", "库存数量", "材质", "总成品厚度", "钢板厚度", "纸材质", "批次数", "库位", "最近更新时间"], rows
+    if module == "paper_inventory":
+        batches = db.query(PaperInventoryBatch).filter(PaperInventoryBatch.quantity > 0).all()
+        groups = paper_inventory_groups(batches)
+        rows = [
+            [
+                group["type_label"],
+                group["model"],
+                group["material_name"],
+                group["size"],
+                group["quantity"],
+                group["unit"],
+                f"{group['price_min']:.2f}",
+                f"{group['price_max']:.2f}",
+                group["batch_count"],
+                " / ".join(sorted(group["locations"])),
+                _fmt_time(group["latest"]),
+            ]
+            for group in groups
+        ]
+        return EXPORT_MODULES[module], ["类型", "型号", "纸材名称/材质", "尺寸", "库存数量", "单位", "最低单价", "最高单价", "批次数", "库位", "最近更新时间"], rows
     if module == "raw_plate_inventory":
         items = _apply_inventory_filters(db.query(MaterialInventory), filters, "raw_plate").order_by(MaterialInventory.created_at.desc()).all()
         spec_names = {
@@ -443,6 +474,37 @@ def build_export_rows(module: str, filters: dict, db: Session) -> tuple[str, lis
         return EXPORT_MODULES[module], *_transaction_rows(db, "product", filters)
     if module == "raw_plate_transactions":
         return EXPORT_MODULES[module], *_transaction_rows(db, "raw_plate", filters)
+    if module == "paper_transactions":
+        records = db.query(PaperInventoryTransaction).order_by(PaperInventoryTransaction.created_at.desc(), PaperInventoryTransaction.id.desc()).all()
+        inventory_ids = [record.inventory_id for record in records]
+        batch_map = {
+            batch.id: batch
+            for batch in db.query(PaperInventoryBatch).filter(PaperInventoryBatch.id.in_(inventory_ids)).all()
+        } if inventory_ids else {}
+        rows = []
+        for record in records:
+            batch = batch_map.get(record.inventory_id)
+            if not batch:
+                continue
+            rows.append([
+                record.id,
+                _transaction_label(record.transaction_type),
+                batch.batch_code,
+                PAPER_TYPE_LABELS[batch.paper_type],
+                batch.model,
+                batch.material_name,
+                paper_batch_size(batch),
+                record.quantity,
+                PAPER_UNITS[batch.paper_type],
+                f"{batch.unit_price:.2f}",
+                record.before_quantity,
+                record.after_quantity,
+                record.customer_name or "",
+                record.operator_name or "",
+                record.remark or "",
+                _fmt_time(record.created_at),
+            ])
+        return EXPORT_MODULES[module], ["流水号", "类型", "批次编号", "纸材类型", "型号", "纸材名称/材质", "尺寸", "数量", "单位", "单价", "操作前库存", "操作后库存", "客户/去向", "操作人", "备注", "创建时间"], rows
     if module == "scrap_transactions":
         return EXPORT_MODULES[module], *_transaction_rows(db, "scrap", filters)
     if module == "product_outbound_analysis":

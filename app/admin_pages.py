@@ -977,7 +977,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .table-scroll {{ width:100%; max-width:100%; overflow:auto; max-height:68vh; border:1px solid var(--line); border-radius:16px; }}
     .table-scroll table {{ margin:0; min-width:0; }}
     .table-scroll tr:last-child td {{ border-bottom:0; }}
-    .wide-transaction-table {{ min-width:1400px; }}
+    .table-scroll table.wide-transaction-table {{ min-width:1400px; }}
     .wide-transaction-table .nowrap-cell {{ white-space:nowrap; overflow-wrap:normal; }}
     .wide-transaction-table .remark-cell {{ min-width:220px; white-space:normal; }}
     .num-col {{ text-align:right; font-variant-numeric:tabular-nums; }}
@@ -2662,7 +2662,7 @@ def raw_plate_outbound_page(
     <section class="card"><h2>当前可用规格</h2><table><thead><tr><th>材质</th><th>长mm</th><th>宽mm</th><th>厚mm</th><th>可出库总块数</th><th>批次数</th><th>库位</th><th>操作</th></tr></thead><tbody>{summary_rows or "<tr><td colspan='8'>暂无可出库板料。</td></tr>"}</tbody></table></section>
     <section class="card">
       <h2>确认出库</h2>
-      <p class="muted">先在下方“当前可用规格”里点击“选择出库”，系统会自动带入规格信息。</p>
+      <p class="muted">先在上方“当前可用规格”里点击“选择出库”，系统会自动带入规格信息。</p>
       <form method="post" action="/admin/raw-plates/outbound" class="form-grid" data-confirm-flow="true" data-confirm-title="确认板料出库" data-confirm-note="库位为空时，系统会按所有库位的最早入库批次 FIFO 扣减，并生成出库流水。">
         <div><label>材质</label><input name="material" value="{html.escape(material.strip())}" readonly required></div>
         <div><label>长度 mm</label><input name="length" type="number" step="0.01" min="0.01" value="{html.escape(length.strip())}" readonly required></div>

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.admin_pages import page, safe_value
+from app.admin_pages import export_link, page, safe_value
 from app.database import get_db
 from app.models import PaperInventoryBatch, PaperInventoryTransaction, PaperSpecification
 from app.services.inventory_service import inventory_write_lock
@@ -365,7 +365,7 @@ def paper_inventory_page(
         for group in groups
     )
     body = f"""
-    <div class="top"><div><h1>纸材库存</h1><p class="muted">按纸材型号和尺寸汇总当前数量及有库存批次的单价范围。</p></div><div class="actions"><a class="btn" href="/admin/paper-materials/inbound">纸材入库</a><a class="btn secondary" href="/admin/paper-materials/outbound">纸材出库</a><a class="btn secondary" href="/admin/paper-materials/transactions">纸材流水</a></div></div>
+    <div class="top"><div><h1>纸材库存</h1><p class="muted">按纸材型号和尺寸汇总当前数量及有库存批次的单价范围。</p></div><div class="actions"><a class="btn" href="/admin/paper-materials/inbound">纸材入库</a><a class="btn secondary" href="/admin/paper-materials/outbound">纸材出库</a><a class="btn secondary" href="/admin/paper-materials/transactions">纸材流水</a><a class="btn secondary" href="{export_link('paper_inventory', {})}">导出Excel</a></div></div>
     <section class="card"><form method="get" action="/admin/paper-materials" class="actions" style="justify-content:flex-start">
       <input name="q" value="{safe_value(q.strip())}" placeholder="批次/型号/材质/库位" style="width:220px">
       <select name="paper_type" style="width:130px"><option value="">全部类型</option><option value="roll" {'selected' if paper_type == 'roll' else ''}>纸圈</option><option value="sheet" {'selected' if paper_type == 'sheet' else ''}>纸张</option></select>
@@ -558,7 +558,7 @@ def paper_transactions_page(
         row_parts.append(f"<tr>{cells}<td class='remark-cell'>{html.escape(record.remark or '-')}</td><td class='nowrap-cell'>{record.created_at}</td><td class='nowrap-cell'>{reverse_form}</td></tr>")
     rows = "".join(row_parts)
     body = f"""
-    <div class="top"><div><h1>纸材流水</h1><p class="muted">查看纸材入库、FIFO 出库和撤回记录。</p></div><div class="actions"><a class="btn secondary" href="/admin/paper-materials">返回纸材库存</a><a class="btn secondary" href="/admin/paper-materials/inbound">纸材入库</a><a class="btn secondary" href="/admin/paper-materials/outbound">纸材出库</a></div></div>
+    <div class="top"><div><h1>纸材流水</h1><p class="muted">查看纸材入库、FIFO 出库和撤回记录。</p></div><div class="actions"><a class="btn secondary" href="/admin/paper-materials">返回纸材库存</a><a class="btn secondary" href="/admin/paper-materials/inbound">纸材入库</a><a class="btn secondary" href="/admin/paper-materials/outbound">纸材出库</a><a class="btn secondary" href="{export_link('paper_transactions', {})}">导出Excel</a></div></div>
     <section class="card"><form method="get" action="/admin/paper-materials/transactions" class="actions" style="justify-content:flex-start">
       <input name="q" value="{safe_value(q.strip())}" placeholder="批次/型号/客户/操作人" style="width:220px"><input name="material_name" value="{safe_value(material_name.strip())}" placeholder="纸材名称/材质" style="width:170px">
       <select name="paper_type" style="width:120px"><option value="">全部纸材</option><option value="roll" {'selected' if paper_type == 'roll' else ''}>纸圈</option><option value="sheet" {'selected' if paper_type == 'sheet' else ''}>纸张</option></select>
