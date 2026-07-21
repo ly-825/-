@@ -11,8 +11,14 @@ from app.models import PaperInventoryBatch, PaperInventoryTransaction, PaperSpec
 from app.paper_admin_pages import (
     create_paper_inbound,
     create_paper_specification,
+    outbound_paper_from_page,
+    paper_group_detail_page,
     paper_inbound_page,
+    paper_inventory_page,
+    paper_outbound_page,
     paper_specifications_page,
+    paper_transactions_page,
+    reverse_paper_transaction_from_page,
     toggle_paper_specification,
     update_paper_specification,
 )
@@ -350,6 +356,146 @@ class PaperSpecificationAndInboundPagesTest(unittest.TestCase):
         self.assertEqual(batch.unit_price, Decimal("12.30"))
         self.assertEqual(batch.model, "Tnx236.2A")
         self.assertEqual(transaction.after_quantity, 20)
+
+
+class PaperInventoryWorkflowPagesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+        Base.metadata.create_all(self.engine)
+        self.Session = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
+
+    def _seed_roll_batches(self, db):
+        spec = PaperSpecification(
+            paper_type="roll",
+            model="Tnx236.2A",
+            material_name="蓝纸",
+            thickness=0.5,
+            inner_diameter=80,
+            outer_diameter=120,
+            is_active=1,
+        )
+        db.add(spec)
+        db.flush()
+        base_time = datetime(2026, 7, 1, 8, 0)
+        first = PaperInventoryBatch(
+            specification_id=spec.id,
+            batch_code="PAPER-A",
+            paper_type="roll",
+            model=spec.model,
+            material_name=spec.material_name,
+            thickness=spec.thickness,
+            inner_diameter=80,
+            outer_diameter=120,
+            quantity=2,
+            unit_price=Decimal("10.00"),
+            location="P1",
+            status="available",
+            created_at=base_time,
+            updated_at=base_time,
+        )
+        second = PaperInventoryBatch(
+            specification_id=spec.id,
+            batch_code="PAPER-B",
+            paper_type="roll",
+            model=spec.model,
+            material_name=spec.material_name,
+            thickness=spec.thickness,
+            inner_diameter=80,
+            outer_diameter=120,
+            quantity=5,
+            unit_price=Decimal("12.50"),
+            location="P2",
+            status="available",
+            created_at=base_time + timedelta(minutes=1),
+            updated_at=base_time + timedelta(minutes=1),
+        )
+        empty = PaperInventoryBatch(
+            specification_id=spec.id,
+            batch_code="PAPER-EMPTY",
+            paper_type="roll",
+            model=spec.model,
+            material_name=spec.material_name,
+            thickness=spec.thickness,
+            inner_diameter=80,
+            outer_diameter=120,
+            quantity=0,
+            unit_price=Decimal("99.00"),
+            location="P3",
+            status="used",
+            created_at=base_time - timedelta(minutes=1),
+            updated_at=base_time - timedelta(minutes=1),
+        )
+        db.add_all([first, second, empty])
+        db.flush()
+        for batch in (first, second):
+            db.add(
+                PaperInventoryTransaction(
+                    inventory_id=batch.id,
+                    transaction_type="in",
+                    quantity=batch.quantity,
+                    before_quantity=0,
+                    after_quantity=batch.quantity,
+                    operator_name="采购员",
+                )
+            )
+        db.commit()
+        return spec, first, second, empty
+
+    def test_inventory_price_range_and_detail_only_use_live_batches(self) -> None:
+        with self.Session() as db:
+            spec, first, second, empty = self._seed_roll_batches(db)
+
+            inventory_html = paper_inventory_page(db=db).body.decode("utf-8")
+            detail_html = paper_group_detail_page(specification_id=spec.id, db=db).body.decode("utf-8")
+
+        self.assertIn("¥10.00～¥12.50", inventory_html)
+        self.assertNotIn("¥99.00", inventory_html)
+        self.assertIn("7 圈", inventory_html)
+        self.assertIn("/admin/paper-materials/detail?specification_id=", inventory_html)
+        self.assertIn("PAPER-A", detail_html)
+        self.assertIn("PAPER-B", detail_html)
+        self.assertIn("¥10.00", detail_html)
+        self.assertIn("¥12.50", detail_html)
+
+    def test_outbound_page_and_transaction_reversal_complete_fifo_flow(self) -> None:
+        with self.Session() as db:
+            spec, first, second, empty = self._seed_roll_batches(db)
+
+            outbound_html = paper_outbound_page(specification_id=str(spec.id), db=db).body.decode("utf-8")
+            self.assertLess(outbound_html.index("<h2>当前可用规格</h2>"), outbound_html.index("<h2>确认出库</h2>"))
+            self.assertIn(f'name="specification_id" value="{spec.id}"', outbound_html)
+
+            outbound_paper_from_page(
+                specification_id=spec.id,
+                quantity=4,
+                location="",
+                customer_name="一车间",
+                operator_name="张三",
+                remark="生产领用",
+                _lock=None,
+                db=db,
+            )
+            self.assertEqual((first.quantity, second.quantity), (0, 3))
+            transaction_html = paper_transactions_page(db=db).body.decode("utf-8")
+            self.assertIn("Tnx236.2A", transaction_html)
+            self.assertIn("一车间", transaction_html)
+            self.assertIn("0.5×80×120", transaction_html)
+            self.assertIn('class="wide-transaction-table"', transaction_html)
+
+            first_out = (
+                db.query(PaperInventoryTransaction)
+                .filter_by(inventory_id=first.id, transaction_type="out")
+                .one()
+            )
+            reverse_paper_transaction_from_page(
+                transaction_id=first_out.id,
+                operator_name="李四",
+                remark="撤回领用",
+                _lock=None,
+                db=db,
+            )
+            self.assertEqual(first.quantity, 2)
+            self.assertEqual(first.unit_price, Decimal("10.00"))
 
 
 if __name__ == "__main__":
