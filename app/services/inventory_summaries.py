@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.models import MaterialInventory, ScrapGenerationRecord
+from app.services.material_formats import steel_spec_name
 
 
 SummaryRow = dict[str, Any]
@@ -56,7 +57,7 @@ def raw_plate_summary_rows(
         if item.quantity <= 0:
             continue
         spec_key = (item.material, item.length, item.width, item.thickness)
-        model = item.raw_plate_model or spec_names.get(spec_key) or "临时规格"
+        model = steel_spec_name(item.thickness, item.width, item.length)
         key = (model, *spec_key)
         group = grouped.setdefault(
             key,
@@ -90,7 +91,7 @@ def resolved_raw_plate_model(
     spec_names: dict[tuple, str],
 ) -> str:
     key = (item.material, item.length, item.width, item.thickness)
-    return item.raw_plate_model or spec_names.get(key) or "临时规格"
+    return steel_spec_name(item.thickness, item.width, item.length)
 
 
 def scrap_summary_rows(

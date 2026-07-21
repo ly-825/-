@@ -42,6 +42,13 @@ from app.services.material_matching import (
     scrap_matches_drawing,
     scrap_required_diameter,
 )
+from app.services.material_formats import (
+    format_number,
+    format_steel_thickness,
+    normalize_steel_thickness,
+    steel_dimension_sort_key,
+    steel_spec_name,
+)
 from app.services.operation_log import drawing_snapshot, inventory_snapshot, record_operation_log
 from app.services.product_outbound_analysis import (
     OUTBOUND_PURPOSES,
@@ -1965,12 +1972,16 @@ def raw_plates_page(
         for spec in db.query(RawPlateSpecification).filter(RawPlateSpecification.is_active == 1).all()
     }
     grouped_rows = raw_plate_summary_rows(items, spec_names)
-    grouped_rows.sort(key=lambda group: (natural_sort_key(group["spec_name"]), natural_sort_key(group["material"]), group["thickness"] or 0))
+    grouped_rows.sort(
+        key=lambda group: steel_dimension_sort_key(
+            group["thickness"], group["width"], group["length"], group["material"]
+        )
+    )
     summary_parts = []
     for group in grouped_rows:
         length_text = fmt_option(group["length"])
         width_text = fmt_option(group["width"])
-        thickness_text = fmt_option(group["thickness"])
+        thickness_text = format_steel_thickness(group["thickness"])
         location_text = joined_summary_values(group["locations"])
         candidates = [
             ("板料型号", str(group["spec_name"])),
@@ -2153,7 +2164,7 @@ def edit_raw_plate_page(inventory_id: int, db: Session = Depends(get_db)) -> HTM
         <div><label>材质</label><input name="material" value="{html.escape(item.material)}" {disabled} required></div>
         <div><label>长度 mm</label><input name="length" type="number" step="0.01" min="0.01" value="{item.length or ''}" {disabled} required></div>
         <div><label>宽度 mm</label><input name="width" type="number" step="0.01" min="0.01" value="{item.width or ''}" {disabled} required></div>
-        <div><label>厚度 mm</label><input name="thickness" type="number" step="0.01" min="0.01" value="{item.thickness}" {disabled} required></div>
+        <div><label>厚度 mm</label><input name="thickness" type="number" step="0.1" min="0.1" value="{format_steel_thickness(item.thickness)}" {disabled} required></div>
         <div><label>库位</label><input name="location" value="{html.escape(item.location or '')}"></div>
         <div><label>状态</label><select name="status" {"disabled" if has_out_record else ""}><option value="available" {"selected" if item.status == "available" else ""}>available</option><option value="used" {"selected" if item.status == "used" else ""}>used</option></select></div>
         <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
@@ -2256,12 +2267,17 @@ def raw_plate_specifications_page(
     if thickness_value is not None:
         query = query.filter(RawPlateSpecification.thickness == thickness_value)
     specs = query.all()
-    specs.sort(key=lambda spec: (-int(bool(spec.is_active)), natural_sort_key(spec.spec_name)))
+    specs.sort(
+        key=lambda spec: (
+            -int(bool(spec.is_active)),
+            *steel_dimension_sort_key(spec.thickness, spec.width, spec.length, spec.material),
+        )
+    )
     row_parts = []
     for spec in specs:
         length_text = fmt_option(spec.length)
         width_text = fmt_option(spec.width)
-        thickness_text = fmt_option(spec.thickness)
+        thickness_text = format_steel_thickness(spec.thickness)
         candidates = [
             ("规格型号", spec.spec_name),
             ("材质", spec.material),
@@ -2307,11 +2323,11 @@ def raw_plate_specifications_page(
     </section>
     <section class="card">
       <form method="post" action="/admin/raw-plate-specifications" class="form-grid">
-        <div><label>规格名称</label><input name="spec_name" placeholder="例如 65Mn 2000×1000×2" required></div>
+        <div><label>规格名称</label><input value="系统按厚度×宽度×长度自动生成" readonly></div>
         <div><label>材质</label><input name="material" placeholder="例如 65Mn" required></div>
         <div><label>长度 mm</label><input name="length" type="number" step="0.01" min="0.01" required></div>
         <div><label>宽度 mm</label><input name="width" type="number" step="0.01" min="0.01" required></div>
-        <div><label>厚度 mm</label><input name="thickness" type="number" step="0.01" min="0.01" required></div>
+        <div><label>厚度 mm</label><input name="thickness" type="number" step="0.1" min="0.1" required></div>
         <div><label>密度 g/cm³</label><input name="density" type="number" step="0.001" min="0.001" value="7.85" required></div>
         <div><label>备注</label><input name="remark" placeholder="例如 常用钢板"></div>
         <div style="align-self:end"><button class="btn" type="submit">保存规格</button></div>
@@ -2324,7 +2340,7 @@ def raw_plate_specifications_page(
 
 @router.post("/admin/raw-plate-specifications")
 def create_raw_plate_specification(
-    spec_name: str = Form(...),
+    spec_name: str = Form(""),
     material: str = Form(...),
     length: float = Form(...),
     width: float = Form(...),
@@ -2335,13 +2351,14 @@ def create_raw_plate_specification(
 ) -> RedirectResponse:
     if length <= 0 or width <= 0 or thickness <= 0 or density <= 0:
         raise HTTPException(status_code=400, detail="长宽厚和密度必须大于0")
+    thickness_value = normalize_steel_thickness(thickness)
     db.add(
         RawPlateSpecification(
-            spec_name=spec_name.strip(),
+            spec_name=steel_spec_name(thickness_value, width, length),
             material=material.strip(),
             length=length,
             width=width,
-            thickness=thickness,
+            thickness=thickness_value,
             density=density,
             remark=remark.strip() or None,
             is_active=1,
@@ -2360,11 +2377,11 @@ def edit_raw_plate_specification_page(spec_id: int, db: Session = Depends(get_db
     <div class="top"><div><h1>修改板料规格</h1><p class="muted">修改的是固定规格资料，只影响后续入库选择，不会自动修改已经入库的历史批次。</p></div><div class="actions"><a class="btn secondary" href="/admin/raw-plate-specifications">返回板料规格</a></div></div>
     <section class="card">
       <form method="post" action="/admin/raw-plate-specifications/{spec.id}/edit" class="form-grid">
-        <div><label>规格名称</label><input name="spec_name" value="{html.escape(spec.spec_name)}" required></div>
+        <div><label>规格名称</label><input value="{html.escape(steel_spec_name(spec.thickness, spec.width, spec.length))}" readonly></div>
         <div><label>材质</label><input name="material" value="{html.escape(spec.material)}" required></div>
         <div><label>长度 mm</label><input name="length" type="number" step="0.01" min="0.01" value="{spec.length:g}" required></div>
         <div><label>宽度 mm</label><input name="width" type="number" step="0.01" min="0.01" value="{spec.width:g}" required></div>
-        <div><label>厚度 mm</label><input name="thickness" type="number" step="0.01" min="0.01" value="{spec.thickness:g}" required></div>
+        <div><label>厚度 mm</label><input name="thickness" type="number" step="0.1" min="0.1" value="{format_steel_thickness(spec.thickness)}" required></div>
         <div><label>密度 g/cm³</label><input name="density" type="number" step="0.001" min="0.001" value="{spec.density:g}" required></div>
         <div><label>状态</label><select name="is_active"><option value="1" {"selected" if spec.is_active else ""}>启用</option><option value="0" {"selected" if not spec.is_active else ""}>停用</option></select></div>
         <div><label>备注</label><input name="remark" value="{html.escape(spec.remark or '')}"></div>
@@ -2378,7 +2395,7 @@ def edit_raw_plate_specification_page(spec_id: int, db: Session = Depends(get_db
 @router.post("/admin/raw-plate-specifications/{spec_id}/edit")
 def update_raw_plate_specification(
     spec_id: int,
-    spec_name: str = Form(...),
+    spec_name: str = Form(""),
     material: str = Form(...),
     length: float = Form(...),
     width: float = Form(...),
@@ -2393,11 +2410,12 @@ def update_raw_plate_specification(
         raise HTTPException(status_code=404, detail="板料规格不存在")
     if length <= 0 or width <= 0 or thickness <= 0 or density <= 0:
         raise HTTPException(status_code=400, detail="长宽厚和密度必须大于0")
-    spec.spec_name = spec_name.strip()
+    thickness_value = normalize_steel_thickness(thickness)
+    spec.spec_name = steel_spec_name(thickness_value, width, length)
     spec.material = material.strip()
     spec.length = length
     spec.width = width
-    spec.thickness = thickness
+    spec.thickness = thickness_value
     spec.density = density
     spec.is_active = 1 if is_active else 0
     spec.remark = remark.strip() or None
@@ -2417,9 +2435,10 @@ def toggle_raw_plate_specification(spec_id: int, db: Session = Depends(get_db)) 
 
 @router.get("/admin/raw-plates/inbound", response_class=HTMLResponse)
 def raw_plate_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
-    specs = db.query(RawPlateSpecification).filter(RawPlateSpecification.is_active == 1).order_by(RawPlateSpecification.spec_name.asc()).all()
+    specs = db.query(RawPlateSpecification).filter(RawPlateSpecification.is_active == 1).all()
+    specs.sort(key=lambda spec: steel_dimension_sort_key(spec.thickness, spec.width, spec.length, spec.material))
     spec_options = "".join(
-        f"<option value='{spec.id}' data-model='{html.escape(spec.spec_name)}' data-material='{html.escape(spec.material)}' data-length='{spec.length:g}' data-width='{spec.width:g}' data-thickness='{spec.thickness:g}' data-density='{spec.density:g}'>{html.escape(spec.spec_name)}｜{html.escape(spec.material)}｜{spec.length:g}×{spec.width:g}×{spec.thickness:g}</option>"
+        f"<option value='{spec.id}' data-model='{html.escape(steel_spec_name(spec.thickness, spec.width, spec.length))}' data-material='{html.escape(spec.material)}' data-length='{spec.length:g}' data-width='{spec.width:g}' data-thickness='{format_steel_thickness(spec.thickness)}' data-density='{spec.density:g}'>{html.escape(steel_spec_name(spec.thickness, spec.width, spec.length))}｜{html.escape(spec.material)}</option>"
         for spec in specs
     )
     material_candidates = datalist_options(inventory_distinct_options(db, "raw_plate", "material") + [spec.material for spec in specs])
@@ -2430,13 +2449,13 @@ def raw_plate_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
       <form method="post" action="/admin/raw-plates/inbound" class="form-grid" data-confirm-flow="true" data-confirm-title="确认板料入库" data-confirm-note="系统会按总重量、长宽厚和密度换算块数，并生成板料入库流水。">
         <div><label>筛选板料规格</label><input type="search" data-select-filter="raw-plate-spec-select" placeholder="输入规格、材质或尺寸"></div>
         <div><label>选择板料规格</label><select id="raw-plate-spec-select" name="raw_plate_spec_id"><option value="">手动输入/临时规格</option>{spec_options}</select></div>
-        <div><label>板料型号</label><input id="raw-plate-model" name="raw_plate_model" maxlength="100" placeholder="可手动填写，留空则为临时规格"></div>
+        <input id="raw-plate-model" name="raw_plate_model" type="hidden">
         <div><label>板料编号/批次号</label><input name="material_code" placeholder="例如 采购批次/炉号/自编号，不填自动生成"></div>
         <div><label>材质</label><input id="raw-plate-material" name="material" list="raw-plate-material-options" placeholder="例如 45#钢 / Q235" required><datalist id="raw-plate-material-options">{material_candidates}</datalist></div>
         <div><label>总重量 吨</label><input name="total_weight_ton" type="number" step="0.001" min="0.001" required></div>
         <div><label>长度 mm</label><input id="raw-plate-length" name="length" type="number" step="0.01" min="0.01" required></div>
         <div><label>宽度 mm</label><input id="raw-plate-width" name="width" type="number" step="0.01" min="0.01" required></div>
-        <div><label>厚度 mm</label><input id="raw-plate-thickness" name="thickness" type="number" step="0.01" min="0.01" required></div>
+        <div><label>厚度 mm</label><input id="raw-plate-thickness" name="thickness" type="number" step="0.1" min="0.1" required></div>
         <div><label>密度 g/cm³</label><input id="raw-plate-density" name="density" type="number" step="0.001" min="0.001" value="7.85" required></div>
         <div><label>库位</label><input name="location" list="raw-plate-location-options" placeholder="例如 原料区-A01"><datalist id="raw-plate-location-options">{location_candidates}</datalist></div>
         <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
@@ -2502,12 +2521,13 @@ def create_raw_plate_from_page(
         raise HTTPException(status_code=400, detail="总重量不足一块板料")
     remaining_weight_kg = total_weight_kg - quantity * single_weight_kg
     material_value = material.strip()
-    raw_plate_model_value = raw_plate_model.strip() or None
+    thickness = normalize_steel_thickness(thickness)
+    raw_plate_model_value = steel_spec_name(thickness, width, length)
     if raw_plate_model_value and len(raw_plate_model_value) > 100:
         raise HTTPException(status_code=400, detail="板料型号不能超过100个字符")
     location_value = location.strip() or None
     batch_code = material_code.strip() or f"RAW-{china_now().strftime('%Y%m%d%H%M%S')}"
-    usable_size = f"{length:g}×{width:g}×{thickness:g}mm"
+    usable_size = f"{raw_plate_model_value}mm"
     item = MaterialInventory(
         material_code=batch_code,
         raw_plate_model=raw_plate_model_value,
@@ -2596,9 +2616,15 @@ def raw_plate_outbound_page(
         summary[key]["batch_count"] += 1
         if item.location:
             summary[key]["locations"].add(item.location)
+    sorted_summary = sorted(
+        summary.values(),
+        key=lambda group: steel_dimension_sort_key(
+            group["thickness"], group["width"], group["length"], group["material"]
+        ),
+    )
     summary_rows = "".join(
-        f"<tr><td>{group['material']}</td><td>{group['length'] or '-'}</td><td>{group['width'] or '-'}</td><td>{group['thickness']}</td><td><strong>{group['quantity']}</strong></td><td>{group['batch_count']}</td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td><a class='btn secondary' href='/admin/raw-plates/outbound?material={quote(str(group['material']), safe='')}&length={quote(str(group['length'] or ''), safe='')}&width={quote(str(group['width'] or ''), safe='')}&thickness={quote(str(group['thickness'] or ''), safe='')}'>选择出库</a></td></tr>"
-        for group in summary.values()
+        f"<tr><td>{group['material']}</td><td>{format_number(group['length'])}</td><td>{format_number(group['width'])}</td><td>{format_steel_thickness(group['thickness'])}</td><td><strong>{group['quantity']}</strong></td><td>{group['batch_count']}</td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td><a class='btn secondary' href='/admin/raw-plates/outbound?material={quote(str(group['material']), safe='')}&length={quote(str(group['length'] or ''), safe='')}&width={quote(str(group['width'] or ''), safe='')}&thickness={quote(str(group['thickness'] or ''), safe='')}'>选择出库</a></td></tr>"
+        for group in sorted_summary
     )
     material_options = datalist_options(inventory_distinct_options(db, "raw_plate", "material", quantity_positive=True))
     length_options = datalist_options(inventory_distinct_options(db, "raw_plate", "length", quantity_positive=True))
@@ -2627,7 +2653,7 @@ def raw_plate_outbound_page(
         <div><label>材质</label><input name="material" value="{html.escape(material.strip())}" readonly required></div>
         <div><label>长度 mm</label><input name="length" type="number" step="0.01" min="0.01" value="{html.escape(length.strip())}" readonly required></div>
         <div><label>宽度 mm</label><input name="width" type="number" step="0.01" min="0.01" value="{html.escape(width.strip())}" readonly required></div>
-        <div><label>厚度 mm</label><input name="thickness" type="number" step="0.01" min="0.01" value="{html.escape(thickness.strip())}" readonly required></div>
+        <div><label>厚度 mm</label><input name="thickness" type="number" step="0.1" min="0.1" value="{html.escape(thickness.strip())}" readonly required></div>
         <div><label>出库块数</label><input name="quantity" type="number" min="1" value="1" required></div>
         <div><label>指定库位，可选</label><input name="location" value="{html.escape(location.strip())}" list="raw-out-location-options" placeholder="不填则所有库位FIFO"><datalist id="raw-out-location-options">{location_candidates}</datalist></div>
         <div><label>客户/去向</label><input name="customer_name" list="raw-out-customer-options" placeholder="例如 XX客户 / 车间领用"><datalist id="raw-out-customer-options">{customer_candidates}</datalist></div>

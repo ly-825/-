@@ -14,6 +14,7 @@ from app.services.inventory_summaries import (
     scrap_summary_rows,
 )
 from app.services.material_matching import scrap_matches_drawing
+from app.services.material_formats import format_steel_thickness, steel_dimension_sort_key
 from app.services.operation_log import record_operation_log
 from app.services.drawing_search import natural_sort_key, tooth_search_filter
 from app.services.product_outbound_analysis import normalize_flow_type, product_flow_analysis_export_rows
@@ -426,9 +427,9 @@ def build_export_rows(module: str, filters: dict, db: Session) -> tuple[str, lis
         }
         groups = sorted(
             raw_plate_summary_rows(items, spec_names),
-            key=lambda row: (natural_sort_key(row["spec_name"]), natural_sort_key(row["material"]), row["thickness"] or 0),
+            key=lambda row: steel_dimension_sort_key(row["thickness"], row["width"], row["length"], row["material"]),
         )
-        rows = [[group["spec_name"], group["material"], _fmt_num(group["length"]), _fmt_num(group["width"]), _fmt_num(group["thickness"]), group["quantity"], group["batch_count"], " / ".join(sorted(group["locations"])), _fmt_time(group["latest"])] for group in groups]
+        rows = [[group["spec_name"], group["material"], _fmt_num(group["length"]), _fmt_num(group["width"]), format_steel_thickness(group["thickness"]), group["quantity"], group["batch_count"], " / ".join(sorted(group["locations"])), _fmt_time(group["latest"])] for group in groups]
         return EXPORT_MODULES[module], ["规格", "材质", "长度", "宽度", "厚度", "总块数", "批次数", "库位", "最近更新时间"], rows
     if module == "scrap_inventory":
         records, scrap_map = _scrap_inventory_export_records(db, filters)

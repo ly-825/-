@@ -198,11 +198,11 @@ class InventoryGroupingPagesTest(unittest.TestCase):
             self.assertIn("<th>参数信息</th>", page_html)
         self.assertIn("<th>板料型号</th>", raw_html)
         self.assertIn("<th>库存数量</th>", raw_html)
-        self.assertIn('<span class="parameter-line matched"><strong>厚度</strong> 2</span>', raw_html)
+        self.assertIn('<span class="parameter-line matched"><strong>厚度</strong> 2.0</span>', raw_html)
         self.assertIn("<th>来源型号</th>", scrap_html)
         self.assertIn('<span class="parameter-line matched"><strong>材质</strong> 65Mn</span>', scrap_html)
         self.assertIn("<th>规格型号</th>", spec_html)
-        self.assertIn('<span class="parameter-line matched"><strong>厚度</strong> 2</span>', spec_html)
+        self.assertIn('<span class="parameter-line matched"><strong>厚度</strong> 2.0</span>', spec_html)
 
     def test_product_outbound_page_omits_redundant_stock_filter_row(self) -> None:
         with self.Session() as db:
@@ -269,7 +269,7 @@ class InventoryGroupingPagesTest(unittest.TestCase):
 
             html = raw_plates_page(db=db).body.decode("utf-8")
 
-        self.assertIn("<td>常用板</td>", html)
+        self.assertIn("<td>3.0×500×1000</td>", html)
         self.assertIn("<strong>5</strong>", html)
         self.assertIn("<td>2</td>", html)
         self.assertIn("A1 / B1", html)
@@ -311,8 +311,8 @@ class InventoryGroupingPagesTest(unittest.TestCase):
 
             html = raw_plates_page(db=db).body.decode("utf-8")
 
-        self.assertIn("MODEL-X", html)
-        self.assertNotIn("临时规格", html)
+        self.assertIn("2.0×500×1000", html)
+        self.assertNotIn("MODEL-X", html)
 
     def test_raw_plate_model_can_change_without_changing_dimensions_or_quantity(self) -> None:
         with self.Session() as db:
@@ -424,12 +424,12 @@ class InventoryGroupingPagesTest(unittest.TestCase):
                 )
             }
 
-            self.assertEqual((fixed.raw_plate_model, fixed.material, fixed.length), ("S-2", "65Mn", 1000))
-            self.assertEqual(manual.raw_plate_model, "CUSTOM-2")
+            self.assertEqual((fixed.raw_plate_model, fixed.material, fixed.length), ("2.0×500×1000", "65Mn", 1000))
+            self.assertEqual(manual.raw_plate_model, "2.0×500×1000")
             self.assertEqual(records[fixed.id].after_quantity, fixed.quantity)
             self.assertEqual(records[manual.id].after_quantity, manual.quantity)
 
-    def test_raw_plate_summary_ignores_legacy_sorting_and_uses_model_order(self) -> None:
+    def test_raw_plate_summary_ignores_legacy_sorting_and_uses_dimension_order(self) -> None:
         with self.Session() as db:
             db.add_all(
                 [
@@ -443,7 +443,7 @@ class InventoryGroupingPagesTest(unittest.TestCase):
 
         self.assertNotIn('name="sort_by"', html)
         self.assertNotIn('name="sort_dir"', html)
-        self.assertLess(html.index(">A-MODEL</td>"), html.index(">Z-MODEL</td>"))
+        self.assertLess(html.index(">2.0×500×1000</td>"), html.index(">3.0×1000×2000</td>"))
         self.assertIn("<strong>10</strong>", html)
         self.assertIn("<strong>2</strong>", html)
 
