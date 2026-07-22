@@ -977,6 +977,9 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .table-scroll {{ width:100%; max-width:100%; overflow:auto; max-height:68vh; border:1px solid var(--line); border-radius:16px; }}
     .table-scroll table {{ margin:0; min-width:0; }}
     .table-scroll tr:last-child td {{ border-bottom:0; }}
+    .table-scroll table.wide-transaction-table {{ min-width:1400px; }}
+    .wide-transaction-table .nowrap-cell {{ white-space:nowrap; overflow-wrap:normal; }}
+    .wide-transaction-table .remark-cell {{ min-width:220px; white-space:normal; }}
     .transaction-record-list {{ display:grid; gap:14px; }}
     .transaction-record {{ border:1px solid var(--line); border-radius:16px; background:#fff; overflow:hidden; box-shadow:0 8px 24px rgba(20,32,55,.04); }}
     .transaction-record-main {{ display:grid; grid-template-columns:minmax(230px,.8fr) minmax(0,2.2fr); gap:24px; padding:20px 22px; align-items:center; }}

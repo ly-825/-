@@ -481,6 +481,10 @@ class PaperInventoryWorkflowPagesTest(unittest.TestCase):
             self.assertIn("一车间", transaction_html)
             self.assertIn("0.5×80×120", transaction_html)
             self.assertIn('class="wide-transaction-table"', transaction_html)
+            self.assertIn(
+                ".table-scroll table.wide-transaction-table { min-width:1400px;",
+                transaction_html,
+            )
 
             first_out = (
                 db.query(PaperInventoryTransaction)

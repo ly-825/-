@@ -171,7 +171,7 @@ class SteelMaterialPagesTest(unittest.TestCase):
 
             transaction_html = raw_plate_transactions_page(db=db).body.decode("utf-8")
 
-        self.assertNotIn("wide-transaction-table", transaction_html)
+        self.assertNotIn('<table class="wide-transaction-table"', transaction_html)
         self.assertIn('class="transaction-record-list"', transaction_html)
         self.assertIn('class="transaction-record"', transaction_html)
         self.assertIn("RAW-202607210001", transaction_html)
