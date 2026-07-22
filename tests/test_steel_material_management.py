@@ -140,7 +140,7 @@ class SteelMaterialPagesTest(unittest.TestCase):
         self.assertLess(outbound.index("<h2>当前可用规格</h2>"), outbound.index("<h2>确认出库</h2>"))
         self.assertIn("先在上方“当前可用规格”里点击“选择出库”", outbound)
 
-    def test_steel_transactions_use_wide_non_wrapping_columns(self) -> None:
+    def test_steel_transactions_render_readable_records_without_horizontal_table(self) -> None:
         with self.Session() as db:
             item = MaterialInventory(
                 material_code="RAW-202607210001",
@@ -149,7 +149,7 @@ class SteelMaterialPagesTest(unittest.TestCase):
                 thickness=2.3,
                 length=1140,
                 width=145,
-                usable_size="2.3×145×1140mm",
+                usable_size="1140×145×2.3mm",
                 shape="rectangle",
                 quantity=200,
                 status="available",
@@ -163,16 +163,25 @@ class SteelMaterialPagesTest(unittest.TestCase):
                     quantity=200,
                     before_quantity=0,
                     after_quantity=200,
+                    operator_name="李乙",
+                    remark="板料入库；总重量 260.48kg；单块重量 4.13kg；入库 200 块。",
                 )
             )
             db.commit()
 
             transaction_html = raw_plate_transactions_page(db=db).body.decode("utf-8")
-            shell_html = page("测试", "").body.decode("utf-8")
 
-        self.assertIn('<table class="wide-transaction-table">', transaction_html)
-        self.assertIn('class="nowrap-cell">RAW-202607210001</td>', transaction_html)
-        self.assertIn(".table-scroll table.wide-transaction-table { min-width:1400px;", shell_html)
+        self.assertNotIn("wide-transaction-table", transaction_html)
+        self.assertIn('class="transaction-record-list"', transaction_html)
+        self.assertIn('class="transaction-record"', transaction_html)
+        self.assertIn("RAW-202607210001", transaction_html)
+        self.assertIn("2.3×145×1140mm", transaction_html)
+        self.assertNotIn("1140×145×2.3mm", transaction_html)
+        self.assertIn("0 → 200", transaction_html)
+        self.assertIn('class="transaction-note"', transaction_html)
+        self.assertIn("板料入库；总重量", transaction_html)
+        self.assertIn('name="operator_name"', transaction_html)
+        self.assertIn('name="remark"', transaction_html)
 
 
 if __name__ == "__main__":

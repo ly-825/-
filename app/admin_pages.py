@@ -977,9 +977,23 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .table-scroll {{ width:100%; max-width:100%; overflow:auto; max-height:68vh; border:1px solid var(--line); border-radius:16px; }}
     .table-scroll table {{ margin:0; min-width:0; }}
     .table-scroll tr:last-child td {{ border-bottom:0; }}
-    .table-scroll table.wide-transaction-table {{ min-width:1400px; }}
-    .wide-transaction-table .nowrap-cell {{ white-space:nowrap; overflow-wrap:normal; }}
-    .wide-transaction-table .remark-cell {{ min-width:220px; white-space:normal; }}
+    .transaction-record-list {{ display:grid; gap:14px; }}
+    .transaction-record {{ border:1px solid var(--line); border-radius:16px; background:#fff; overflow:hidden; box-shadow:0 8px 24px rgba(20,32,55,.04); }}
+    .transaction-record-main {{ display:grid; grid-template-columns:minmax(230px,.8fr) minmax(0,2.2fr); gap:24px; padding:20px 22px; align-items:center; }}
+    .transaction-identity {{ display:flex; gap:14px; align-items:center; min-width:0; }}
+    .transaction-identity > div {{ min-width:0; }}
+    .transaction-kind {{ flex:0 0 auto; min-width:58px; padding:7px 10px; border-radius:8px; text-align:center; font-weight:800; }}
+    .transaction-kind.is-in {{ color:#166534; background:#dcfce7; }}
+    .transaction-kind.is-out {{ color:#9f1239; background:#ffe4e6; }}
+    .transaction-kind.is-confirm {{ color:#1d4ed8; background:#dbeafe; }}
+    .transaction-core {{ display:grid; grid-template-columns:minmax(90px,.55fr) minmax(180px,1.25fr) minmax(90px,.6fr) minmax(130px,.85fr) minmax(140px,.9fr); gap:18px; align-items:center; }}
+    .transaction-label,.transaction-meta > span,.transaction-note > span {{ display:block; margin-bottom:5px; color:var(--muted); font-size:12px; font-weight:700; }}
+    .transaction-identity strong,.transaction-core strong,.transaction-meta strong {{ display:block; overflow-wrap:anywhere; }}
+    .transaction-number {{ font-variant-numeric:tabular-nums; white-space:nowrap; }}
+    .transaction-record-detail {{ display:grid; grid-template-columns:minmax(90px,.5fr) minmax(120px,.7fr) minmax(100px,.6fr) minmax(260px,2fr) minmax(190px,auto); gap:18px; padding:15px 22px 18px; border-top:1px solid var(--line); background:#fbfcff; align-items:start; }}
+    .transaction-note p {{ margin:0; line-height:1.65; overflow-wrap:anywhere; }}
+    .transaction-reverse form {{ display:grid; grid-template-columns:90px minmax(110px,1fr) auto; gap:8px; justify-content:stretch !important; }}
+    .transaction-reverse input {{ width:100% !important; min-width:0; }}
     .num-col {{ text-align:right; font-variant-numeric:tabular-nums; }}
     .action-col {{ position:sticky; right:0; z-index:2; min-width:116px; background:#fff; box-shadow:-10px 0 18px rgba(20,32,55,.05); }}
     th.action-col {{ z-index:4; background:#fbfcff; }}
@@ -1071,9 +1085,9 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .file-name {{ margin-top:12px; color:var(--primary); font-weight:700; }}
     .hidden-file {{ position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }}
     pre {{ white-space:pre-wrap; word-break:break-all; background:#0f172a; color:#dbeafe; padding:16px; border-radius:14px; overflow:auto; }}
-    @media (max-width:1100px) {{ .workbench-layout,.inventory-overview {{ grid-template-columns:1fr; }} }}
+    @media (max-width:1100px) {{ .workbench-layout,.inventory-overview {{ grid-template-columns:1fr; }} .transaction-record-main {{ grid-template-columns:1fr; }} .transaction-core {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} .transaction-record-detail {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} .transaction-note,.transaction-reverse {{ grid-column:1/-1; }} }}
     @media (max-width:900px) {{ .layout {{ grid-template-columns:1fr; }} aside {{ position:static; max-height:none; }} .top {{ align-items:flex-start; flex-direction:column; }} .top > .actions {{ width:100%; }} .grid,.form-grid,.quick-action-grid,.flow-summary {{ grid-template-columns:1fr; }} .workbench-head {{ flex-direction:column; }} .workbench-date {{ width:100%; text-align:left; }} .announcement-bar {{ align-items:flex-start; flex-direction:column; }} .announcement-bar a,.announcement-close {{ width:100%; }} .assistant-launcher {{ right:16px; bottom:16px; }} .assistant-panel {{ right:16px; bottom:84px; max-height:calc(100vh - 104px); }} }}
-    @media (max-width:700px) {{ main {{ padding:18px 14px; }} .card {{ padding:14px; }} .parameter-lines {{ text-align:left; }} .compact-list,.compact-list tbody,.compact-list tr,.compact-list td,.mobile-list,.mobile-list tbody,.mobile-list tr,.mobile-list td {{ display:block; width:100%; }} .compact-list thead,.mobile-list thead {{ display:none; }} .compact-list tr,.mobile-list tr {{ padding:10px 12px; border-bottom:1px solid var(--line); }} .compact-list td,.mobile-list td {{ display:grid; grid-template-columns:82px minmax(0,1fr); gap:10px; padding:7px 0; border:0; background:transparent !important; text-align:left; }} .compact-list td::before,.mobile-list td::before {{ content:attr(data-label); color:var(--muted); font-weight:800; }} .compact-list td.cell-clip,.mobile-list td.cell-clip {{ max-width:none; white-space:normal; }} .compact-list .action-col,.mobile-list .action-col {{ position:static; min-width:0; box-shadow:none; }} .compact-list .btn,.mobile-list .btn {{ width:100%; }} }}
+    @media (max-width:700px) {{ main {{ padding:18px 14px; }} .card {{ padding:14px; }} .parameter-lines {{ text-align:left; }} .compact-list,.compact-list tbody,.compact-list tr,.compact-list td,.mobile-list,.mobile-list tbody,.mobile-list tr,.mobile-list td {{ display:block; width:100%; }} .compact-list thead,.mobile-list thead {{ display:none; }} .compact-list tr,.mobile-list tr {{ padding:10px 12px; border-bottom:1px solid var(--line); }} .compact-list td,.mobile-list td {{ display:grid; grid-template-columns:82px minmax(0,1fr); gap:10px; padding:7px 0; border:0; background:transparent !important; text-align:left; }} .compact-list td::before,.mobile-list td::before {{ content:attr(data-label); color:var(--muted); font-weight:800; }} .compact-list td.cell-clip,.mobile-list td.cell-clip {{ max-width:none; white-space:normal; }} .compact-list .action-col,.mobile-list .action-col {{ position:static; min-width:0; box-shadow:none; }} .compact-list .btn,.mobile-list .btn {{ width:100%; }} .transaction-record-main,.transaction-record-detail {{ padding:16px; }} .transaction-core,.transaction-record-detail {{ grid-template-columns:1fr 1fr; }} .transaction-size,.transaction-note,.transaction-reverse {{ grid-column:1/-1; }} .transaction-reverse form {{ grid-template-columns:1fr; }} }}
   </style>
 </head>
 <body>
@@ -2764,6 +2778,12 @@ def outbound_raw_plate_from_page(
     return RedirectResponse("/admin/raw-plates", status_code=303)
 
 
+def raw_plate_transaction_size(item: MaterialInventory) -> str:
+    if item.thickness is not None and item.width is not None and item.length is not None:
+        return f"{steel_spec_name(item.thickness, item.width, item.length)}mm"
+    return item.usable_size or "—"
+
+
 @router.get("/admin/raw-plates/transactions", response_class=HTMLResponse)
 def raw_plate_transactions_page(q: str = "", material: str = "", transaction_type: str = "", db: Session = Depends(get_db)) -> HTMLResponse:
     records_query = db.query(InventoryTransactionRecord)
@@ -2807,25 +2827,34 @@ def raw_plate_transactions_page(q: str = "", material: str = "", transaction_typ
               <button class="btn secondary" type="submit">撤回</button>
             </form>
             """
-        nowrap_values = (
-            item.material_code or "-",
-            item.material,
-            item.usable_size or "-",
-            item.location or "-",
-            transaction_label(record.transaction_type),
-            record.quantity,
-            record.before_quantity,
-            record.after_quantity,
-            record.customer_name or "-",
-            record.operator_name or "-",
-        )
-        nowrap_cells = "".join(
-            f'<td class="nowrap-cell">{html.escape(str(value))}</td>' for value in nowrap_values
-        )
-        rows += (
-            f"<tr>{nowrap_cells}<td class='remark-cell'>{html.escape(record.remark or '-')}</td>"
-            f"<td class='nowrap-cell'>{record.created_at}</td><td class='nowrap-cell'>{reverse_form}</td></tr>"
-        )
+        type_class = {"in": "is-in", "out": "is-out", "confirm": "is-confirm"}.get(record.transaction_type, "")
+        created_at = record.created_at.strftime("%Y-%m-%d %H:%M") if record.created_at else "—"
+        size_text = raw_plate_transaction_size(item)
+        reverse_section = f'<div class="transaction-reverse">{reverse_form}</div>' if reverse_form != "-" else ""
+        rows += f"""
+        <article class="transaction-record">
+          <div class="transaction-record-main">
+            <div class="transaction-identity">
+              <span class="transaction-kind {type_class}">{html.escape(transaction_label(record.transaction_type))}</span>
+              <div><span class="transaction-label">批次编号</span><strong>{html.escape(item.material_code or "—")}</strong></div>
+            </div>
+            <div class="transaction-core">
+              <div><span class="transaction-label">材质</span><strong>{html.escape(item.material or "—")}</strong></div>
+              <div class="transaction-size"><span class="transaction-label">尺寸</span><strong>{html.escape(size_text)}</strong></div>
+              <div><span class="transaction-label">变动数量</span><strong class="transaction-number">{record.quantity}</strong></div>
+              <div><span class="transaction-label">库存变化</span><strong class="transaction-number">{record.before_quantity} → {record.after_quantity}</strong></div>
+              <div><span class="transaction-label">时间</span><strong>{created_at}</strong></div>
+            </div>
+          </div>
+          <div class="transaction-record-detail">
+            <div class="transaction-meta"><span>库位</span><strong>{html.escape(item.location or "—")}</strong></div>
+            <div class="transaction-meta"><span>客户/去向</span><strong>{html.escape(record.customer_name or "—")}</strong></div>
+            <div class="transaction-meta"><span>操作人</span><strong>{html.escape(record.operator_name or "—")}</strong></div>
+            <div class="transaction-note"><span>备注</span><p>{html.escape(record.remark or "—")}</p></div>
+            {reverse_section}
+          </div>
+        </article>
+        """
     material_options = datalist_options(inventory_distinct_options(db, "raw_plate", "material"))
     type_options = "".join(
         f"<option value='{value}' {'selected' if transaction_type == value else ''}>{label}</option>"
@@ -2842,7 +2871,7 @@ def raw_plate_transactions_page(q: str = "", material: str = "", transaction_typ
         <a class="btn secondary" href="/admin/raw-plates/transactions">清空</a>
       </form>
     </section>
-    <section class="card"><table class="wide-transaction-table"><thead><tr><th>批次编号</th><th>材质</th><th>尺寸</th><th>库位</th><th>类型</th><th>数量</th><th>操作前</th><th>操作后</th><th>客户/去向</th><th>操作人</th><th>备注</th><th>时间</th><th>操作</th></tr></thead><tbody>{rows or "<tr><td colspan='13'>暂无板料流水。</td></tr>"}</tbody></table></section>
+    <section class="transaction-record-list">{rows or "<div class='card'>暂无板料流水。</div>"}</section>
     """
     return page("板料流水", body)
 
