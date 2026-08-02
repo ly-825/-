@@ -1,11 +1,15 @@
+import asyncio
 import unittest
 from datetime import datetime, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
+from fastapi.dependencies.utils import request_body_to_args
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
+from starlette.datastructures import FormData
 
+from app import paper_admin_pages
 from app.database import Base
 from app.models import PaperInventoryBatch, PaperInventoryTransaction, PaperSpecification
 from app.paper_admin_pages import (
@@ -321,6 +325,96 @@ class PaperSpecificationAndInboundPagesTest(unittest.TestCase):
         self.assertIn("0.5×400×400", html)
         self.assertEqual(roll.model, "0.8×500×300")
         self.assertEqual(roll.is_active, 0)
+
+    def test_specification_forms_accept_blank_inactive_dimensions(self) -> None:
+        route_paths = (
+            "/admin/paper-specifications",
+            "/admin/paper-specifications/{spec_id}/edit",
+        )
+        payloads = (
+            FormData(
+                [
+                    ("paper_type", "roll"),
+                    ("model", "TNX26801.2A"),
+                    ("material_name", "绿色（DLZ001-1）"),
+                    ("thickness", "0.5"),
+                    ("inner_diameter", "52.5"),
+                    ("outer_diameter", "82.2"),
+                    ("length", ""),
+                    ("width", ""),
+                    ("remark", ""),
+                ]
+            ),
+            FormData(
+                [
+                    ("paper_type", "sheet"),
+                    ("model", ""),
+                    ("material_name", "白纸"),
+                    ("thickness", "0.5"),
+                    ("inner_diameter", ""),
+                    ("outer_diameter", ""),
+                    ("length", "400"),
+                    ("width", "400"),
+                    ("remark", ""),
+                ]
+            ),
+        )
+
+        for route_path in route_paths:
+            route = next(
+                route
+                for route in paper_admin_pages.router.routes
+                if route.path == route_path and "POST" in route.methods
+            )
+            for payload in payloads:
+                with self.subTest(route=route_path, paper_type=payload["paper_type"]):
+                    _, errors = asyncio.run(
+                        request_body_to_args(route.dependant.body_params, payload, False)
+                    )
+                    self.assertEqual(errors, [])
+
+    def test_specification_script_disables_inactive_fields(self) -> None:
+        with self.Session() as db:
+            html = paper_specifications_page(db=db).body.decode("utf-8")
+
+        self.assertIn("input.disabled = !isRoll", html)
+        self.assertIn("input.disabled = isRoll", html)
+
+    def test_specification_endpoints_normalize_blank_inactive_dimensions(self) -> None:
+        with self.Session() as db:
+            create_paper_specification(
+                paper_type="roll",
+                model="TNX26801.2A",
+                material_name="绿色（DLZ001-1）",
+                thickness=0.5,
+                inner_diameter="52.5",
+                outer_diameter="82.2",
+                length="",
+                width="",
+                remark="",
+                db=db,
+            )
+            create_paper_specification(
+                paper_type="sheet",
+                model="",
+                material_name="白纸",
+                thickness=0.5,
+                inner_diameter="",
+                outer_diameter="",
+                length="400",
+                width="400",
+                remark="",
+                db=db,
+            )
+            specs = db.query(PaperSpecification).order_by(PaperSpecification.id).all()
+
+        self.assertEqual(specs[0].model, "TNX26801.2A")
+        self.assertEqual(specs[0].inner_diameter, 52.5)
+        self.assertIsNone(specs[0].length)
+        self.assertIsNone(specs[0].width)
+        self.assertEqual(specs[1].model, "0.5×400×400")
+        self.assertIsNone(specs[1].inner_diameter)
+        self.assertIsNone(specs[1].outer_diameter)
 
     def test_inbound_saves_quantity_price_snapshot_and_transaction(self) -> None:
         with self.Session() as db:

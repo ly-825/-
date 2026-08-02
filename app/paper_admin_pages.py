@@ -50,6 +50,19 @@ def _apply_spec_values(spec: PaperSpecification, values: dict[str, object]) -> N
     spec.width = values["width"]
 
 
+def _optional_form_float(value: str | float | None, label: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"{label}必须是数字") from exc
+
+
 def _spec_form(action: str, spec: PaperSpecification | None = None) -> str:
     paper_type = spec.paper_type if spec else "roll"
     return f"""
@@ -81,6 +94,7 @@ document.querySelectorAll('[data-paper-spec-form]').forEach((form) => {
     form.querySelectorAll('.paper-roll-fields').forEach((wrap) => {
       wrap.hidden = !isRoll;
       wrap.querySelectorAll('input').forEach((input) => {
+        input.disabled = !isRoll;
         input.required = isRoll;
         if (!isRoll) input.value = '';
       });
@@ -88,6 +102,7 @@ document.querySelectorAll('[data-paper-spec-form]').forEach((form) => {
     form.querySelectorAll('.paper-sheet-fields').forEach((wrap) => {
       wrap.hidden = isRoll;
       wrap.querySelectorAll('input').forEach((input) => {
+        input.disabled = isRoll;
         input.required = !isRoll;
         if (isRoll) input.value = '';
       });
@@ -151,15 +166,22 @@ def create_paper_specification(
     model: str = Form(""),
     material_name: str = Form(...),
     thickness: float = Form(...),
-    inner_diameter: float | None = Form(None),
-    outer_diameter: float | None = Form(None),
-    length: float | None = Form(None),
-    width: float | None = Form(None),
+    inner_diameter: str = Form(""),
+    outer_diameter: str = Form(""),
+    length: str = Form(""),
+    width: str = Form(""),
     remark: str = Form(""),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
     values = normalize_paper_specification(
-        paper_type, model, material_name, thickness, inner_diameter, outer_diameter, length, width
+        paper_type,
+        model,
+        material_name,
+        thickness,
+        _optional_form_float(inner_diameter, "内径"),
+        _optional_form_float(outer_diameter, "外径"),
+        _optional_form_float(length, "长度"),
+        _optional_form_float(width, "宽度"),
     )
     spec = PaperSpecification(remark=remark.strip() or None, is_active=1, **values)
     db.add(spec)
@@ -187,10 +209,10 @@ def update_paper_specification(
     model: str = Form(""),
     material_name: str = Form(...),
     thickness: float = Form(...),
-    inner_diameter: float | None = Form(None),
-    outer_diameter: float | None = Form(None),
-    length: float | None = Form(None),
-    width: float | None = Form(None),
+    inner_diameter: str = Form(""),
+    outer_diameter: str = Form(""),
+    length: str = Form(""),
+    width: str = Form(""),
     is_active: int = Form(1),
     remark: str = Form(""),
     db: Session = Depends(get_db),
@@ -199,7 +221,14 @@ def update_paper_specification(
     if not spec:
         raise HTTPException(status_code=404, detail="纸材规格不存在")
     values = normalize_paper_specification(
-        paper_type, model, material_name, thickness, inner_diameter, outer_diameter, length, width
+        paper_type,
+        model,
+        material_name,
+        thickness,
+        _optional_form_float(inner_diameter, "内径"),
+        _optional_form_float(outer_diameter, "外径"),
+        _optional_form_float(length, "长度"),
+        _optional_form_float(width, "宽度"),
     )
     _apply_spec_values(spec, values)
     spec.is_active = 1 if is_active else 0
