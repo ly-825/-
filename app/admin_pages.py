@@ -2653,7 +2653,7 @@ def raw_plate_outbound_page(
         ),
     )
     summary_rows = "".join(
-        f"<tr><td>{group['material']}</td><td>{format_number(group['length'])}</td><td>{format_number(group['width'])}</td><td>{format_steel_thickness(group['thickness'])}</td><td><strong>{group['quantity']}</strong></td><td>{group['batch_count']}</td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td><a class='btn secondary' href='/admin/raw-plates/outbound?material={quote(str(group['material']), safe='')}&length={quote(str(group['length'] or ''), safe='')}&width={quote(str(group['width'] or ''), safe='')}&thickness={quote(str(group['thickness'] or ''), safe='')}'>选择出库</a></td></tr>"
+        f"<tr><td>{format_steel_thickness(group['thickness'])}</td><td>{format_number(group['length'])}</td><td>{format_number(group['width'])}</td><td>{group['material']}</td><td><strong>{group['quantity']}</strong></td><td>{group['batch_count']}</td><td>{' / '.join(sorted(group['locations'])) or '-'}</td><td><a class='btn secondary' href='/admin/raw-plates/outbound?material={quote(str(group['material']), safe='')}&length={quote(str(group['length'] or ''), safe='')}&width={quote(str(group['width'] or ''), safe='')}&thickness={quote(str(group['thickness'] or ''), safe='')}'>选择出库</a></td></tr>"
         for group in sorted_summary
     )
     material_options = datalist_options(inventory_distinct_options(db, "raw_plate", "material", quantity_positive=True))
@@ -2676,7 +2676,7 @@ def raw_plate_outbound_page(
         <a class="btn secondary" href="/admin/raw-plates/outbound">清空</a>
       </form>
     </section>
-    <section class="card"><h2>当前可用规格</h2><table><thead><tr><th>材质</th><th>长mm</th><th>宽mm</th><th>厚mm</th><th>可出库总块数</th><th>批次数</th><th>库位</th><th>操作</th></tr></thead><tbody>{summary_rows or "<tr><td colspan='8'>暂无可出库板料。</td></tr>"}</tbody></table></section>
+    <section class="card"><h2>当前可用规格</h2><table><thead><tr><th>厚mm</th><th>长mm</th><th>宽mm</th><th>材质</th><th>可出库总块数</th><th>批次数</th><th>库位</th><th>操作</th></tr></thead><tbody>{summary_rows or "<tr><td colspan='8'>暂无可出库板料。</td></tr>"}</tbody></table></section>
     <section class="card">
       <h2>确认出库</h2>
       <p class="muted">先在上方“当前可用规格”里点击“选择出库”，系统会自动带入规格信息。</p>

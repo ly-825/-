@@ -140,6 +140,33 @@ class SteelMaterialPagesTest(unittest.TestCase):
         self.assertLess(outbound.index("<h2>当前可用规格</h2>"), outbound.index("<h2>确认出库</h2>"))
         self.assertIn("先在上方“当前可用规格”里点击“选择出库”", outbound)
 
+    def test_raw_plate_outbound_available_table_puts_thickness_first(self) -> None:
+        with self.Session() as db:
+            db.add(
+                MaterialInventory(
+                    material_code="RAW-COLUMN-ORDER",
+                    inventory_type="raw_plate",
+                    material="65Mn",
+                    thickness=0.8,
+                    length=1251,
+                    width=182,
+                    shape="rectangle",
+                    quantity=1990,
+                    status="available",
+                )
+            )
+            db.commit()
+            html = raw_plate_outbound_page(db=db).body.decode("utf-8")
+
+        self.assertIn(
+            "<tr><th>厚mm</th><th>长mm</th><th>宽mm</th><th>材质</th>",
+            html,
+        )
+        self.assertIn(
+            "<tr><td>0.8</td><td>1251</td><td>182</td><td>65Mn</td>",
+            html,
+        )
+
     def test_steel_transactions_render_readable_records_without_horizontal_table(self) -> None:
         with self.Session() as db:
             item = MaterialInventory(
