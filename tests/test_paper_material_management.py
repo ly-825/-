@@ -32,6 +32,7 @@ from app.services.paper_inventory import (
     normalize_paper_specification,
     outbound_paper_fifo,
     paper_inventory_groups,
+    paper_specification_sort_key,
     reverse_paper_transaction,
 )
 
@@ -185,6 +186,86 @@ class PaperInventoryServiceTest(unittest.TestCase):
         self.assertEqual(groups[0]["price_min"], Decimal("10.00"))
         self.assertEqual(groups[0]["price_max"], Decimal("12.50"))
         self.assertEqual(groups[0]["unit"], "圈")
+
+    def test_paper_sorting_is_globally_thickness_first(self) -> None:
+        specs = [
+            PaperSpecification(
+                id=1,
+                paper_type="roll",
+                model="ROLL-2.0",
+                material_name="厚纸圈",
+                thickness=2.0,
+                inner_diameter=50,
+                outer_diameter=80,
+            ),
+            PaperSpecification(
+                id=2,
+                paper_type="sheet",
+                model="0.5×400×400",
+                material_name="大纸张",
+                thickness=0.5,
+                length=400,
+                width=400,
+            ),
+            PaperSpecification(
+                id=3,
+                paper_type="roll",
+                model="ROLL-0.5-80",
+                material_name="大纸圈",
+                thickness=0.5,
+                inner_diameter=80,
+                outer_diameter=120,
+            ),
+            PaperSpecification(
+                id=4,
+                paper_type="roll",
+                model="ROLL-0.5-60",
+                material_name="小纸圈",
+                thickness=0.5,
+                inner_diameter=60,
+                outer_diameter=100,
+            ),
+            PaperSpecification(
+                id=5,
+                paper_type="sheet",
+                model="0.5×300×400",
+                material_name="小纸张",
+                thickness=0.5,
+                length=300,
+                width=400,
+            ),
+        ]
+        expected_models = [
+            "ROLL-0.5-60",
+            "ROLL-0.5-80",
+            "0.5×300×400",
+            "0.5×400×400",
+            "ROLL-2.0",
+        ]
+
+        ordered_specs = sorted(specs, key=paper_specification_sort_key)
+        batches = [
+            PaperInventoryBatch(
+                specification_id=spec.id,
+                batch_code=f"P-{spec.id}",
+                paper_type=spec.paper_type,
+                model=spec.model,
+                material_name=spec.material_name,
+                thickness=spec.thickness,
+                inner_diameter=spec.inner_diameter,
+                outer_diameter=spec.outer_diameter,
+                length=spec.length,
+                width=spec.width,
+                quantity=1,
+                unit_price=Decimal("1.00"),
+                status="available",
+            )
+            for spec in specs
+        ]
+        ordered_groups = paper_inventory_groups(batches)
+
+        self.assertEqual([spec.model for spec in ordered_specs], expected_models)
+        self.assertEqual([group["model"] for group in ordered_groups], expected_models)
 
     def test_fifo_is_atomic_and_reversal_restores_only_affected_batch(self) -> None:
         with self.Session() as db:
