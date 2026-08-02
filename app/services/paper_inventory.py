@@ -89,22 +89,26 @@ def paper_batch_size(batch: PaperInventoryBatch) -> str:
     return paper_sheet_model(batch.thickness, batch.length, batch.width)
 
 
+def paper_inventory_group_key(batch: PaperInventoryBatch) -> tuple:
+    return (
+        batch.specification_id,
+        batch.paper_type,
+        batch.model,
+        batch.material_name,
+        batch.thickness,
+        batch.inner_diameter,
+        batch.outer_diameter,
+        batch.length,
+        batch.width,
+    )
+
+
 def paper_inventory_groups(batches: list[PaperInventoryBatch]) -> list[dict[str, Any]]:
     grouped: dict[tuple, dict[str, Any]] = {}
     for batch in batches:
         if batch.quantity <= 0:
             continue
-        key = (
-            batch.specification_id,
-            batch.paper_type,
-            batch.model,
-            batch.material_name,
-            batch.thickness,
-            batch.inner_diameter,
-            batch.outer_diameter,
-            batch.length,
-            batch.width,
-        )
+        key = paper_inventory_group_key(batch)
         group = grouped.setdefault(
             key,
             {

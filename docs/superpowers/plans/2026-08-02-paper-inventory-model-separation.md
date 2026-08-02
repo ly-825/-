@@ -76,7 +76,7 @@ def test_paper_inventory_group_key_separates_models_and_specs(self) -> None:
 Run:
 
 ```bash
-python -m pytest tests/test_paper_material_management.py::PaperMaterialSchemaTest::test_paper_inventory_group_key_separates_models_and_specs -q
+.venv/bin/python -m pytest tests/test_paper_material_management.py::PaperInventoryServiceTest::test_paper_inventory_group_key_separates_models_and_specs -q
 ```
 
 Expected: FAIL because `paper_inventory_group_key` does not exist.
@@ -124,7 +124,7 @@ Add a second `3969.01` batch with the same specification ID and assert that only
 Run:
 
 ```bash
-python -m pytest tests/test_paper_material_management.py -q
+.venv/bin/python -m pytest tests/test_paper_material_management.py -q
 ```
 
 Expected: all paper material management tests PASS.
@@ -167,9 +167,9 @@ for spec in specs:
 Run:
 
 ```bash
-python -m pytest tests/test_paper_material_management.py tests/test_paper_exports.py -q
-python -m pytest -q
-python -m compileall -q app tests
+.venv/bin/python -m pytest tests/test_paper_material_management.py tests/test_paper_exports.py -q
+.venv/bin/python -m pytest -q
+.venv/bin/python -m compileall -q app tests
 git diff --check
 ```
 
@@ -187,7 +187,7 @@ git commit -m "test: protect paper inventory model rows"
 Keep the unrelated process on port 8000 untouched. Stop only the inventory process bound to port 8001, then start from `/Users/luck/Desktop/杭州特耐时/backend`:
 
 ```bash
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
 Verify:

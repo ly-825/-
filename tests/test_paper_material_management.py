@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 from starlette.datastructures import FormData
 
+import app.services.paper_inventory as paper_inventory_service
 from app import paper_admin_pages
 from app.database import Base
 from app.models import PaperInventoryBatch, PaperInventoryTransaction, PaperSpecification
@@ -186,6 +187,85 @@ class PaperInventoryServiceTest(unittest.TestCase):
         self.assertEqual(groups[0]["price_min"], Decimal("10.00"))
         self.assertEqual(groups[0]["price_max"], Decimal("12.50"))
         self.assertEqual(groups[0]["unit"], "圈")
+
+    def test_paper_inventory_group_key_separates_models_and_specs(self) -> None:
+        self.assertTrue(hasattr(paper_inventory_service, "paper_inventory_group_key"))
+        group_key = paper_inventory_service.paper_inventory_group_key
+        base = dict(
+            batch_code="P-1",
+            paper_type="roll",
+            material_name="黑色（DC0017）",
+            thickness=0.5,
+            quantity=1,
+            unit_price=Decimal("0.66"),
+            status="available",
+        )
+        first = PaperInventoryBatch(
+            specification_id=101,
+            model="3969.01",
+            inner_diameter=55,
+            outer_diameter=115,
+            **base,
+        )
+        second = PaperInventoryBatch(
+            specification_id=102,
+            model="3960.02",
+            inner_diameter=67,
+            outer_diameter=127,
+            **base,
+        )
+        same_spec_second_batch = PaperInventoryBatch(
+            specification_id=101,
+            model="3969.01",
+            inner_diameter=55,
+            outer_diameter=115,
+            **{**base, "batch_code": "P-2"},
+        )
+
+        self.assertNotEqual(group_key(first), group_key(second))
+        self.assertEqual(group_key(first), group_key(same_spec_second_batch))
+
+    def test_paper_inventory_keeps_3969_3960_and_3970_separate(self) -> None:
+        def batch(
+            specification_id: int,
+            batch_code: str,
+            model: str,
+            inner_diameter: float,
+            outer_diameter: float,
+            quantity: int,
+            unit_price: str,
+        ) -> PaperInventoryBatch:
+            return PaperInventoryBatch(
+                specification_id=specification_id,
+                batch_code=batch_code,
+                paper_type="roll",
+                model=model,
+                material_name="黑色（DC0017）",
+                thickness=0.5,
+                inner_diameter=inner_diameter,
+                outer_diameter=outer_diameter,
+                quantity=quantity,
+                unit_price=Decimal(unit_price),
+                status="available",
+            )
+
+        batches = [
+            batch(101, "P-3969-1", "3969.01", 55, 115, 100, "0.66"),
+            batch(102, "P-3960-1", "3960.02", 67, 127, 200, "0.75"),
+            batch(103, "P-3970-1", "3970.01", 80, 132, 300, "0.70"),
+            batch(101, "P-3969-2", "3969.01", 55, 115, 50, "0.68"),
+        ]
+
+        groups = paper_inventory_groups(batches)
+
+        self.assertEqual(
+            [group["model"] for group in groups],
+            ["3969.01", "3960.02", "3970.01"],
+        )
+        self.assertEqual([group["quantity"] for group in groups], [150, 200, 300])
+        self.assertEqual([group["batch_count"] for group in groups], [2, 1, 1])
+        self.assertEqual(groups[0]["price_min"], Decimal("0.66"))
+        self.assertEqual(groups[0]["price_max"], Decimal("0.68"))
 
     def test_paper_sorting_is_globally_thickness_first(self) -> None:
         specs = [
@@ -615,6 +695,59 @@ class PaperInventoryWorkflowPagesTest(unittest.TestCase):
             )
         db.commit()
         return spec, first, second, empty
+
+    def test_inventory_page_renders_different_models_as_separate_rows(self) -> None:
+        model_dimensions = [
+            ("3969.01", 55, 115),
+            ("3960.02", 67, 127),
+            ("3970.01", 80, 132),
+        ]
+        with self.Session() as db:
+            specs = [
+                PaperSpecification(
+                    paper_type="roll",
+                    model=model,
+                    material_name="黑色（DC0017）",
+                    thickness=0.5,
+                    inner_diameter=inner_diameter,
+                    outer_diameter=outer_diameter,
+                    is_active=1,
+                )
+                for model, inner_diameter, outer_diameter in model_dimensions
+            ]
+            db.add_all(specs)
+            db.flush()
+            db.add_all(
+                [
+                    PaperInventoryBatch(
+                        specification_id=spec.id,
+                        batch_code=f"P-{spec.model}",
+                        paper_type=spec.paper_type,
+                        model=spec.model,
+                        material_name=spec.material_name,
+                        thickness=spec.thickness,
+                        inner_diameter=spec.inner_diameter,
+                        outer_diameter=spec.outer_diameter,
+                        quantity=index * 100,
+                        unit_price=Decimal("0.66") + Decimal(index - 1) / 20,
+                        status="available",
+                    )
+                    for index, spec in enumerate(specs, start=1)
+                ]
+            )
+            db.commit()
+
+            inventory_html = paper_inventory_page(db=db).body.decode("utf-8")
+            specification_ids = [spec.id for spec in specs]
+
+        self.assertEqual(inventory_html.count(">3969.01<"), 1)
+        self.assertEqual(inventory_html.count(">3960.02<"), 1)
+        self.assertEqual(inventory_html.count(">3970.01<"), 1)
+        for specification_id in specification_ids:
+            self.assertIn(
+                f"/admin/paper-materials/detail?specification_id={specification_id}",
+                inventory_html,
+            )
 
     def test_inventory_price_range_and_detail_only_use_live_batches(self) -> None:
         with self.Session() as db:
