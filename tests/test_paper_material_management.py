@@ -816,6 +816,36 @@ class PaperInventoryWorkflowPagesTest(unittest.TestCase):
                 positions = [html.index(model) for model in expected_models]
                 self.assertEqual(positions, sorted(positions))
 
+    def test_specifications_page_keeps_inactive_roll_before_active_sheet(self) -> None:
+        with self.Session() as db:
+            db.add_all(
+                [
+                    PaperSpecification(
+                        paper_type="roll",
+                        model="TNX-INACTIVE",
+                        material_name="停用纸圈",
+                        thickness=0.5,
+                        inner_diameter=80,
+                        outer_diameter=120,
+                        is_active=0,
+                    ),
+                    PaperSpecification(
+                        paper_type="sheet",
+                        model="0.1×100×100",
+                        material_name="启用纸张",
+                        thickness=0.1,
+                        length=100,
+                        width=100,
+                        is_active=1,
+                    ),
+                ]
+            )
+            db.commit()
+
+            html = paper_specifications_page(db=db).body.decode("utf-8")
+
+        self.assertLess(html.index("TNX-INACTIVE"), html.index("0.1×100×100"))
+
     def test_inventory_price_range_and_detail_only_use_live_batches(self) -> None:
         with self.Session() as db:
             spec, first, second, empty = self._seed_roll_batches(db)

@@ -136,7 +136,7 @@ def paper_specifications_page(
     if material_name.strip():
         query = query.filter(PaperSpecification.material_name.ilike(f"%{material_name.strip()}%"))
     specs = query.all()
-    specs.sort(key=lambda spec: (-int(bool(spec.is_active)), *paper_specification_sort_key(spec)))
+    specs.sort(key=lambda spec: (*paper_specification_sort_key(spec), -int(bool(spec.is_active))))
     rows = "".join(
         f"<tr><td>{PAPER_TYPE_LABELS[spec.paper_type]}</td><td>{html.escape(spec.model)}</td>"
         f"<td>{html.escape(spec.material_name)}</td><td>{html.escape(_spec_size(spec))}</td>"
