@@ -75,11 +75,11 @@ def paper_specification_sort_key(spec: PaperSpecification) -> tuple:
     else:
         dimensions = (spec.length or 0, spec.width or 0)
     return (
-        spec.thickness,
         0 if spec.paper_type == "roll" else 1,
-        *dimensions,
         natural_sort_key(spec.model),
         natural_sort_key(spec.material_name),
+        spec.thickness,
+        *dimensions,
     )
 
 
@@ -146,12 +146,12 @@ def paper_inventory_groups(batches: list[PaperInventoryBatch]) -> list[dict[str,
     return sorted(
         grouped.values(),
         key=lambda group: (
-            group["thickness"],
             0 if group["paper_type"] == "roll" else 1,
-            group["inner_diameter"] or group["length"] or 0,
-            group["outer_diameter"] or group["width"] or 0,
             natural_sort_key(group["model"]),
             natural_sort_key(group["material_name"]),
+            group["thickness"],
+            group["inner_diameter"] or group["length"] or 0,
+            group["outer_diameter"] or group["width"] or 0,
         ),
     )
 

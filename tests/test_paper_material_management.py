@@ -260,67 +260,68 @@ class PaperInventoryServiceTest(unittest.TestCase):
 
         self.assertEqual(
             [group["model"] for group in groups],
-            ["3969.01", "3960.02", "3970.01"],
+            ["3960.02", "3969.01", "3970.01"],
         )
-        self.assertEqual([group["quantity"] for group in groups], [150, 200, 300])
-        self.assertEqual([group["batch_count"] for group in groups], [2, 1, 1])
-        self.assertEqual(groups[0]["price_min"], Decimal("0.66"))
-        self.assertEqual(groups[0]["price_max"], Decimal("0.68"))
+        self.assertEqual([group["quantity"] for group in groups], [200, 150, 300])
+        self.assertEqual([group["batch_count"] for group in groups], [1, 2, 1])
+        group_3969 = next(group for group in groups if group["model"] == "3969.01")
+        self.assertEqual(group_3969["price_min"], Decimal("0.66"))
+        self.assertEqual(group_3969["price_max"], Decimal("0.68"))
 
-    def test_paper_sorting_is_globally_thickness_first(self) -> None:
+    def test_paper_sorting_groups_types_and_uses_natural_model_order(self) -> None:
         specs = [
             PaperSpecification(
                 id=1,
                 paper_type="roll",
-                model="ROLL-2.0",
-                material_name="厚纸圈",
-                thickness=2.0,
-                inner_diameter=50,
-                outer_diameter=80,
+                model="TNX20.2A",
+                material_name="纸圈20",
+                thickness=0.2,
+                inner_diameter=20,
+                outer_diameter=40,
             ),
             PaperSpecification(
                 id=2,
                 paper_type="sheet",
-                model="0.5×400×400",
-                material_name="大纸张",
-                thickness=0.5,
-                length=400,
-                width=400,
+                model="0.4×500×300",
+                material_name="纸张04",
+                thickness=0.4,
+                length=500,
+                width=300,
             ),
             PaperSpecification(
                 id=3,
                 paper_type="roll",
-                model="ROLL-0.5-80",
-                material_name="大纸圈",
-                thickness=0.5,
+                model="TNX3.2A",
+                material_name="纸圈3",
+                thickness=3.0,
                 inner_diameter=80,
                 outer_diameter=120,
             ),
             PaperSpecification(
                 id=4,
-                paper_type="roll",
-                model="ROLL-0.5-60",
-                material_name="小纸圈",
+                paper_type="sheet",
+                model="0.5×400×400",
+                material_name="纸张05",
                 thickness=0.5,
-                inner_diameter=60,
-                outer_diameter=100,
+                length=400,
+                width=400,
             ),
             PaperSpecification(
                 id=5,
-                paper_type="sheet",
-                model="0.5×300×400",
-                material_name="小纸张",
-                thickness=0.5,
-                length=300,
-                width=400,
+                paper_type="roll",
+                model="3969.01",
+                material_name="数字纸圈",
+                thickness=9.0,
+                inner_diameter=500,
+                outer_diameter=600,
             ),
         ]
         expected_models = [
-            "ROLL-0.5-60",
-            "ROLL-0.5-80",
-            "0.5×300×400",
+            "3969.01",
+            "TNX3.2A",
+            "TNX20.2A",
+            "0.4×500×300",
             "0.5×400×400",
-            "ROLL-2.0",
         ]
 
         ordered_specs = sorted(specs, key=paper_specification_sort_key)
@@ -748,6 +749,72 @@ class PaperInventoryWorkflowPagesTest(unittest.TestCase):
                 f"/admin/paper-materials/detail?specification_id={specification_id}",
                 inventory_html,
             )
+
+    def test_paper_pages_share_type_and_model_sort_order(self) -> None:
+        specs = [
+            PaperSpecification(
+                paper_type="roll",
+                model="TNX20.2A",
+                material_name="纸圈20",
+                thickness=0.2,
+                inner_diameter=20,
+                outer_diameter=40,
+                is_active=1,
+            ),
+            PaperSpecification(
+                paper_type="sheet",
+                model="0.1×100×100",
+                material_name="纸张01",
+                thickness=0.1,
+                length=100,
+                width=100,
+                is_active=1,
+            ),
+            PaperSpecification(
+                paper_type="roll",
+                model="TNX3.2A",
+                material_name="纸圈3",
+                thickness=3.0,
+                inner_diameter=80,
+                outer_diameter=120,
+                is_active=1,
+            ),
+        ]
+        expected_models = ["TNX3.2A", "TNX20.2A", "0.1×100×100"]
+        with self.Session() as db:
+            db.add_all(specs)
+            db.flush()
+            db.add_all(
+                [
+                    PaperInventoryBatch(
+                        specification_id=spec.id,
+                        batch_code=f"P-{spec.id}",
+                        paper_type=spec.paper_type,
+                        model=spec.model,
+                        material_name=spec.material_name,
+                        thickness=spec.thickness,
+                        inner_diameter=spec.inner_diameter,
+                        outer_diameter=spec.outer_diameter,
+                        length=spec.length,
+                        width=spec.width,
+                        quantity=1,
+                        unit_price=Decimal("1.00"),
+                        status="available",
+                    )
+                    for spec in specs
+                ]
+            )
+            db.commit()
+
+            for render in (
+                paper_specifications_page,
+                paper_inbound_page,
+                paper_inventory_page,
+                paper_outbound_page,
+            ):
+                html = render(db=db).body.decode("utf-8")
+                positions = [html.index(model) for model in expected_models]
+                self.assertEqual(positions, sorted(positions))
 
     def test_inventory_price_range_and_detail_only_use_live_batches(self) -> None:
         with self.Session() as db:

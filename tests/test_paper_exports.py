@@ -127,9 +127,9 @@ class PaperExportTest(unittest.TestCase):
             headings,
             ["类型", "型号", "纸材名称/材质", "尺寸", "库存数量", "单位", "最低单价", "最高单价", "批次数", "库位", "最近更新时间"],
         )
-        self.assertEqual(rows[0][0:4], ["纸张", "0.4×500×300", "白纸", "0.4×500×300"])
-        self.assertEqual(rows[1][0:4], ["纸圈", "Tnx236.2A", "蓝纸", "0.5×80×120"])
-        self.assertEqual(rows[1][6:8], ["10.00", "12.50"])
+        self.assertEqual(rows[0][0:4], ["纸圈", "Tnx236.2A", "蓝纸", "0.5×80×120"])
+        self.assertEqual(rows[0][6:8], ["10.00", "12.50"])
+        self.assertEqual(rows[1][0:4], ["纸张", "0.4×500×300", "白纸", "0.4×500×300"])
         self.assertNotIn("99.00", str(rows))
 
     def test_paper_transaction_export_and_page_links(self) -> None:
