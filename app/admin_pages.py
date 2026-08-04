@@ -24,7 +24,11 @@ from app.database import SessionLocal, get_db
 from app.models import InventoryTransactionRecord, MaterialInventory, OperationLog, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 from app.services.dxf_parser import parse_dxf
 from app.services.drawing_preview import generate_drawing_preview
-from app.services.drawing_search import natural_sort_key, tooth_search_filter
+from app.services.drawing_search import (
+    apply_drawing_filters,
+    natural_sort_key,
+    tooth_search_filter,
+)
 from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_drawing
 from app.services.drawing_version import apply_drawing_version
 from app.services.excel_export import build_export_rows, content_disposition, export_filename, log_export, make_workbook_bytes
@@ -50,6 +54,7 @@ from app.services.material_formats import (
     steel_spec_name,
 )
 from app.services.operation_log import drawing_snapshot, inventory_snapshot, record_operation_log
+from app.services.plan_material_service import list_plan_drawings, match_plan_materials
 from app.services.product_outbound_analysis import (
     OUTBOUND_PURPOSES,
     analyze_product_flow,
@@ -422,9 +427,8 @@ def filtered_plan_drawings(
     inner_diameter: str = "",
     teeth_count: str = "",
 ) -> list[ProductDrawing]:
-    query = db.query(ProductDrawing).filter(ProductDrawing.confirmed == 1, ProductDrawing.is_active == 1)
-    query = apply_drawing_filters(
-        query,
+    return list_plan_drawings(
+        db,
         q=q,
         material=material,
         thickness=thickness,
@@ -432,7 +436,6 @@ def filtered_plan_drawings(
         inner_diameter=inner_diameter,
         teeth_count=teeth_count,
     )
-    return query.order_by(ProductDrawing.product_code.asc(), ProductDrawing.version.desc()).all()
 
 
 def plan_product_options(db: Session, selected_id: int | None = None, drawings: list[ProductDrawing] | None = None) -> str:
@@ -1606,71 +1609,40 @@ def plans_page(
         """
 
     if drawing:
+        plan_result = match_plan_materials(
+            db, drawing_id=drawing.id, quantity=quantity_value
+        )
         product_code = drawing.product_code or ""
         required_material = drawing.material
         required_thickness = effective_drawing_thickness(drawing)
         required_diameter = drawing_required_diameter(drawing)
         required_size_label = f"φ{required_diameter:g}" if required_diameter else "-"
 
-        product_items = (
-            db.query(MaterialInventory)
-            .filter(MaterialInventory.inventory_type == "product", MaterialInventory.quantity > 0)
-            .order_by(MaterialInventory.updated_at.desc())
-            .all()
-        )
-        product_items = [
-            item for item in product_items
-            if product_code and (item.material_code == product_code or item.source_product_code == product_code)
-        ]
-        product_total = sum(item.quantity for item in product_items)
+        product_items = plan_result["product"]["batches"]
+        product_total = plan_result["product"]["quantity"]
         product_status = "够用" if product_total >= quantity_value else ("有库存" if product_total > 0 else "无库存")
         product_rows = "".join(
-            f"<tr><td>{item.material_code or item.source_product_code or '-'}</td><td>{item.quantity}</td><td>{item.material}</td><td>{item.thickness:g}</td><td>{item.location or '-'}</td><td>{item.updated_at or item.created_at}</td></tr>"
+            f"<tr><td>{item['material_code'] or item['source_product_code'] or '-'}</td><td>{item['quantity']}</td><td>{item['material']}</td><td>{item['thickness']:g}</td><td>{item['location'] or '-'}</td><td>{item['updated_at'] or item['created_at'] or '-'}</td></tr>"
             for item in product_items
         )
 
-        raw_candidates = (
-            db.query(MaterialInventory)
-            .filter(MaterialInventory.inventory_type == "raw_plate", MaterialInventory.quantity > 0)
-            .order_by(MaterialInventory.created_at.asc())
-            .all()
-        )
-        raw_matches = [
-            item for item in raw_candidates
-            if raw_plate_matches_drawing(item, drawing)
-        ]
-        raw_total = sum(item.quantity for item in raw_matches)
+        raw_matches = plan_result["raw_plate"]["batches"]
+        raw_total = plan_result["raw_plate"]["quantity"]
         raw_rows = "".join(
-            f"<tr><td>{item.material_code or '-'}</td><td>{item.material}</td><td>{item.length or '-'}</td><td>{item.width or '-'}</td><td>{item.thickness:g}</td><td>{item.quantity}</td><td>{item.location or '-'}</td></tr>"
+            f"<tr><td>{item['material_code'] or '-'}</td><td>{item['material']}</td><td>{item['length'] or '-'}</td><td>{item['width'] or '-'}</td><td>{item['thickness']:g}</td><td>{item['quantity']}</td><td>{item['location'] or '-'}</td></tr>"
             for item in raw_matches[:100]
         )
 
-        scrap_candidates = (
-            db.query(MaterialInventory)
-            .filter(MaterialInventory.inventory_type == "scrap", MaterialInventory.status == "available", MaterialInventory.quantity > 0)
-            .order_by(MaterialInventory.diameter.asc(), MaterialInventory.created_at.asc())
-            .all()
-        )
         required_scrap_diameter = scrap_required_diameter(drawing)
-        scrap_matches = [
-            item for item in scrap_candidates
-            if scrap_matches_drawing(item, drawing)
-        ]
-        scrap_total = sum(item.quantity for item in scrap_matches)
+        scrap_matches = plan_result["scrap"]["batches"]
+        scrap_total = plan_result["scrap"]["quantity"]
         scrap_rows = "".join(
-            f"<tr><td>{item.material}</td><td>{item.thickness:g}</td><td>{item.usable_size or '-'}</td><td>{item.quantity}</td><td>{scrap_location_label(item)}</td><td>{item.source_product_code or '-'}</td></tr>"
+            f"<tr><td>{item['material']}</td><td>{item['thickness']:g}</td><td>{item['usable_size'] or '-'}</td><td>{item['quantity']}</td><td>{item['location'] or '-'}</td><td>{item['source_product_code'] or '-'}</td></tr>"
             for item in scrap_matches[:100]
         )
 
         product_badge = "badge"
-        if product_total >= quantity_value:
-            suggestion = "建议优先使用成品库存，当前成品数量已满足计划。"
-        elif scrap_total >= quantity_value:
-            suggestion = "成品不足，建议优先使用匹配余料安排生产。"
-        elif raw_total > 0:
-            suggestion = "成品和余料不足，当前有匹配板料，可安排板料生产。"
-        else:
-            suggestion = "成品、余料和板料都未匹配到足够材料，建议先采购或入库。"
+        suggestion = plan_result["recommendation"]
         suggestion_html = f"""
         <section class="card">
           <h2 style="margin-top:0">系统建议</h2>
