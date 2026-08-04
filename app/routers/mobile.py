@@ -9,6 +9,7 @@ from app.services.drawing_parameters import common_normal_value_from_text, first
 from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_drawing
 from app.services.drawing_version import apply_drawing_version
 from app.services.inventory_service import ensure_drawing_can_be_changed, inventory_write_lock, product_inbound_from_drawing, reverse_inventory_transaction, sync_product_inventory_from_drawing
+from app.services.mobile_idempotency import remember_mobile_response, replayed_mobile_response
 from app.services.operation_log import drawing_snapshot, inventory_snapshot, record_operation_log
 from app.services.product_outbound_analysis import normalize_outbound_purpose
 from app.services.scrap_service import find_scrap_batches_for_outbound
@@ -17,16 +18,19 @@ from app.services.scrap_service import find_scrap_batches_for_outbound
 router = APIRouter()
 
 
-class ProductInboundPayload(BaseModel):
+class MobileWritePayload(BaseModel):
+    client_request_id: str
+
+
+class ProductInboundPayload(MobileWritePayload):
     drawing_id: int
     quantity: int = 1
     location: str | None = None
     paper_material: str | None = None
     operator_name: str | None = None
-    client_request_id: str | None = None
 
 
-class ProductOutboundPayload(BaseModel):
+class ProductOutboundPayload(MobileWritePayload):
     drawing_id: int
     quantity: int
     location: str | None = None
@@ -34,28 +38,26 @@ class ProductOutboundPayload(BaseModel):
     customer_name: str | None = None
     outbound_purpose: str | None = "sales"
     remark: str | None = None
-    client_request_id: str | None = None
 
 
-class TransactionReversePayload(BaseModel):
+class TransactionReversePayload(MobileWritePayload):
     operator_name: str | None = None
     remark: str | None = None
 
 
-class ScrapConfirmPayload(BaseModel):
+class ScrapConfirmPayload(MobileWritePayload):
     actual_quantity: int
     actual_diameter: float | None = None
     location: str
     operator_name: str | None = None
 
 
-class ScrapOutboundPayload(BaseModel):
+class ScrapOutboundPayload(MobileWritePayload):
     scrap_group_key: str
     quantity: int
     operator_name: str | None = None
     customer_name: str | None = None
     remark: str | None = None
-    client_request_id: str | None = None
 
 
 class MobileSummaryOut(BaseModel):
@@ -559,8 +561,15 @@ def product_batches(product_code: str, db: Session = Depends(get_db)) -> list[Ma
 
 
 @router.post("/products/inbound", response_model=InventoryItemOut)
-def product_inbound(payload: ProductInboundPayload, db: Session = Depends(get_db)) -> MaterialInventory:
+def product_inbound(payload: ProductInboundPayload, db: Session = Depends(get_db)) -> dict:
     with inventory_write_lock():
+        operation_type = "product_inbound"
+        request_payload = payload.model_dump(mode="json", exclude={"client_request_id"})
+        replayed = replayed_mobile_response(
+            db, operation_type, payload.client_request_id, request_payload
+        )
+        if replayed is not None:
+            return replayed
         drawing = db.get(ProductDrawing, payload.drawing_id)
         if not drawing or drawing.confirmed != 1 or drawing.is_active != 1:
             raise HTTPException(status_code=404, detail="已确认图纸不存在")
@@ -574,30 +583,46 @@ def product_inbound(payload: ProductInboundPayload, db: Session = Depends(get_db
             db=db,
             idempotency_key=idempotency_key,
         )
-        if result.duplicated_request:
-            return result.item
-        record_operation_log(
+        if not result.duplicated_request:
+            record_operation_log(
+                db,
+                "product_inbound",
+                "inventory",
+                result.item.id,
+                payload.operator_name or None,
+                f"小程序产品入库：{drawing.product_code}，数量 {payload.quantity}",
+                before_data={"quantity": result.before_total_quantity, "drawing": drawing_snapshot(drawing)},
+                after_data=inventory_snapshot(result.item),
+            )
+        response_data = InventoryItemOut.model_validate(result.item).model_dump(mode="json")
+        remember_mobile_response(
             db,
-            "product_inbound",
-            "inventory",
-            result.item.id,
-            payload.operator_name or None,
-            f"小程序产品入库：{drawing.product_code}，数量 {payload.quantity}",
-            before_data={"quantity": result.before_total_quantity, "drawing": drawing_snapshot(drawing)},
-            after_data=inventory_snapshot(result.item),
+            operation_type,
+            payload.client_request_id,
+            request_payload,
+            response_data,
         )
         db.commit()
-        db.refresh(result.item)
-        return result.item
+        return response_data
 
 
 @router.post("/products/outbound")
 def product_outbound(payload: ProductOutboundPayload, db: Session = Depends(get_db)) -> dict[str, int | str]:
     with inventory_write_lock():
+        operation_type = "product_outbound"
+        request_payload = payload.model_dump(mode="json", exclude={"client_request_id"})
+        replayed = replayed_mobile_response(
+            db, operation_type, payload.client_request_id, request_payload
+        )
+        if replayed is not None:
+            return replayed
         idempotency_key = _idempotency_key("mobile_product_outbound", payload.client_request_id)
         existing_record = db.query(InventoryTransactionRecord).filter(InventoryTransactionRecord.idempotency_key == idempotency_key).first() if idempotency_key else None
         if existing_record:
-            return {"message": "产品出库成功", "before_quantity": existing_record.before_quantity, "after_quantity": existing_record.after_quantity}
+            response_data = {"message": "产品出库成功", "before_quantity": existing_record.before_quantity, "after_quantity": existing_record.after_quantity}
+            remember_mobile_response(db, operation_type, payload.client_request_id, request_payload, response_data)
+            db.commit()
+            return response_data
         drawing = db.get(ProductDrawing, payload.drawing_id)
         if not drawing or drawing.confirmed != 1 or drawing.is_active != 1 or not drawing.product_code:
             raise HTTPException(status_code=404, detail="已确认图纸不存在")
@@ -639,8 +664,10 @@ def product_outbound(payload: ProductOutboundPayload, db: Session = Depends(get_
             before_data={"quantity": before_total_quantity, "location": location_value or None, "drawing": drawing_snapshot(drawing)},
             after_data={"quantity": before_total_quantity - payload.quantity, "location": location_value or None},
         )
+        response_data = {"message": "产品出库成功", "before_quantity": before_total_quantity, "after_quantity": before_total_quantity - payload.quantity}
+        remember_mobile_response(db, operation_type, payload.client_request_id, request_payload, response_data)
         db.commit()
-        return {"message": "产品出库成功", "before_quantity": before_total_quantity, "after_quantity": before_total_quantity - payload.quantity}
+        return response_data
 
 
 @router.get("/products/transactions", response_model=list[TransactionOut])
@@ -650,24 +677,44 @@ def product_transactions(db: Session = Depends(get_db)) -> list[TransactionOut]:
 
 
 @router.post("/products/transactions/{transaction_id}/reverse", response_model=TransactionOut)
-def reverse_product_transaction(transaction_id: int, payload: TransactionReversePayload, db: Session = Depends(get_db)) -> TransactionOut:
-    reversal = reverse_inventory_transaction(transaction_id, payload.operator_name, payload.remark, db)
-    db.flush()
-    record_operation_log(
-        db,
-        "transaction_reverse",
-        "inventory_transaction",
-        transaction_id,
-        payload.operator_name or None,
-        payload.remark or "小程序撤销产品流水",
-        after_data={"reversal_transaction_id": reversal.id},
-    )
-    db.commit()
-    db.refresh(reversal)
-    rows = _transaction_rows([reversal], "product", db)
-    if not rows:
-        raise HTTPException(status_code=400, detail="该流水不是产品库存流水")
-    return rows[0]
+def reverse_product_transaction(transaction_id: int, payload: TransactionReversePayload, db: Session = Depends(get_db)) -> dict:
+    with inventory_write_lock():
+        operation_type = "product_transaction_reverse"
+        request_payload = {
+            "transaction_id": transaction_id,
+            **payload.model_dump(mode="json", exclude={"client_request_id"}),
+        }
+        replayed = replayed_mobile_response(
+            db, operation_type, payload.client_request_id, request_payload
+        )
+        if replayed is not None:
+            return replayed
+        reversal = reverse_inventory_transaction(
+            transaction_id, payload.operator_name, payload.remark, db
+        )
+        db.flush()
+        record_operation_log(
+            db,
+            "transaction_reverse",
+            "inventory_transaction",
+            transaction_id,
+            payload.operator_name or None,
+            payload.remark or "小程序撤销产品流水",
+            after_data={"reversal_transaction_id": reversal.id},
+        )
+        rows = _transaction_rows([reversal], "product", db)
+        if not rows:
+            raise HTTPException(status_code=400, detail="该流水不是产品库存流水")
+        response_data = rows[0].model_dump(mode="json")
+        remember_mobile_response(
+            db,
+            operation_type,
+            payload.client_request_id,
+            request_payload,
+            response_data,
+        )
+        db.commit()
+        return response_data
 
 
 @router.get("/scraps/pending", response_model=list[InventoryItemOut])
@@ -676,8 +723,18 @@ def pending_scraps(db: Session = Depends(get_db)) -> list[MaterialInventory]:
 
 
 @router.post("/scraps/{inventory_id}/confirm", response_model=InventoryItemOut)
-def confirm_scrap(inventory_id: int, payload: ScrapConfirmPayload, db: Session = Depends(get_db)) -> MaterialInventory:
+def confirm_scrap(inventory_id: int, payload: ScrapConfirmPayload, db: Session = Depends(get_db)) -> dict:
     with inventory_write_lock():
+        operation_type = "scrap_confirm"
+        request_payload = {
+            "inventory_id": inventory_id,
+            **payload.model_dump(mode="json", exclude={"client_request_id"}),
+        }
+        replayed = replayed_mobile_response(
+            db, operation_type, payload.client_request_id, request_payload
+        )
+        if replayed is not None:
+            return replayed
         item = db.get(MaterialInventory, inventory_id)
         if not item:
             raise HTTPException(status_code=404, detail="余料不存在")
@@ -706,9 +763,16 @@ def confirm_scrap(inventory_id: int, payload: ScrapConfirmPayload, db: Session =
             before_data={"quantity": before_quantity},
             after_data=inventory_snapshot(item),
         )
+        response_data = InventoryItemOut.model_validate(item).model_dump(mode="json")
+        remember_mobile_response(
+            db,
+            operation_type,
+            payload.client_request_id,
+            request_payload,
+            response_data,
+        )
         db.commit()
-        db.refresh(item)
-        return item
+        return response_data
 
 
 @router.get("/scraps", response_model=list[ScrapInventoryGroupOut])
@@ -737,10 +801,20 @@ def scraps(material: str = "", thickness: str = "", required_diameter: str = "",
 @router.post("/scraps/outbound")
 def scrap_outbound(payload: ScrapOutboundPayload, db: Session = Depends(get_db)) -> dict[str, int | str]:
     with inventory_write_lock():
+        operation_type = "scrap_outbound"
+        request_payload = payload.model_dump(mode="json", exclude={"client_request_id"})
+        replayed = replayed_mobile_response(
+            db, operation_type, payload.client_request_id, request_payload
+        )
+        if replayed is not None:
+            return replayed
         idempotency_key = _idempotency_key("mobile_scrap_outbound", payload.client_request_id)
         existing_record = db.query(InventoryTransactionRecord).filter(InventoryTransactionRecord.idempotency_key == idempotency_key).first() if idempotency_key else None
         if existing_record:
-            return {"message": "余料出库成功", "before_quantity": existing_record.before_quantity, "after_quantity": existing_record.after_quantity}
+            response_data = {"message": "余料出库成功", "before_quantity": existing_record.before_quantity, "after_quantity": existing_record.after_quantity}
+            remember_mobile_response(db, operation_type, payload.client_request_id, request_payload, response_data)
+            db.commit()
+            return response_data
         if payload.quantity <= 0:
             raise HTTPException(status_code=400, detail="出库数量必须大于0")
         parts = payload.scrap_group_key.split("||")
@@ -775,8 +849,10 @@ def scrap_outbound(payload: ScrapOutboundPayload, db: Session = Depends(get_db))
             before_data={"quantity": before_quantity, "scrap_group_key": payload.scrap_group_key},
             after_data={"quantity": before_quantity - payload.quantity},
         )
+        response_data = {"message": "余料出库成功", "before_quantity": before_quantity, "after_quantity": before_quantity - payload.quantity}
+        remember_mobile_response(db, operation_type, payload.client_request_id, request_payload, response_data)
         db.commit()
-        return {"message": "余料出库成功", "before_quantity": before_quantity, "after_quantity": before_quantity - payload.quantity}
+        return response_data
 
 
 @router.get("/scraps/transactions", response_model=list[TransactionOut])
@@ -786,21 +862,41 @@ def scrap_transactions(db: Session = Depends(get_db)) -> list[TransactionOut]:
 
 
 @router.post("/scraps/transactions/{transaction_id}/reverse", response_model=TransactionOut)
-def reverse_scrap_transaction(transaction_id: int, payload: TransactionReversePayload, db: Session = Depends(get_db)) -> TransactionOut:
-    reversal = reverse_inventory_transaction(transaction_id, payload.operator_name, payload.remark, db)
-    db.flush()
-    record_operation_log(
-        db,
-        "transaction_reverse",
-        "inventory_transaction",
-        transaction_id,
-        payload.operator_name or None,
-        payload.remark or "小程序撤销余料流水",
-        after_data={"reversal_transaction_id": reversal.id},
-    )
-    db.commit()
-    db.refresh(reversal)
-    rows = _transaction_rows([reversal], "scrap", db)
-    if not rows:
-        raise HTTPException(status_code=400, detail="该流水不是余料库存流水")
-    return rows[0]
+def reverse_scrap_transaction(transaction_id: int, payload: TransactionReversePayload, db: Session = Depends(get_db)) -> dict:
+    with inventory_write_lock():
+        operation_type = "scrap_transaction_reverse"
+        request_payload = {
+            "transaction_id": transaction_id,
+            **payload.model_dump(mode="json", exclude={"client_request_id"}),
+        }
+        replayed = replayed_mobile_response(
+            db, operation_type, payload.client_request_id, request_payload
+        )
+        if replayed is not None:
+            return replayed
+        reversal = reverse_inventory_transaction(
+            transaction_id, payload.operator_name, payload.remark, db
+        )
+        db.flush()
+        record_operation_log(
+            db,
+            "transaction_reverse",
+            "inventory_transaction",
+            transaction_id,
+            payload.operator_name or None,
+            payload.remark or "小程序撤销余料流水",
+            after_data={"reversal_transaction_id": reversal.id},
+        )
+        rows = _transaction_rows([reversal], "scrap", db)
+        if not rows:
+            raise HTTPException(status_code=400, detail="该流水不是余料库存流水")
+        response_data = rows[0].model_dump(mode="json")
+        remember_mobile_response(
+            db,
+            operation_type,
+            payload.client_request_id,
+            request_payload,
+            response_data,
+        )
+        db.commit()
+        return response_data

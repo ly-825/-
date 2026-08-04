@@ -16,6 +16,7 @@ TIMESTAMP_COLUMNS = {
     "paper_inventory_transactions": ("created_at",),
     "product_drawings": ("created_at", "updated_at"),
     "scrap_generation_records": ("registered_at",),
+    "mobile_request_records": ("created_at",),
     "operation_logs": ("created_at",),
 }
 
@@ -238,6 +239,22 @@ def ensure_runtime_schema(engine: Engine) -> None:
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_transactions_inventory_id ON paper_inventory_transactions (inventory_id)"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_transactions_transaction_type ON paper_inventory_transactions (transaction_type)"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_paper_inventory_transactions_reversed_transaction_id ON paper_inventory_transactions (reversed_transaction_id)"))
+        if "mobile_request_records" not in tables:
+            connection.execute(text("""
+                CREATE TABLE mobile_request_records (
+                    id INTEGER PRIMARY KEY,
+                    operation_type VARCHAR(80) NOT NULL,
+                    client_request_id VARCHAR(100) NOT NULL,
+                    request_fingerprint VARCHAR(64) NOT NULL,
+                    response_json JSON NOT NULL,
+                    created_at DATETIME,
+                    CONSTRAINT uq_mobile_request_operation_client
+                        UNIQUE (operation_type, client_request_id)
+                )
+            """))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_mobile_request_records_operation_type ON mobile_request_records (operation_type)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_mobile_request_records_client_request_id ON mobile_request_records (client_request_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_mobile_request_records_created_at ON mobile_request_records (created_at)"))
         if engine.dialect.name == "sqlite" and not migration_applied(connection, CHINA_TIME_MIGRATION):
             shift_existing_utc_timestamps_to_china_time(connection, tables, table_columns)
             mark_migration_applied(connection, CHINA_TIME_MIGRATION)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -182,6 +182,24 @@ class ScrapGenerationRecord(Base):
     actual_size: Mapped[str | None] = mapped_column(String(255), nullable=True)
     operator_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     registered_at: Mapped[datetime] = mapped_column(DateTime, default=china_now)
+
+
+class MobileRequestRecord(Base):
+    __tablename__ = "mobile_request_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "operation_type",
+            "client_request_id",
+            name="uq_mobile_request_operation_client",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    operation_type: Mapped[str] = mapped_column(String(80), index=True)
+    client_request_id: Mapped[str] = mapped_column(String(100), index=True)
+    request_fingerprint: Mapped[str] = mapped_column(String(64))
+    response_json: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=china_now, index=True)
 
 
 class OperationLog(Base):
