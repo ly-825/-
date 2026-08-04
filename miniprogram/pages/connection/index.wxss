@@ -1,0 +1,14 @@
+.connection-page {
+  padding-top: 72rpx;
+}
+
+.page-heading {
+  margin-bottom: 48rpx;
+}
+
+.help-card {
+  display: grid;
+  gap: 16rpx;
+  color: #475569;
+  font-size: 26rpx;
+}

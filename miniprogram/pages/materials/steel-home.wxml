@@ -1,0 +1,5 @@
+<view class="container">
+  <connection-status state="connected" base-url="{{baseUrl}}" bind:configure="configure" />
+  <view class="page-heading"><view class="page-title">钢板材料</view></view>
+  <view class="card phase-card"><view class="section-title">钢板材料管理</view><view class="meta">第三阶段开放钢板材料完整功能</view></view>
+</view>

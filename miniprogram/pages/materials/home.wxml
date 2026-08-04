@@ -1,0 +1,23 @@
+<view class="container">
+  <connection-status state="{{error ? 'error' : 'connected'}}" base-url="{{baseUrl}}" bind:retry="load" bind:configure="configure" />
+  <view class="page-heading">
+    <view class="page-title">材料</view>
+    <view class="page-subtitle">钢板、余料和纸材统一入口</view>
+  </view>
+  <state-view wx:if="{{loading}}" state="loading" title="正在读取材料概览" />
+  <state-view wx:elif="{{error}}" state="error" title="材料概览加载失败" description="{{error}}" bind:retry="load" />
+  <view wx:else class="module-list">
+    <view class="card module-card" bindtap="go" data-url="/pages/materials/steel-home">
+      <view><view class="module-name">钢板</view><view class="meta">规格、入库、出库、库存和流水</view></view>
+      <view class="arrow">›</view>
+    </view>
+    <view class="card module-card" bindtap="go" data-url="/pages/scraps/home">
+      <view><view class="module-name">余料</view><view class="warning-text">{{pendingScrapCount}} 条待确认</view></view>
+      <view class="arrow">›</view>
+    </view>
+    <view class="card module-card" bindtap="go" data-url="/pages/materials/paper-home">
+      <view><view class="module-name">纸材</view><view class="meta">纸圈和纸张统一管理</view></view>
+      <view class="arrow">›</view>
+    </view>
+  </view>
+</view>

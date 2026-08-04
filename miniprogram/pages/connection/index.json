@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "连接系统",
+  "usingComponents": {
+    "state-view": "/components/state-view/index"
+  }
+}

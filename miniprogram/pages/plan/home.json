@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "计划查料",
+  "usingComponents": {
+    "connection-status": "/components/connection-status/index"
+  }
+}

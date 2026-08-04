@@ -1,16 +1,16 @@
 {
   "pages": [
-    "pages/index/index",
-    "pages/drawings/home",
-    "pages/inventory/home",
-    "pages/scraps/home",
-    "pages/drawings/upload",
-    "pages/drawings/list",
-    "pages/drawings/detail",
+    "pages/connection/index",
+    "pages/plan/home",
+    "pages/materials/home",
+    "pages/products/home",
+    "pages/materials/steel-home",
+    "pages/materials/paper-home",
     "pages/inventory/list",
     "pages/inventory/inbound",
     "pages/inventory/outbound",
     "pages/inventory/transactions",
+    "pages/scraps/home",
     "pages/scraps/pending",
     "pages/scraps/list",
     "pages/scraps/outbound",
@@ -18,39 +18,33 @@
   ],
   "window": {
     "navigationBarTitleText": "杭州特耐时",
-    "navigationBarBackgroundColor": "#0f1f46",
+    "navigationBarBackgroundColor": "#334155",
     "navigationBarTextStyle": "white",
-    "backgroundColor": "#f5f7fb"
+    "backgroundColor": "#F8FAFC"
   },
   "tabBar": {
-    "color": "#667085",
-    "selectedColor": "#1d4ed8",
-    "backgroundColor": "#ffffff",
+    "color": "#64748B",
+    "selectedColor": "#334155",
+    "backgroundColor": "#FFFFFF",
     "borderStyle": "black",
     "list": [
       {
-        "pagePath": "pages/index/index",
-        "text": "工作台",
-        "iconPath": "assets/tabbar/workbench.png",
-        "selectedIconPath": "assets/tabbar/workbench-active.png"
+        "pagePath": "pages/plan/home",
+        "text": "计划",
+        "iconPath": "assets/tabbar/plan.png",
+        "selectedIconPath": "assets/tabbar/plan-active.png"
       },
       {
-        "pagePath": "pages/drawings/home",
-        "text": "图纸",
-        "iconPath": "assets/tabbar/drawings.png",
-        "selectedIconPath": "assets/tabbar/drawings-active.png"
+        "pagePath": "pages/materials/home",
+        "text": "材料",
+        "iconPath": "assets/tabbar/materials.png",
+        "selectedIconPath": "assets/tabbar/materials-active.png"
       },
       {
-        "pagePath": "pages/inventory/home",
-        "text": "库存",
-        "iconPath": "assets/tabbar/inventory.png",
-        "selectedIconPath": "assets/tabbar/inventory-active.png"
-      },
-      {
-        "pagePath": "pages/scraps/home",
-        "text": "余料",
-        "iconPath": "assets/tabbar/scraps.png",
-        "selectedIconPath": "assets/tabbar/scraps-active.png"
+        "pagePath": "pages/products/home",
+        "text": "成品",
+        "iconPath": "assets/tabbar/products.png",
+        "selectedIconPath": "assets/tabbar/products-active.png"
       }
     ]
   },

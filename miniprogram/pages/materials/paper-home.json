@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "纸材材料",
+  "usingComponents": {
+    "connection-status": "/components/connection-status/index"
+  }
+}

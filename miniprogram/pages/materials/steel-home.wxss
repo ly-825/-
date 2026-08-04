@@ -1,0 +1,3 @@
+.phase-card {
+  min-height: 180rpx;
+}

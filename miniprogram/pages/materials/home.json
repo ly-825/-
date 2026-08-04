@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "材料",
+  "usingComponents": {
+    "connection-status": "/components/connection-status/index",
+    "state-view": "/components/state-view/index"
+  }
+}

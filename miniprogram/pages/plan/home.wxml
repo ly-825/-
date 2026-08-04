@@ -1,0 +1,11 @@
+<view class="container">
+  <connection-status state="connected" base-url="{{baseUrl}}" bind:configure="configure" />
+  <view class="page-heading">
+    <view class="page-title">计划查料</view>
+    <view class="page-subtitle">按计划检查成品、余料和钢板库存</view>
+  </view>
+  <view class="card phase-card">
+    <view class="section-title">计划匹配</view>
+    <view class="meta">第二阶段开放计划筛选与库存匹配</view>
+  </view>
+</view>
