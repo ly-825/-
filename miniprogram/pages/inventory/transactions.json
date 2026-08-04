@@ -1,1 +1,6 @@
-{"navigationBarTitleText":"库存流水"}
+{
+  "navigationBarTitleText": "库存流水",
+  "usingComponents": {
+    "confirm-sheet": "/components/confirm-sheet/index"
+  }
+}

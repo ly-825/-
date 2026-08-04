@@ -1,1 +1,6 @@
-{"navigationBarTitleText":"余料流水"}
+{
+  "navigationBarTitleText": "余料流水",
+  "usingComponents": {
+    "confirm-sheet": "/components/confirm-sheet/index"
+  }
+}

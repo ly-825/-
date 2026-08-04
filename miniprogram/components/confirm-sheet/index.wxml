@@ -1,4 +1,4 @@
-<view class="sheet-mask" wx:if="{{open}}" catchtouchmove="true">
+<view class="sheet-mask" wx:if="{{open}}" catchtouchmove="blockTouchMove">
   <view class="sheet" role="dialog" aria-label="{{title}}">
     <view class="sheet-title">{{title || '确认操作'}}</view>
     <view class="sheet-line" wx:for="{{lines}}" wx:key="label">

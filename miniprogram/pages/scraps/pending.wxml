@@ -18,7 +18,16 @@
       <input class="input" type="digit" placeholder="实际直径" value="{{item.actual_diameter}}" data-index="{{index}}" data-field="actual_diameter" bindinput="onInput" />
       <input class="input" placeholder="库位" value="{{item.confirm_location}}" data-index="{{index}}" data-field="confirm_location" bindinput="onInput" />
       <input class="input" placeholder="确认人" value="{{item.operator_name}}" data-index="{{index}}" data-field="operator_name" bindinput="onInput" />
-      <button class="btn secondary" bindtap="confirm" data-index="{{index}}">确认入库</button>
+      <button class="btn secondary" bindtap="confirm" data-index="{{index}}" loading="{{item.confirming}}" disabled="{{item.confirming || submitting}}">确认入库</button>
     </view>
   </view>
+
+  <confirm-sheet
+    open="{{confirmOpen}}"
+    title="核对余料入库"
+    lines="{{confirmLines}}"
+    submitting="{{submitting}}"
+    bindcancel="cancelConfirm"
+    bindconfirm="confirmSubmit"
+  />
 </view>

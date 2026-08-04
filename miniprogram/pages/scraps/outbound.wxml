@@ -22,7 +22,7 @@
     <input class="input" type="number" placeholder="出库数量" value="{{form.quantity}}" data-field="quantity" bindinput="onInput" />
     <input class="input" placeholder="操作人" value="{{form.operator_name}}" data-field="operator_name" bindinput="onInput" />
     <input class="input" placeholder="备注" value="{{form.remark}}" data-field="remark" bindinput="onInput" />
-    <button class="btn" bindtap="submit">确认出库</button>
+    <button class="btn" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">确认出库</button>
   </view>
 
   <view class="card">
@@ -36,4 +36,13 @@
       <view class="meta">厚度 {{item.thickness}}｜库位 {{item.location}}</view>
     </view>
   </view>
+
+  <confirm-sheet
+    open="{{confirmOpen}}"
+    title="核对余料出库"
+    lines="{{confirmLines}}"
+    submitting="{{submitting}}"
+    bindcancel="cancelConfirm"
+    bindconfirm="confirmSubmit"
+  />
 </view>

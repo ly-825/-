@@ -1,1 +1,6 @@
-{"navigationBarTitleText":"产品出库"}
+{
+  "navigationBarTitleText": "产品出库",
+  "usingComponents": {
+    "confirm-sheet": "/components/confirm-sheet/index"
+  }
+}

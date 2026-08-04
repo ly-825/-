@@ -29,4 +29,13 @@
     <input class="input" placeholder="备注" value="{{form.remark}}" data-field="remark" bindinput="onInput" />
     <button class="btn" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">确认出库</button>
   </view>
+
+  <confirm-sheet
+    open="{{confirmOpen}}"
+    title="核对产品出库"
+    lines="{{confirmLines}}"
+    submitting="{{submitting}}"
+    bindcancel="cancelConfirm"
+    bindconfirm="confirmSubmit"
+  />
 </view>

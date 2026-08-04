@@ -1,1 +1,6 @@
-{"navigationBarTitleText":"待入库余料"}
+{
+  "navigationBarTitleText": "待入库余料",
+  "usingComponents": {
+    "confirm-sheet": "/components/confirm-sheet/index"
+  }
+}

@@ -1,7 +1,28 @@
 const api = require('../../utils/api')
+const { createPendingRequestTracker } = require('../../utils/request-id')
+const { retryPendingWrite } = require('../../utils/pending-write')
+
+const requestTrackers = new Map()
+
+function trackerFor(inventoryId) {
+  if (!requestTrackers.has(inventoryId)) {
+    requestTrackers.set(
+      inventoryId,
+      createPendingRequestTracker(`scrap-confirm-${inventoryId}`)
+    )
+  }
+  return requestTrackers.get(inventoryId)
+}
 
 Page({
-  data: { items: [], loading: false },
+  data: {
+    items: [],
+    loading: false,
+    submitting: false,
+    confirmOpen: false,
+    confirmLines: [],
+    confirmingIndex: null
+  },
   onShow() { this.load() },
   async load() {
     if (this.data.loading) return
@@ -27,19 +48,57 @@ Page({
   onInput(event) {
     this.setData({ [`items[${event.currentTarget.dataset.index}].${event.currentTarget.dataset.field}`]: event.detail.value })
   },
-  async confirm(event) {
+  confirm(event) {
     const index = event.currentTarget.dataset.index
     const item = this.data.items[index]
-    if (item.confirming) return
-    this.setData({ [`items[${index}].confirming`]: true })
+    if (!item || item.confirming || this.data.submitting) return
+    if (!String(item.confirm_location || '').trim()) {
+      wx.showToast({ title: '请填写库位', icon: 'none' })
+      return
+    }
+    this.setData({
+      confirmOpen: true,
+      confirmingIndex: index,
+      confirmLines: [
+        { label: '来源产品', value: item.source_product_code_text },
+        { label: '材质/厚度', value: `${item.material} / ${item.thickness}` },
+        { label: '实际数量', value: String(item.actual_quantity) },
+        { label: '实际直径', value: item.actual_diameter === '' ? '沿用理论值' : String(item.actual_diameter) },
+        { label: '库位', value: item.confirm_location },
+        { label: '确认人', value: item.operator_name || '未填写' }
+      ]
+    })
+  },
+  cancelConfirm() {
+    if (!this.data.submitting) this.setData({ confirmOpen: false, confirmingIndex: null })
+  },
+  async confirmSubmit() {
+    const index = this.data.confirmingIndex
+    const item = this.data.items[index]
+    if (!item || this.data.submitting) return
+    this.setData({ submitting: true, [`items[${index}].confirming`]: true })
+    const requestTracker = trackerFor(item.id)
     try {
-      await api.confirmScrap(item.id, { actual_quantity: Number(item.actual_quantity), actual_diameter: item.actual_diameter === '' ? null : Number(item.actual_diameter), location: item.confirm_location, operator_name: item.operator_name })
+      const payload = await retryPendingWrite(requestTracker, {
+        actual_quantity: Number(item.actual_quantity),
+        actual_diameter: item.actual_diameter === '' ? null : Number(item.actual_diameter),
+        location: item.confirm_location,
+        operator_name: item.operator_name
+      }, '余料确认入库')
+      if (!payload) {
+        this.setData({ confirmOpen: false, confirmingIndex: null })
+        return
+      }
+      await api.confirmScrap(item.id, payload)
+      requestTracker.complete()
+      requestTrackers.delete(item.id)
+      this.setData({ confirmOpen: false, confirmingIndex: null })
       wx.showToast({ title: '已入库', icon: 'success' })
       this.load()
     } catch (error) {
       wx.showToast({ title: error.message || '确认失败', icon: 'none' })
     } finally {
-      this.setData({ [`items[${index}].confirming`]: false })
+      this.setData({ submitting: false, [`items[${index}].confirming`]: false })
     }
   }
 })

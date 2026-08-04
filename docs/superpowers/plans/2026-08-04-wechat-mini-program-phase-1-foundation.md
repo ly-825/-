@@ -8,6 +8,20 @@
 
 **Tech Stack:** Python 3.11+, FastAPI 0.115.6, SQLAlchemy 2.0.36, SQLite, qrcode 8.0, native WeChat Mini Program (WXML/WXSS/JavaScript), Node.js built-in test runner, unittest/pytest.
 
+## Execution status (2026-08-04)
+
+| Task | Status | Evidence |
+|---|---|---|
+| 1. Backend connection QR | Complete | Service, admin page, health metadata, and focused tests implemented. |
+| 2. Durable backend idempotency | Complete | All six current product/scrap write routes replay identical requests and reject changed payloads with 409. |
+| 3. Mini-program connection lifecycle | Complete | QR/manual setup, persisted LAN URL, timeout and recovery states implemented. |
+| 4. Shared mobile UI | Complete | Approved tokens and the connection, state, and confirmation components implemented. |
+| 5. Three-tab shell | Complete | `计划 / 材料 / 成品`, local icons, and connection gate implemented. |
+| 6. Verification and setup | In progress | Automated suite, import, repeatable migration, docs, JSON and JS checks pass. WeChat Developer Tools visual screenshots remain blocked until the tool is logged in. |
+| Push | Pending | Phase 1 remains on `codex/miniprogram-phase1` until visual acceptance is complete. |
+
+The detailed checkboxes below preserve the original TDD execution recipe. The table above is the authoritative current progress record.
+
 ## Global Constraints
 
 - Phones and the backend computer must be on the same factory Wi-Fi; phase 1 does not add a cloud server or public access.
@@ -37,14 +51,14 @@
 ### Mini program
 
 - `miniprogram/utils/connection.js`: pure URL/QR validation plus storage and QR scanning adapters.
-- `miniprogram/utils/request-id.js`: UUID-like request IDs with a deterministic test seam.
-- `miniprogram/utils/api.js`: configurable base URL, timeout, typed connection errors, and automatic request IDs for writes.
+- `miniprogram/utils/request-id.js`: UUID-like request IDs plus persisted pending-write tracking with deterministic test seams.
+- `miniprogram/utils/api.js`: configurable base URL, timeout, typed connection errors, and enforcement that tracked writes already carry a request ID.
 - `miniprogram/app.js`: load stored connection at launch; remove the hard-coded IP and unused token.
 - `miniprogram/app.json`: register the connection gate and three tab pages; keep old business files on disk but hide old drawing navigation.
 - `miniprogram/app.wxss`: implement the approved industrial flat design tokens and shared states.
 - `miniprogram/components/connection-status/*`: compact connected/failed status bar.
 - `miniprogram/components/state-view/*`: loading, empty, filtered-empty, and error state.
-- `miniprogram/components/confirm-sheet/*`: field-by-field confirmation sheet for later write pages.
+- `miniprogram/components/confirm-sheet/*`: field-by-field confirmation sheet used by every current product and scrap write page.
 - `miniprogram/pages/connection/index.js`, `index.json`, `index.wxml`, `index.wxss`: startup connection check, QR scan, and manual setup.
 - `miniprogram/pages/plan/home.js`, `home.json`, `home.wxml`, `home.wxss`: plan tab shell.
 - `miniprogram/pages/materials/home.js`, `home.json`, `home.wxml`, `home.wxss`: steel/scrap/paper entry shell.
@@ -1686,13 +1700,13 @@ git commit -m "feat: add mini program three-tab shell"
 - Consumes: all phase 1 backend and mini-program interfaces.
 - Produces: a repeatable startup and recovery procedure for the customer computer and phone.
 
-- [ ] **Step 1: Add exact factory startup and connection instructions**
+- [x] **Step 1: Add exact factory startup and connection instructions**
 
 Add a `微信小程序（厂内 Wi-Fi）` section to `README.md` containing these commands and actions:
 
 ```bash
 cd /Users/luck/Desktop/杭州特耐时/backend
-.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 Document this user flow:
@@ -1705,7 +1719,7 @@ Document this user flow:
 
 Also document that WeChat Developer Tools keeps `不校验合法域名` enabled for this LAN-only development phase and that a real-device build must permit local network access.
 
-- [ ] **Step 2: Run focused backend tests**
+- [x] **Step 2: Run focused backend tests**
 
 Run:
 
@@ -1715,7 +1729,7 @@ Run:
 
 Expected: all phase 1 backend/static tests pass with zero failures.
 
-- [ ] **Step 3: Run pure mini-program utility tests**
+- [x] **Step 3: Run pure mini-program utility tests**
 
 Run:
 
@@ -1723,9 +1737,9 @@ Run:
 node --test tests/miniprogram_connection.test.js
 ```
 
-Expected: all four subtests pass with zero failures.
+Expected: all connection and persistent request-ID subtests pass with zero failures.
 
-- [ ] **Step 4: Run the complete existing Python regression suite**
+- [x] **Step 4: Run the complete existing Python regression suite**
 
 Run:
 
@@ -1735,7 +1749,7 @@ Run:
 
 Expected: all tests pass; no existing desktop steel, paper, scrap, product, drawing, export, or sorting regression fails.
 
-- [ ] **Step 5: Verify import, schema startup, and working tree**
+- [x] **Step 5: Verify import, schema startup, and working tree**
 
 Run:
 
@@ -1761,7 +1775,7 @@ Use these exact viewport checks:
 
 Capture one screenshot for the connection page and one screenshot for each of the three top-level tabs for review.
 
-- [ ] **Step 7: Commit documentation and any acceptance-only corrections**
+- [x] **Step 7: Commit documentation and review corrections**
 
 ```bash
 git add README.md docs/superpowers/plans/2026-08-04-wechat-mini-program-phase-1-foundation.md

@@ -65,6 +65,50 @@ class MiniProgramFoundationTest(unittest.TestCase):
         self.assertIn("手工设置地址", view)
         self.assertIn("连接工厂 Wi-Fi", view)
 
+    def test_every_current_inventory_write_uses_confirmation_sheet(self) -> None:
+        pages = (
+            "miniprogram/pages/inventory/inbound",
+            "miniprogram/pages/inventory/outbound",
+            "miniprogram/pages/inventory/transactions",
+            "miniprogram/pages/scraps/pending",
+            "miniprogram/pages/scraps/outbound",
+            "miniprogram/pages/scraps/transactions",
+        )
+        for page in pages:
+            with self.subTest(page=page):
+                config = json.loads(self.read(f"{page}.json"))
+                view = self.read(f"{page}.wxml")
+                source = self.read(f"{page}.js")
+                self.assertEqual(
+                    config.get("usingComponents", {}).get("confirm-sheet"),
+                    "/components/confirm-sheet/index",
+                )
+                self.assertIn("<confirm-sheet", view)
+                self.assertIn("confirmOpen", source)
+                self.assertIn("confirmSubmit", source)
+
+    def test_every_current_inventory_write_uses_persistent_request_tracker(
+        self,
+    ) -> None:
+        pages = (
+            "miniprogram/pages/inventory/inbound.js",
+            "miniprogram/pages/inventory/outbound.js",
+            "miniprogram/pages/inventory/transactions.js",
+            "miniprogram/pages/scraps/pending.js",
+            "miniprogram/pages/scraps/outbound.js",
+            "miniprogram/pages/scraps/transactions.js",
+        )
+        for page in pages:
+            with self.subTest(page=page):
+                source = self.read(page)
+                self.assertIn("createPendingRequestTracker", source)
+                self.assertIn("retryPendingWrite", source)
+                self.assertIn(".complete()", source)
+
+        api_source = self.read("miniprogram/utils/api.js")
+        self.assertNotIn("createRequestId", api_source)
+        self.assertIn("trackedWriteData", api_source)
+
     def test_tabbar_assets_exist_and_are_small_png_files(self) -> None:
         for name in ("plan", "materials", "products"):
             for suffix in ("", "-active"):

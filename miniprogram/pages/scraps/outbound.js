@@ -1,7 +1,11 @@
 const api = require('../../utils/api')
+const { createPendingRequestTracker } = require('../../utils/request-id')
+const { retryPendingWrite } = require('../../utils/pending-write')
+
+const requestTracker = createPendingRequestTracker('scrap-outbound')
 
 Page({
-  data: { filters: { material: '', thickness: '', required_diameter: '', location: '' }, items: [], selectedLabel: '选择余料规格', loading: false, submitting: false, form: { scrap_group_key: '', quantity: 1, operator_name: '', remark: '' } },
+  data: { filters: { material: '', thickness: '', required_diameter: '', location: '' }, items: [], selectedLabel: '选择余料规格', loading: false, submitting: false, confirmOpen: false, confirmLines: [], form: { scrap_group_key: '', quantity: 1, operator_name: '', remark: '' } },
   onShow() { this.load() },
   onFilter(event) { this.setData({ [`filters.${event.currentTarget.dataset.field}`]: event.detail.value }) },
   onInput(event) { this.setData({ [`form.${event.currentTarget.dataset.field}`]: event.detail.value }) },
@@ -24,18 +28,42 @@ Page({
     const item = this.data.items[Number(event.detail.value)]
     this.setData({ 'form.scrap_group_key': item.group_key, selectedLabel: item.label })
   },
-  async submit() {
+  submit() {
     if (this.data.submitting) return
     if (!this.data.form.scrap_group_key) {
       wx.showToast({ title: '请选择余料规格', icon: 'none' })
       return
     }
+    this.setData({
+      confirmOpen: true,
+      confirmLines: [
+        { label: '余料规格', value: this.data.selectedLabel },
+        { label: '数量', value: String(this.data.form.quantity) },
+        { label: '操作人', value: this.data.form.operator_name || '未填写' },
+        { label: '备注', value: this.data.form.remark || '未填写' }
+      ]
+    })
+  },
+  cancelConfirm() {
+    if (!this.data.submitting) this.setData({ confirmOpen: false })
+  },
+  async confirmSubmit() {
+    if (this.data.submitting) return
     this.setData({ submitting: true })
     try {
-      const clientRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-      await api.scrapOutbound({ ...this.data.form, quantity: Number(this.data.form.quantity), client_request_id: clientRequestId })
+      const payload = await retryPendingWrite(requestTracker, {
+        ...this.data.form,
+        quantity: Number(this.data.form.quantity)
+      }, '余料出库')
+      if (!payload) {
+        this.setData({ confirmOpen: false })
+        return
+      }
+      await api.scrapOutbound(payload)
+      requestTracker.complete()
+      this.setData({ confirmOpen: false })
       wx.showToast({ title: '出库成功', icon: 'success' })
-      this.load()
+      await this.load()
     } catch (error) {
       wx.showToast({ title: error.message || '出库失败', icon: 'none' })
     } finally {

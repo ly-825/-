@@ -82,6 +82,7 @@ DASHSCOPE_API_KEY=你的APIKey
 ### 4. 启动服务
 
 ```bash
+cd /Users/luck/Desktop/杭州特耐时/backend
 .venv/bin/python -m uvicorn app.main:app --reload
 ```
 
@@ -97,10 +98,11 @@ http://127.0.0.1:8000/docs
 http://127.0.0.1:8000/admin
 ```
 
-如果要用真手机在同一 Wi-Fi 下测试小程序，需要让后端监听局域网：
+工厂电脑要持续提供手机访问时，使用下面的固定启动命令。它会监听局域网，不启用开发用的自动重载：
 
 ```bash
-.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+cd /Users/luck/Desktop/杭州特耐时/backend
+.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## 微信小程序（厂内 Wi-Fi）
@@ -129,7 +131,7 @@ miniprogram/
 成品
 ```
 
-第一阶段已经完成连接配置和三个模块框架；现有成品、余料功能继续作为二级页面使用。计划匹配、钢板、纸材和成品分析按后续阶段逐项接入，小程序不显示图纸、操作日志、助手或 Excel 导出入口。
+第一阶段已经完成连接配置和三个模块框架；现有成品、余料功能继续作为二级页面使用。当前六类库存写操作均会先逐项核对，并在网络响应不确定时复用同一个请求编号，防止重复入库、出库或撤销。计划匹配、钢板、纸材和成品分析按后续阶段逐项接入，小程序不显示图纸、操作日志、助手或 Excel 导出入口。
 
 二维码只包含版本号和局域网连接地址，不包含数据库、业务数据、密码或令牌。工厂路由器或后台电脑 IP 变化后，在电脑后台重新生成二维码并让手机重新扫描；不要修改 `miniprogram/app.js`。
 

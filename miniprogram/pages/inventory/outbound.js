@@ -1,4 +1,8 @@
 const api = require('../../utils/api')
+const { createPendingRequestTracker } = require('../../utils/request-id')
+const { retryPendingWrite } = require('../../utils/pending-write')
+
+const requestTracker = createPendingRequestTracker('product-outbound')
 
 Page({
   data: {
@@ -9,6 +13,8 @@ Page({
     selectedLabel: '尚未选择产品',
     loading: false,
     submitting: false,
+    confirmOpen: false,
+    confirmLines: [],
     form: { drawing_id: null, quantity: 1, location: '', operator_name: '', remark: '' }
   },
 
@@ -76,16 +82,43 @@ Page({
     this.setData({ [`form.${event.currentTarget.dataset.field}`]: event.detail.value })
   },
 
-  async submit() {
+  submit() {
     if (this.data.submitting) return
     if (!this.data.form.drawing_id) {
       wx.showToast({ title: '请选择产品', icon: 'none' })
       return
     }
+    this.setData({
+      confirmOpen: true,
+      confirmLines: [
+        { label: '产品', value: this.data.selectedLabel },
+        { label: '数量', value: String(this.data.form.quantity) },
+        { label: '库位', value: this.data.form.location || '全部库位（FIFO）' },
+        { label: '操作人', value: this.data.form.operator_name || '未填写' },
+        { label: '备注', value: this.data.form.remark || '未填写' }
+      ]
+    })
+  },
+
+  cancelConfirm() {
+    if (!this.data.submitting) this.setData({ confirmOpen: false })
+  },
+
+  async confirmSubmit() {
+    if (this.data.submitting) return
     this.setData({ submitting: true })
     try {
-      const clientRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-      await api.productOutbound({ ...this.data.form, quantity: Number(this.data.form.quantity), client_request_id: clientRequestId })
+      const payload = await retryPendingWrite(requestTracker, {
+        ...this.data.form,
+        quantity: Number(this.data.form.quantity)
+      }, '产品出库')
+      if (!payload) {
+        this.setData({ confirmOpen: false })
+        return
+      }
+      await api.productOutbound(payload)
+      requestTracker.complete()
+      this.setData({ confirmOpen: false })
       wx.showToast({ title: '出库成功', icon: 'success' })
       this.load()
     } catch (error) {

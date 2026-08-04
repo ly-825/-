@@ -1,5 +1,4 @@
 const app = getApp()
-const { createRequestId } = require('./request-id')
 
 class ConnectionError extends Error {
   constructor(message, code = 'CONNECTION_FAILED') {
@@ -21,11 +20,11 @@ function baseUrl() {
   return value.replace(/\/$/, '')
 }
 
-function withRequestId(data = {}) {
-  return {
-    ...data,
-    client_request_id: data.client_request_id || createRequestId()
+function trackedWriteData(data = {}) {
+  if (!data.client_request_id) {
+    throw new Error('库存写入缺少重试编号，请返回页面重新核对')
   }
+  return data
 }
 
 function errorMessage(data, fallback) {
@@ -131,14 +130,14 @@ module.exports = {
   uploadDrawing: (filePath) => uploadFile('/api/mobile/drawings/upload', filePath),
   products: (params = {}) => request('/api/mobile/products', { data: params }),
   productBatches: (productCode) => request(`/api/mobile/products/${encodeURIComponent(productCode)}/batches`),
-  productInbound: (data) => request('/api/mobile/products/inbound', { method: 'POST', data: withRequestId(data) }),
-  productOutbound: (data) => request('/api/mobile/products/outbound', { method: 'POST', data: withRequestId(data) }),
+  productInbound: (data) => request('/api/mobile/products/inbound', { method: 'POST', data: trackedWriteData(data) }),
+  productOutbound: (data) => request('/api/mobile/products/outbound', { method: 'POST', data: trackedWriteData(data) }),
   productTransactions: () => request('/api/mobile/products/transactions'),
-  reverseProductTransaction: (id, data = {}) => request(`/api/mobile/products/transactions/${id}/reverse`, { method: 'POST', data: withRequestId(data) }),
+  reverseProductTransaction: (id, data = {}) => request(`/api/mobile/products/transactions/${id}/reverse`, { method: 'POST', data: trackedWriteData(data) }),
   pendingScraps: () => request('/api/mobile/scraps/pending'),
-  confirmScrap: (id, data) => request(`/api/mobile/scraps/${id}/confirm`, { method: 'POST', data: withRequestId(data) }),
+  confirmScrap: (id, data) => request(`/api/mobile/scraps/${id}/confirm`, { method: 'POST', data: trackedWriteData(data) }),
   scraps: (params = {}) => request('/api/mobile/scraps', { data: params }),
-  scrapOutbound: (data) => request('/api/mobile/scraps/outbound', { method: 'POST', data: withRequestId(data) }),
+  scrapOutbound: (data) => request('/api/mobile/scraps/outbound', { method: 'POST', data: trackedWriteData(data) }),
   scrapTransactions: () => request('/api/mobile/scraps/transactions'),
-  reverseScrapTransaction: (id, data = {}) => request(`/api/mobile/scraps/transactions/${id}/reverse`, { method: 'POST', data: withRequestId(data) })
+  reverseScrapTransaction: (id, data = {}) => request(`/api/mobile/scraps/transactions/${id}/reverse`, { method: 'POST', data: trackedWriteData(data) })
 }

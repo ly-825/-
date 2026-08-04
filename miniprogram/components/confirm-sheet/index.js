@@ -7,6 +7,7 @@ Component({
     submitting: { type: Boolean, value: false }
   },
   methods: {
+    blockTouchMove() {},
     cancel() {
       if (!this.data.submitting) this.triggerEvent('cancel')
     },

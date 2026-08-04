@@ -21,10 +21,20 @@
         <input class="input" placeholder="撤销原因（必填）" value="{{reverseForm.remark}}" data-field="remark" bindinput="onReverseInput" />
         <view class="row">
           <button class="btn secondary" size="mini" bindtap="hideReverseForm">取消</button>
-          <button class="btn" size="mini" bindtap="reverse" loading="{{reversingId === item.id}}">确认撤销</button>
+          <button class="btn" size="mini" bindtap="reverse" loading="{{reversingId === item.id}}" disabled="{{reversingId !== null}}">核对并撤销</button>
         </view>
       </view>
       <view wx:if="{{item.reversed_transaction_id}}" class="meta">已撤销/冲销</view>
     </view>
   </view>
+
+  <confirm-sheet
+    open="{{confirmOpen}}"
+    title="确认撤销产品流水"
+    lines="{{confirmLines}}"
+    danger="{{true}}"
+    submitting="{{reversingId !== null}}"
+    bindcancel="cancelConfirm"
+    bindconfirm="confirmSubmit"
+  />
 </view>

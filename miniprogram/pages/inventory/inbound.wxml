@@ -25,4 +25,13 @@
     <input class="input" placeholder="操作人" value="{{form.operator_name}}" data-field="operator_name" bindinput="onInput" />
     <button class="btn" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">确认入库</button>
   </view>
+
+  <confirm-sheet
+    open="{{confirmOpen}}"
+    title="核对产品入库"
+    lines="{{confirmLines}}"
+    submitting="{{submitting}}"
+    bindcancel="cancelConfirm"
+    bindconfirm="confirmSubmit"
+  />
 </view>
