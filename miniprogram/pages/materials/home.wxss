@@ -1,3 +1,3 @@
-.module-list {
-  padding-bottom: 24rpx;
+.group-list {
+  margin-top: 8rpx;
 }

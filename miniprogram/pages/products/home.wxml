@@ -1,22 +1,21 @@
 <view class="container">
-  <connection-status state="{{error ? 'error' : 'connected'}}" base-url="{{baseUrl}}" bind:retry="load" bind:configure="configure" />
-  <view class="page-heading">
-    <view class="page-title">成品</view>
-    <view class="page-subtitle">库存与出入库操作</view>
+  <view class="simple-header">
+    <view class="simple-title">成品</view>
+    <connection-status state="{{error ? 'error' : 'connected'}}" base-url="{{baseUrl}}" bind:retry="load" bind:configure="configure" />
   </view>
   <state-view wx:if="{{loading}}" state="loading" title="正在读取成品概览" />
   <state-view wx:elif="{{error}}" state="error" title="成品概览加载失败" description="{{error}}" bind:retry="load" />
   <block wx:else>
-    <view class="card stat-card">
-      <view class="stat-label">当前可用数量</view>
-      <view class="stat-value">{{quantity}}</view>
+    <view class="product-summary">
+      <view class="product-summary__label">当前可用数量</view>
+      <view class="product-summary__value numeric">{{quantity}}</view>
     </view>
-    <view class="module-list">
-      <view class="card module-card" bindtap="go" data-url="/pages/inventory/list"><view class="module-name">成品库存</view><view class="arrow">›</view></view>
-      <view class="card module-card" bindtap="go" data-url="/pages/inventory/inbound"><view class="module-name">成品入库</view><view class="arrow">›</view></view>
-      <view class="card module-card" bindtap="go" data-url="/pages/inventory/outbound"><view class="module-name">成品出库</view><view class="arrow">›</view></view>
-      <view class="card module-card" bindtap="go" data-url="/pages/inventory/transactions"><view class="module-name">成品流水</view><view class="arrow">›</view></view>
-      <view class="card module-card is-disabled"><view><view class="module-name">出入库分析</view><view class="meta">第六阶段开放</view></view></view>
+    <view class="group-list">
+      <view class="group-row" bindtap="go" data-url="/pages/inventory/list"><view class="group-row__body"><view class="group-row__title">成品库存</view><view class="group-row__meta">查询型号、数量与库位</view></view><image class="group-row__chevron" src="/assets/icons/chevron-right.svg" mode="aspectFit" /></view>
+      <view class="group-row" bindtap="go" data-url="/pages/inventory/inbound"><view class="group-row__body"><view class="group-row__title">成品入库</view><view class="group-row__meta">按已确认图纸入库</view></view><image class="group-row__chevron" src="/assets/icons/chevron-right.svg" mode="aspectFit" /></view>
+      <view class="group-row" bindtap="go" data-url="/pages/inventory/outbound"><view class="group-row__body"><view class="group-row__title">成品出库</view><view class="group-row__meta">按 FIFO 扣减库存</view></view><image class="group-row__chevron" src="/assets/icons/chevron-right.svg" mode="aspectFit" /></view>
+      <view class="group-row" bindtap="go" data-url="/pages/inventory/transactions"><view class="group-row__body"><view class="group-row__title">成品流水</view><view class="group-row__meta">查看入库、出库与撤销记录</view></view><image class="group-row__chevron" src="/assets/icons/chevron-right.svg" mode="aspectFit" /></view>
+      <view class="group-row is-disabled"><view class="group-row__body"><view class="group-row__title">出入库分析</view><view class="group-row__meta">第六阶段开放</view></view></view>
     </view>
   </block>
 </view>

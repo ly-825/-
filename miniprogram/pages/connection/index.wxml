@@ -1,38 +1,42 @@
 <view class="container connection-page">
-  <view class="page-heading">
-    <view class="page-title">连接厂内库存系统</view>
-    <view class="page-subtitle">手机与后台电脑需要连接同一个工厂 Wi-Fi</view>
+  <view class="simple-header">
+    <view class="simple-title">连接厂内库存系统</view>
+    <view class="simple-subtitle">手机与后台电脑需要连接同一个工厂 Wi-Fi</view>
   </view>
 
   <state-view wx:if="{{state === 'checking'}}" state="loading" title="正在检查连接" description="{{baseUrl}}" />
 
-  <view class="card" wx:if="{{state === 'setup' || state === 'error'}}">
+  <view class="form-section" wx:if="{{state === 'setup' || state === 'error'}}">
     <view class="error-box" wx:if="{{state === 'error'}}">
       <view class="error-title">{{errorTitle}}</view>
       <view class="error-description">{{errorDescription}}</view>
     </view>
     <block wx:if="{{state === 'error'}}">
-      <button class="btn" bindtap="retrySavedConnection">重新连接</button>
+      <button class="btn secondary" bindtap="retrySavedConnection">重新连接</button>
       <button class="btn secondary" bindtap="openManual">修改地址</button>
       <button class="text-action" bindtap="scanBaseUrl">重新扫描电脑连接二维码</button>
     </block>
     <block wx:else>
-      <button class="btn" bindtap="scanBaseUrl">扫描电脑连接二维码</button>
+      <button class="primary-action" bindtap="scanBaseUrl">扫描电脑连接二维码</button>
       <button class="btn secondary" bindtap="openManual">手工设置地址</button>
     </block>
   </view>
 
-  <view class="card" wx:if="{{manualOpen}}">
-    <view class="field-label">电脑局域网 IP</view>
-    <input class="input" value="{{ip}}" placeholder="例如 192.168.31.68" bindinput="onIp" />
-    <view class="field-label">端口</view>
-    <input class="input" type="number" value="{{port}}" bindinput="onPort" />
+  <view class="form-section" wx:if="{{manualOpen}}">
+    <view class="form-field">
+      <view class="form-label">电脑局域网 IP</view>
+      <input class="input" value="{{ip}}" placeholder="例如 192.168.31.68" bindinput="onIp" />
+    </view>
+    <view class="form-field">
+      <view class="form-label">端口</view>
+      <input class="input" type="number" value="{{port}}" bindinput="onPort" />
+    </view>
     <button class="btn" bindtap="testAndSave">测试并保存</button>
   </view>
 
-  <view class="card help-card">
-    <view>1. 连接工厂 Wi-Fi</view>
-    <view>2. 确认后台电脑已经开机并启动服务</view>
-    <view>3. 网络变化后在电脑后台重新生成二维码</view>
+  <view class="group-list help-list">
+    <view class="group-row">1. 连接工厂 Wi-Fi</view>
+    <view class="group-row">2. 确认后台电脑已经开机并启动服务</view>
+    <view class="group-row">3. 网络变化后重新扫描连接二维码</view>
   </view>
 </view>

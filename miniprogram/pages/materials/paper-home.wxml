@@ -1,5 +1,7 @@
 <view class="container">
-  <connection-status state="connected" base-url="{{baseUrl}}" bind:configure="configure" />
-  <view class="page-heading"><view class="page-title">纸材材料</view></view>
-  <view class="card phase-card"><view class="section-title">纸材材料管理</view><view class="meta">第四阶段开放纸材材料完整功能</view></view>
+  <view class="simple-header">
+    <view class="simple-title">纸材</view>
+    <connection-status state="connected" base-url="{{baseUrl}}" bind:configure="configure" />
+  </view>
+  <view class="form-section phase-note"><view class="group-row__title">纸材材料管理</view><view class="group-row__meta">纸圈、纸张库存和出入库将在第四阶段开放</view></view>
 </view>

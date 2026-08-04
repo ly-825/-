@@ -93,6 +93,30 @@ class MiniProgramFoundationTest(unittest.TestCase):
             self.assertIn(label, wxml)
         self.assertIn("待确认", wxml)
 
+    def test_top_level_pages_use_simple_headers_and_grouped_lists(self) -> None:
+        pages = (
+            "miniprogram/pages/plan/home.wxml",
+            "miniprogram/pages/materials/home.wxml",
+            "miniprogram/pages/products/home.wxml",
+            "miniprogram/pages/materials/steel-home.wxml",
+            "miniprogram/pages/materials/paper-home.wxml",
+        )
+        for page in pages:
+            with self.subTest(page=page):
+                view = self.read(page)
+                self.assertIn("simple-header", view)
+                self.assertNotIn("eyebrow", view)
+        materials = self.read("miniprogram/pages/materials/home.wxml")
+        self.assertIn("group-list", materials)
+        self.assertIn("处理待确认余料", materials)
+        self.assertEqual(materials.count("primary-action"), 1)
+
+    def test_connection_page_keeps_one_primary_scan_action(self) -> None:
+        view = self.read("miniprogram/pages/connection/index.wxml")
+        self.assertEqual(view.count('class="primary-action"'), 1)
+        self.assertIn("扫描电脑连接二维码", view)
+        self.assertIn("手工设置地址", view)
+
     def test_connection_page_supports_scan_manual_and_recovery(self) -> None:
         source = self.read("miniprogram/pages/connection/index.js")
         view = self.read("miniprogram/pages/connection/index.wxml")
