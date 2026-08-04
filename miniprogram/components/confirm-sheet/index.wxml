@@ -1,0 +1,13 @@
+<view class="sheet-mask" wx:if="{{open}}" catchtouchmove="true">
+  <view class="sheet" role="dialog" aria-label="{{title}}">
+    <view class="sheet-title">{{title || '确认操作'}}</view>
+    <view class="sheet-line" wx:for="{{lines}}" wx:key="label">
+      <text class="sheet-label">{{item.label}}</text>
+      <text class="sheet-value">{{item.value || '-'}}</text>
+    </view>
+    <view class="sheet-actions">
+      <button class="sheet-button sheet-button--secondary" disabled="{{submitting}}" bindtap="cancel">取消</button>
+      <button class="sheet-button {{danger ? 'sheet-button--danger' : 'sheet-button--primary'}}" disabled="{{submitting}}" bindtap="confirm">{{submitting ? '提交中…' : '确认操作'}}</button>
+    </view>
+  </view>
+</view>

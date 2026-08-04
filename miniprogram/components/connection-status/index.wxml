@@ -1,0 +1,15 @@
+<view class="connection connection--{{state}}">
+  <view class="connection__main">
+    <view class="connection__dot"></view>
+    <view class="connection__copy">
+      <view class="connection__title" wx:if="{{state === 'connected'}}">已连接</view>
+      <view class="connection__title" wx:elif="{{state === 'checking'}}">连接中</view>
+      <view class="connection__title" wx:else>连接失败</view>
+      <view class="connection__address" wx:if="{{baseUrl}}">{{baseUrl}}</view>
+    </view>
+  </view>
+  <view class="connection__actions" wx:if="{{state === 'error'}}">
+    <button class="mini-action" bindtap="retry">重新连接</button>
+    <button class="mini-action" bindtap="configure">修改地址</button>
+  </view>
+</view>

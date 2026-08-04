@@ -1,0 +1,55 @@
+.state-view {
+  margin-bottom: 20rpx;
+  padding: 40rpx 24rpx;
+  border: 1rpx solid #E2E8F0;
+  border-radius: 24rpx;
+  background: #FFFFFF;
+  color: #0F172A;
+  text-align: center;
+}
+
+.state-title {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.state-description {
+  margin-top: 8rpx;
+  color: #64748B;
+  font-size: 25rpx;
+}
+
+.state-retry {
+  min-height: 88rpx;
+  margin-top: 24rpx;
+  border: 1rpx solid #CBD5E1;
+  border-radius: 18rpx;
+  background: #FFFFFF;
+  color: #334155;
+  font-size: 28rpx;
+}
+
+.state-retry::after {
+  border: 0;
+}
+
+.skeleton {
+  height: 88rpx;
+  margin-bottom: 16rpx;
+  border-radius: 16rpx;
+  background: #F1F5F9;
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton:last-child {
+  margin-bottom: 0;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}

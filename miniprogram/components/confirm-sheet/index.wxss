@@ -1,0 +1,80 @@
+.sheet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.sheet {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 28rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  border-radius: 24rpx 24rpx 0 0;
+  background: #FFFFFF;
+  color: #0F172A;
+}
+
+.sheet-title {
+  margin-bottom: 20rpx;
+  font-size: 34rpx;
+  font-weight: 600;
+}
+
+.sheet-line {
+  display: grid;
+  grid-template-columns: 180rpx minmax(0, 1fr);
+  gap: 16rpx;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #E2E8F0;
+}
+
+.sheet-label {
+  color: #64748B;
+}
+
+.sheet-value {
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+  margin-top: 28rpx;
+}
+
+.sheet-button {
+  min-height: 88rpx;
+  margin: 0;
+  border-radius: 18rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.sheet-button::after {
+  border: 0;
+}
+
+.sheet-button--secondary {
+  border: 1rpx solid #CBD5E1;
+  background: #FFFFFF;
+  color: #334155;
+}
+
+.sheet-button--primary {
+  background: #059669;
+  color: #FFFFFF;
+}
+
+.sheet-button--danger {
+  background: #DC2626;
+  color: #FFFFFF;
+}
+
+.sheet-button[disabled] {
+  opacity: 0.45;
+}

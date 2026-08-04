@@ -1,0 +1,12 @@
+<view class="state-view" aria-live="polite">
+  <block wx:if="{{state === 'loading'}}">
+    <view class="skeleton"></view>
+    <view class="skeleton"></view>
+    <view class="skeleton"></view>
+  </block>
+  <block wx:else>
+    <view class="state-title">{{title}}</view>
+    <view class="state-description" wx:if="{{description}}">{{description}}</view>
+    <button class="state-retry" wx:if="{{state === 'error'}}" bindtap="retry">重新加载</button>
+  </block>
+</view>
