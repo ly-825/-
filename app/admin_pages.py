@@ -62,6 +62,15 @@ from app.services.product_outbound_analysis import (
     normalize_outbound_purpose,
 )
 from app.services.qwen_service import recognize_drawing
+from app.services.raw_plate_inventory import (
+    create_raw_plate_specification as create_raw_plate_specification_record,
+    inbound_raw_plate,
+    outbound_raw_plate_fifo,
+    reverse_raw_plate_transaction,
+    toggle_raw_plate_specification as toggle_raw_plate_specification_record,
+    update_raw_plate_batch,
+    update_raw_plate_specification as update_raw_plate_specification_record,
+)
 from app.services.scrap_service import find_scrap_batches_for_outbound
 from app.services.search_context import build_parameter_summary, keyword_parameter_matches
 from app.time_utils import china_now
@@ -2195,44 +2204,19 @@ def update_raw_plate_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    item = db.get(MaterialInventory, inventory_id)
-    if not item or item.inventory_type != "raw_plate":
-        raise HTTPException(status_code=404, detail="板料库存不存在")
-    if item.quantity <= 0:
-        raise HTTPException(status_code=400, detail="零库存板料不能补填型号")
-    model_value = raw_plate_model.strip()
-    if not model_value:
-        raise HTTPException(status_code=400, detail="板料型号不能为空")
-    if len(model_value) > 100:
-        raise HTTPException(status_code=400, detail="板料型号不能超过100个字符")
-    has_out_record = db.query(InventoryTransactionRecord).filter(
-        InventoryTransactionRecord.inventory_id == item.id,
-        InventoryTransactionRecord.transaction_type == "out",
-    ).first() is not None
-    before_data = inventory_snapshot(item)
-    item.raw_plate_model = model_value
-    item.material_code = material_code.strip() or None
-    item.location = location.strip() or None
-    if not has_out_record:
-        if not material.strip() or length is None or width is None or thickness is None or length <= 0 or width <= 0 or thickness <= 0:
-            raise HTTPException(status_code=400, detail="材质、长宽厚必须有效")
-        if status not in ("available", "used"):
-            raise HTTPException(status_code=400, detail="状态无效")
-        item.material = material.strip()
-        item.length = length
-        item.width = width
-        item.thickness = thickness
-        item.usable_size = f"{length:g}×{width:g}×{thickness:g}mm"
-        item.status = status
-    record_operation_log(
+    update_raw_plate_batch(
         db,
-        "raw_plate_update",
-        "inventory",
-        item.id,
-        operator_name or None,
-        remark or "修改板料批次信息",
-        before_data=before_data,
-        after_data=inventory_snapshot(item),
+        inventory_id,
+        raw_plate_model=raw_plate_model,
+        material_code=material_code,
+        material=material,
+        length=length,
+        width=width,
+        thickness=thickness,
+        location=location,
+        status=status,
+        operator_name=operator_name,
+        remark=remark,
     )
     db.commit()
     return RedirectResponse("/admin/raw-plates", status_code=303)
@@ -2352,20 +2336,14 @@ def create_raw_plate_specification(
     remark: str = Form(""),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    if length <= 0 or width <= 0 or thickness <= 0 or density <= 0:
-        raise HTTPException(status_code=400, detail="长宽厚和密度必须大于0")
-    thickness_value = normalize_steel_thickness(thickness)
-    db.add(
-        RawPlateSpecification(
-            spec_name=steel_spec_name(thickness_value, width, length),
-            material=material.strip(),
-            length=length,
-            width=width,
-            thickness=thickness_value,
-            density=density,
-            remark=remark.strip() or None,
-            is_active=1,
-        )
+    create_raw_plate_specification_record(
+        db,
+        material=material,
+        length=length,
+        width=width,
+        thickness=thickness,
+        density=density,
+        remark=remark,
     )
     db.commit()
     return RedirectResponse("/admin/raw-plate-specifications", status_code=303)
@@ -2408,30 +2386,24 @@ def update_raw_plate_specification(
     remark: str = Form(""),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    spec = db.get(RawPlateSpecification, spec_id)
-    if not spec:
-        raise HTTPException(status_code=404, detail="板料规格不存在")
-    if length <= 0 or width <= 0 or thickness <= 0 or density <= 0:
-        raise HTTPException(status_code=400, detail="长宽厚和密度必须大于0")
-    thickness_value = normalize_steel_thickness(thickness)
-    spec.spec_name = steel_spec_name(thickness_value, width, length)
-    spec.material = material.strip()
-    spec.length = length
-    spec.width = width
-    spec.thickness = thickness_value
-    spec.density = density
-    spec.is_active = 1 if is_active else 0
-    spec.remark = remark.strip() or None
+    update_raw_plate_specification_record(
+        db,
+        spec_id,
+        material=material,
+        length=length,
+        width=width,
+        thickness=thickness,
+        density=density,
+        is_active=is_active,
+        remark=remark,
+    )
     db.commit()
     return RedirectResponse("/admin/raw-plate-specifications", status_code=303)
 
 
 @router.post("/admin/raw-plate-specifications/{spec_id}/toggle")
 def toggle_raw_plate_specification(spec_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
-    spec = db.get(RawPlateSpecification, spec_id)
-    if not spec:
-        raise HTTPException(status_code=404, detail="板料规格不存在")
-    spec.is_active = 0 if spec.is_active else 1
+    toggle_raw_plate_specification_record(db, spec_id)
     db.commit()
     return RedirectResponse("/admin/raw-plate-specifications", status_code=303)
 
@@ -2501,75 +2473,24 @@ def create_raw_plate_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    selected_spec = None
     spec_id_value = raw_plate_spec_id.strip()
     if spec_id_value:
         if not spec_id_value.isdigit():
             raise HTTPException(status_code=400, detail="板料规格无效")
-        selected_spec = db.get(RawPlateSpecification, int(spec_id_value))
-        if not selected_spec or not selected_spec.is_active:
-            raise HTTPException(status_code=400, detail="板料规格不存在或已停用")
-        raw_plate_model = selected_spec.spec_name
-        material = selected_spec.material
-        length = selected_spec.length
-        width = selected_spec.width
-        thickness = selected_spec.thickness
-        density = selected_spec.density
-    if total_weight_ton <= 0 or length <= 0 or width <= 0 or thickness <= 0 or density <= 0:
-        raise HTTPException(status_code=400, detail="总重量、长宽厚和密度必须大于0")
-    single_weight_kg = length * width * thickness * density / 1_000_000
-    total_weight_kg = total_weight_ton * 1000
-    quantity = math.floor(total_weight_kg / single_weight_kg)
-    if quantity <= 0:
-        raise HTTPException(status_code=400, detail="总重量不足一块板料")
-    remaining_weight_kg = total_weight_kg - quantity * single_weight_kg
-    material_value = material.strip()
-    thickness = normalize_steel_thickness(thickness)
-    raw_plate_model_value = steel_spec_name(thickness, width, length)
-    if raw_plate_model_value and len(raw_plate_model_value) > 100:
-        raise HTTPException(status_code=400, detail="板料型号不能超过100个字符")
-    location_value = location.strip() or None
-    batch_code = material_code.strip() or f"RAW-{china_now().strftime('%Y%m%d%H%M%S')}"
-    usable_size = f"{raw_plate_model_value}mm"
-    item = MaterialInventory(
-        material_code=batch_code,
-        raw_plate_model=raw_plate_model_value,
-        inventory_type="raw_plate",
-        material=material_value,
-        thickness=thickness,
-        shape="rectangle",
+    inbound_raw_plate(
+        db,
+        specification_id=int(spec_id_value) if spec_id_value else None,
+        raw_plate_model=raw_plate_model,
+        material_code=material_code,
+        material=material,
+        total_weight_ton=total_weight_ton,
         length=length,
         width=width,
-        usable_size=usable_size,
-        quantity=quantity,
-        location=location_value,
-        status="available",
-    )
-    db.add(item)
-    db.flush()
-    transaction_remark = (
-        f"{remark or '板料入库'}；总重量{total_weight_ton:g}吨，密度{density:g}g/cm³，"
-        f"单块约{single_weight_kg:.3f}kg，入库{quantity}块，余重约{remaining_weight_kg:.3f}kg"
-    )
-    db.add(
-        InventoryTransactionRecord(
-            inventory_id=item.id,
-            transaction_type="in",
-            quantity=quantity,
-            before_quantity=0,
-            after_quantity=quantity,
-            operator_name=operator_name or None,
-            remark=transaction_remark,
-        )
-    )
-    record_operation_log(
-        db,
-        "raw_plate_inbound",
-        "inventory",
-        item.id,
-        operator_name or None,
-        transaction_remark,
-        after_data=inventory_snapshot(item),
+        thickness=thickness,
+        density=density,
+        location=location,
+        operator_name=operator_name,
+        remark=remark,
     )
     db.commit()
     return RedirectResponse("/admin/raw-plates", status_code=303)
@@ -2685,70 +2606,17 @@ def outbound_raw_plate_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    if not material.strip():
-        raise HTTPException(status_code=400, detail="材质不能为空")
-    if length <= 0 or width <= 0 or thickness <= 0:
-        raise HTTPException(status_code=400, detail="长宽厚必须大于0")
-    if quantity <= 0:
-        raise HTTPException(status_code=400, detail="出库块数必须大于0")
-    query = db.query(MaterialInventory).filter(
-        MaterialInventory.inventory_type == "raw_plate",
-        MaterialInventory.material == material.strip(),
-        MaterialInventory.length == length,
-        MaterialInventory.width == width,
-        MaterialInventory.thickness == thickness,
-        MaterialInventory.quantity > 0,
-    )
-    location_value = location.strip()
-    if location_value:
-        query = query.filter(MaterialInventory.location == location_value)
-    batches = query.order_by(MaterialInventory.created_at.asc()).all()
-    available_quantity = sum(item.quantity for item in batches)
-    if available_quantity < quantity:
-        raise HTTPException(status_code=400, detail=f"板料库存不足，当前可出库 {available_quantity} 块")
-    remaining = quantity
-    affected_batches = []
-    customer_value = customer_name.strip()
-    for item in batches:
-        if remaining <= 0:
-            break
-        outbound_quantity = min(item.quantity, remaining)
-        before_data = inventory_snapshot(item)
-        before_quantity = item.quantity
-        item.quantity -= outbound_quantity
-        item.status = "used" if item.quantity <= 0 else "available"
-        record_remark = remark or "板料出库"
-        db.add(
-            InventoryTransactionRecord(
-                inventory_id=item.id,
-                transaction_type="out",
-                quantity=outbound_quantity,
-                before_quantity=before_quantity,
-                after_quantity=item.quantity,
-                operator_name=operator_name or None,
-                customer_name=customer_value or None,
-                remark=record_remark,
-            )
-        )
-        affected_batches.append(f"{item.material_code or item.id}:{outbound_quantity}")
-        record_operation_log(
-            db,
-            "raw_plate_outbound",
-            "inventory",
-            item.id,
-            operator_name or None,
-            f"{record_remark}；FIFO扣减批次 {item.material_code or item.id}，数量 {outbound_quantity}{f'，客户/去向 {customer_value}' if customer_value else ''}",
-            before_data=before_data,
-            after_data=inventory_snapshot(item),
-        )
-        remaining -= outbound_quantity
-    record_operation_log(
+    outbound_raw_plate_fifo(
         db,
-        "raw_plate_outbound_fifo",
-        "inventory",
-        None,
-        operator_name or None,
-        f"板料按规格出库：{material.strip()} {length:g}×{width:g}×{thickness:g}mm，数量 {quantity}{f'，客户/去向 {customer_value}' if customer_value else ''}；批次扣减 {'，'.join(affected_batches)}",
+        material=material,
+        length=length,
+        width=width,
+        thickness=thickness,
+        quantity=quantity,
+        location=location,
+        customer_name=customer_name,
+        operator_name=operator_name,
+        remark=remark,
     )
     db.commit()
     return RedirectResponse("/admin/raw-plates", status_code=303)
@@ -2860,13 +2728,12 @@ def reverse_raw_plate_transaction_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    record = db.get(InventoryTransactionRecord, transaction_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="板料流水不存在")
-    item = db.get(MaterialInventory, record.inventory_id)
-    if not item or item.inventory_type != "raw_plate":
-        raise HTTPException(status_code=400, detail="该流水不是板料流水")
-    reverse_inventory_transaction(transaction_id, operator_name or None, remark or "撤回板料流水", db)
+    reverse_raw_plate_transaction(
+        db,
+        transaction_id,
+        operator_name=operator_name,
+        remark=remark,
+    )
     db.commit()
     return RedirectResponse("/admin/raw-plates/transactions", status_code=303)
 
