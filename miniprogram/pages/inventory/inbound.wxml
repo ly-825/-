@@ -1,30 +1,34 @@
 <view class="container">
-  <view class="header">
-    <view class="eyebrow">PRODUCT INBOUND</view>
-    <view class="title">产品入库</view>
-    <view class="subtitle">搜索已确认图纸，选择产品后填写数量和库位。</view>
+  <view class="simple-header">
+    <view class="simple-title">产品入库</view>
+    <view class="simple-subtitle">先选择产品，再填写本次入库信息</view>
   </view>
 
-  <view class="card">
-    <view class="section-title">选择产品</view>
-    <input class="input" placeholder="搜索型号、名称、材质或厚度" value="{{searchKeyword}}" confirm-type="search" bindinput="onKeyword" bindconfirm="onSearch" />
-    <button class="btn secondary" bindtap="onSearch">搜索</button>
-    <view class="selected-box">{{selectedDrawingLabel}}</view>
-    <view wx:if="{{!searchKeyword}}" class="empty">输入型号、名称、材质或厚度搜索产品</view>
-    <view wx:elif="{{!filteredDrawings.length}}" class="empty">没有匹配的已确认图纸</view>
-    <view wx:for="{{filteredDrawings}}" wx:key="id" class="search-item" bindtap="selectDrawing" data-index="{{index}}">
-      <view class="name">{{item.product_code_text}}</view>
-      <view class="meta">{{item.product_category_text}}｜{{item.version_text}}｜{{item.product_name_text}}｜{{item.material_text}}｜厚度 {{item.thickness_text}}</view>
+  <state-view wx:if="{{loading}}" state="loading" title="正在读取可入库产品" />
+  <state-view wx:elif="{{error}}" state="error" title="可入库产品加载失败" description="{{error}}" bind:retry="loadDrawings" />
+  <block wx:else>
+    <view class="form-section">
+      <view class="form-field"><view class="form-label">产品搜索</view><input class="input" placeholder="型号、名称、材质或厚度" value="{{searchKeyword}}" confirm-type="search" bindinput="onKeyword" bindconfirm="onSearch" /></view>
+      <button class="btn secondary" bindtap="onSearch">搜索</button>
+      <view class="form-label">已选产品</view>
+      <view class="selected-value">{{selectedDrawingLabel}}</view>
+      <view wx:if="{{!searchKeyword}}" class="empty">输入条件后搜索产品</view>
+      <view wx:elif="{{!filteredDrawings.length}}" class="empty">没有匹配的已确认图纸</view>
+      <view wx:else class="data-list">
+        <view wx:for="{{filteredDrawings}}" wx:key="id" class="data-item" bindtap="selectDrawing" data-index="{{index}}">
+          <view class="name">{{item.product_code_text}}</view>
+          <view class="meta">{{item.product_category_text}}｜{{item.version_text}}｜{{item.product_name_text}}｜{{item.material_text}}｜厚度 {{item.thickness_text}}</view>
+        </view>
+      </view>
     </view>
-  </view>
 
-  <view class="card">
-    <view class="section-title">入库信息</view>
-    <input class="input" type="number" placeholder="数量" value="{{form.quantity}}" data-field="quantity" bindinput="onInput" />
-    <input class="input" placeholder="库位，例如 A-01" value="{{form.location}}" data-field="location" bindinput="onInput" />
-    <input class="input" placeholder="操作人" value="{{form.operator_name}}" data-field="operator_name" bindinput="onInput" />
-    <button class="btn" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">确认入库</button>
-  </view>
+    <view class="form-section">
+      <view class="form-field"><view class="form-label">数量</view><input class="input" type="number" placeholder="请输入入库数量" value="{{form.quantity}}" data-field="quantity" bindinput="onInput" /></view>
+      <view class="form-field"><view class="form-label">库位</view><input class="input" placeholder="例如 A-01" value="{{form.location}}" data-field="location" bindinput="onInput" /></view>
+      <view class="form-field"><view class="form-label">操作人</view><input class="input" placeholder="请输入姓名" value="{{form.operator_name}}" data-field="operator_name" bindinput="onInput" /></view>
+      <button class="primary-action" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">确认入库</button>
+    </view>
+  </block>
 
   <confirm-sheet
     open="{{confirmOpen}}"

@@ -151,6 +151,31 @@ class MiniProgramFoundationTest(unittest.TestCase):
                 self.assertIn("confirmOpen", source)
                 self.assertIn("confirmSubmit", source)
 
+    def test_inventory_pages_use_permanent_labels_and_flat_data_lists(
+        self,
+    ) -> None:
+        for name in ("list", "inbound", "outbound"):
+            with self.subTest(name=name):
+                view = self.read(f"miniprogram/pages/inventory/{name}.wxml")
+                source = self.read(f"miniprogram/pages/inventory/{name}.js")
+                config = json.loads(
+                    self.read(f"miniprogram/pages/inventory/{name}.json")
+                )
+                self.assertIn("simple-header", view)
+                self.assertIn("form-label", view)
+                self.assertIn("data-list", view)
+                self.assertIn("<state-view", view)
+                self.assertNotIn("eyebrow", view)
+                self.assertIn("error", source)
+                self.assertEqual(
+                    config.get("usingComponents", {}).get("state-view"),
+                    "/components/state-view/index",
+                )
+        for name in ("inbound", "outbound"):
+            view = self.read(f"miniprogram/pages/inventory/{name}.wxml")
+            self.assertEqual(view.count("primary-action"), 1)
+            self.assertIn("<confirm-sheet", view)
+
     def test_every_current_inventory_write_uses_persistent_request_tracker(
         self,
     ) -> None:

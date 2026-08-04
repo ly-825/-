@@ -1,7 +1,12 @@
 const api = require('../../utils/api')
 
 Page({
-  data: { filters: { q: '', material: '', thickness: '' }, items: [] },
+  data: {
+    filters: { q: '', material: '', thickness: '' },
+    items: [],
+    loading: false,
+    error: ''
+  },
 
   onShow() { this.load() },
 
@@ -10,6 +15,8 @@ Page({
   },
 
   async load() {
+    if (this.data.loading) return
+    this.setData({ loading: true, error: '' })
     try {
       const items = (await api.products(this.data.filters)).map((item) => ({
         ...item,
@@ -19,7 +26,9 @@ Page({
       }))
       this.setData({ items })
     } catch (error) {
-      wx.showToast({ title: error.message || '加载失败', icon: 'none' })
+      this.setData({ error: error.message || '库存加载失败' })
+    } finally {
+      this.setData({ loading: false })
     }
   }
 })

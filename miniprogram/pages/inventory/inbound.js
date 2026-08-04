@@ -11,6 +11,7 @@ Page({
     searchKeyword: '',
     selectedDrawingLabel: '尚未选择产品',
     loading: false,
+    error: '',
     submitting: false,
     confirmOpen: false,
     confirmLines: [],
@@ -21,7 +22,7 @@ Page({
 
   async loadDrawings() {
     if (this.data.loading) return
-    this.setData({ loading: true })
+    this.setData({ loading: true, error: '' })
     try {
       const list = await api.confirmedDrawings()
       const drawings = list.map((item) => ({
@@ -46,7 +47,7 @@ Page({
       this.setData({ drawings })
       this.applySearch()
     } catch (error) {
-      wx.showToast({ title: error.message || '加载失败', icon: 'none' })
+      this.setData({ error: error.message || '产品加载失败' })
     } finally {
       this.setData({ loading: false })
     }

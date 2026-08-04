@@ -1,15 +1,20 @@
 <view class="container">
-  <view class="header"><view class="title">库存查询</view><view class="subtitle">只显示产品库存汇总。</view></view>
-  <view class="card">
-    <input class="input" placeholder="产品型号、材质、库位" value="{{filters.q}}" data-field="q" bindinput="onFilter" />
-    <input class="input" placeholder="材质" value="{{filters.material}}" data-field="material" bindinput="onFilter" />
-    <input class="input" type="digit" placeholder="厚度" value="{{filters.thickness}}" data-field="thickness" bindinput="onFilter" />
+  <view class="simple-header">
+    <view class="simple-title">库存查询</view>
+    <view class="simple-subtitle">按型号、材质、厚度和库位查找成品</view>
+  </view>
+  <view class="form-section">
+    <view class="form-field"><view class="form-label">产品搜索</view><input class="input" placeholder="型号或库位" value="{{filters.q}}" data-field="q" bindinput="onFilter" /></view>
+    <view class="form-field"><view class="form-label">材质</view><input class="input" placeholder="例如 45#" value="{{filters.material}}" data-field="material" bindinput="onFilter" /></view>
+    <view class="form-field"><view class="form-label">厚度</view><input class="input" type="digit" placeholder="例如 3.0" value="{{filters.thickness}}" data-field="thickness" bindinput="onFilter" /></view>
     <button class="btn secondary" bindtap="load">查询</button>
   </view>
-  <view class="card">
+  <state-view wx:if="{{loading}}" state="loading" title="正在读取产品库存" />
+  <state-view wx:elif="{{error}}" state="error" title="产品库存加载失败" description="{{error}}" bind:retry="load" />
+  <view wx:else class="data-list">
     <view wx:if="{{!items.length}}" class="empty">暂无产品库存</view>
-    <view wx:for="{{items}}" wx:key="product_code" class="list-item">
-      <view class="row"><view class="name">{{item.product_code}}</view><view class="badge">{{item.quantity}}</view></view>
+    <view wx:for="{{items}}" wx:key="product_code" class="data-item">
+      <view class="row"><view class="name">{{item.product_code}}</view><view class="badge numeric">{{item.quantity}}</view></view>
       <view class="meta">{{item.material_text}}｜厚度 {{item.thickness_text}}｜库位 {{item.location_text}}</view>
     </view>
   </view>

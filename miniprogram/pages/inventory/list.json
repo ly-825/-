@@ -1,1 +1,6 @@
-{"navigationBarTitleText":"库存查询"}
+{
+  "navigationBarTitleText": "库存查询",
+  "usingComponents": {
+    "state-view": "/components/state-view/index"
+  }
+}

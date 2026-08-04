@@ -12,6 +12,7 @@ Page({
     searchKeyword: '',
     selectedLabel: '尚未选择产品',
     loading: false,
+    error: '',
     submitting: false,
     confirmOpen: false,
     confirmLines: [],
@@ -22,7 +23,7 @@ Page({
 
   async load() {
     if (this.data.loading) return
-    this.setData({ loading: true })
+    this.setData({ loading: true, error: '' })
     try {
       const [products, drawings] = await Promise.all([api.products(), api.confirmedDrawings()])
       const drawingMap = {}
@@ -50,7 +51,7 @@ Page({
       this.setData({ products: displayProducts, options })
       this.applySearch()
     } catch (error) {
-      wx.showToast({ title: error.message || '加载失败', icon: 'none' })
+      this.setData({ error: error.message || '产品库存加载失败' })
     } finally {
       this.setData({ loading: false })
     }

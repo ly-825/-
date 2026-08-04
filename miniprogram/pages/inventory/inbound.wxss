@@ -1,0 +1,13 @@
+.selected-value {
+  margin-bottom: 20rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 16rpx;
+  background: #F1F5F9;
+  color: #334155;
+  font-size: 26rpx;
+  overflow-wrap: anywhere;
+}
+
+.form-section .primary-action {
+  margin-top: 0;
+}
