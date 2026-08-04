@@ -1,28 +1,13 @@
-.connection {
+.connection-line {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 20rpx;
-  margin-bottom: 24rpx;
-  padding: 20rpx 24rpx;
-  border: 1rpx solid #E2E8F0;
-  border-radius: 20rpx;
-  background: #FFFFFF;
-  color: #0F172A;
+  gap: 12rpx;
+  min-height: 56rpx;
+  color: #64748B;
+  font-size: 26rpx;
 }
 
-.connection__main,
-.connection__actions {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-}
-
-.connection__copy {
-  min-width: 0;
-}
-
-.connection__dot {
+.connection-line__dot {
   width: 16rpx;
   height: 16rpx;
   flex: 0 0 16rpx;
@@ -30,30 +15,40 @@
   background: #64748B;
 }
 
-.connection--connected .connection__dot {
+.connection-line--connected .connection-line__dot {
   background: #059669;
 }
 
-.connection--error .connection__dot {
-  background: #DC2626;
+.connection-error {
+  margin-top: 16rpx;
+  padding: 20rpx 24rpx;
+  border: 1rpx solid #FECACA;
+  border-radius: 20rpx;
+  background: #FEF2F2;
 }
 
-.connection__title {
+.connection-error__title {
+  color: #991B1B;
   font-size: 26rpx;
   font-weight: 600;
 }
 
-.connection__address {
-  max-width: 360rpx;
-  margin-top: 2rpx;
-  overflow: hidden;
-  color: #64748B;
+.connection-error__address {
+  margin-top: 6rpx;
+  color: #B91C1C;
   font-size: 22rpx;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+.connection-error__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+  margin-top: 16rpx;
 }
 
 .mini-action {
+  width: 100%;
   min-height: 88rpx;
   margin: 0;
   padding: 0 20rpx;

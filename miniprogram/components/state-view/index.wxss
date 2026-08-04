@@ -1,8 +1,8 @@
 .state-view {
   margin-bottom: 20rpx;
-  padding: 40rpx 24rpx;
+  padding: 32rpx 24rpx;
   border: 1rpx solid #E2E8F0;
-  border-radius: 24rpx;
+  border-radius: 20rpx;
   background: #FFFFFF;
   color: #0F172A;
   text-align: center;
@@ -36,7 +36,7 @@
 .skeleton {
   height: 88rpx;
   margin-bottom: 16rpx;
-  border-radius: 16rpx;
+  border-radius: 14rpx;
   background: #F1F5F9;
   animation: skeleton-pulse 1.2s ease-in-out infinite;
 }

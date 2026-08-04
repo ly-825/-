@@ -21,6 +21,43 @@ class MiniProgramFoundationTest(unittest.TestCase):
         self.assertIn('bindtap="confirm"', confirm)
         self.assertIn("重新连接", connection)
 
+    def test_redesign_exposes_simple_grouped_ui_primitives(self) -> None:
+        wxss = self.read("miniprogram/app.wxss")
+        for selector in (
+            ".simple-header",
+            ".group-list",
+            ".group-row",
+            ".primary-action",
+            ".form-label",
+            ".data-list",
+            ".ledger-item",
+            ".danger-action",
+            ".safe-action",
+        ):
+            self.assertIn(selector, wxss)
+        self.assertIn("env(safe-area-inset-bottom)", wxss)
+        self.assertIn("font-variant-numeric: tabular-nums", wxss)
+
+    def test_connected_status_is_compact_but_error_is_actionable(self) -> None:
+        view = self.read(
+            "miniprogram/components/connection-status/index.wxml"
+        )
+        style = self.read(
+            "miniprogram/components/connection-status/index.wxss"
+        )
+        self.assertIn("connection-line", view)
+        self.assertIn("内网已连接", view)
+        self.assertIn("connection-error", view)
+        self.assertIn("重新连接", view)
+        self.assertIn("修改地址", view)
+        self.assertNotIn("box-shadow", style)
+
+    def test_local_material_icons_exist_and_are_lucide_svg(self) -> None:
+        for name in ("steel", "scrap", "paper", "chevron-right"):
+            source = self.read(f"miniprogram/assets/icons/{name}.svg")
+            self.assertIn('viewBox="0 0 24 24"', source)
+            self.assertIn('stroke="#334155"', source)
+
     def test_global_style_uses_approved_tokens_without_decorative_gradients(
         self,
     ) -> None:
