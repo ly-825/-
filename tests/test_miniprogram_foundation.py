@@ -89,9 +89,14 @@ class MiniProgramFoundationTest(unittest.TestCase):
 
     def test_materials_home_has_three_clear_business_entries(self) -> None:
         wxml = self.read("miniprogram/pages/materials/home.wxml")
+        wxss = self.read("miniprogram/pages/materials/home.wxss")
         for label in ("钢板", "余料", "纸材"):
             self.assertIn(label, wxml)
         self.assertIn("待确认", wxml)
+        self.assertIn("min-width: 100%", wxss)
+        self.assertIn("min-height: 176rpx", wxss)
+        self.assertIn("width: 88rpx", wxss)
+        self.assertIn("min-height: 104rpx", wxss)
 
     def test_top_level_pages_use_simple_headers_and_grouped_lists(self) -> None:
         pages = (

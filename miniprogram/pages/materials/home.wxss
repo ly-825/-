@@ -1,3 +1,19 @@
 .group-list {
   margin-top: 8rpx;
 }
+
+.group-row {
+  min-height: 176rpx;
+}
+
+.group-row__icon {
+  width: 88rpx;
+  height: 88rpx;
+  flex-basis: 88rpx;
+}
+
+.primary-action {
+  min-width: 100%;
+  min-height: 104rpx;
+  margin-top: 32rpx;
+}
