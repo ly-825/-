@@ -5,13 +5,13 @@ const { retryPendingWrite } = require('../../utils/pending-write')
 const requestTracker = createPendingRequestTracker('scrap-outbound')
 
 Page({
-  data: { filters: { material: '', thickness: '', required_diameter: '', location: '' }, items: [], selectedLabel: '选择余料规格', loading: false, submitting: false, confirmOpen: false, confirmLines: [], form: { scrap_group_key: '', quantity: 1, operator_name: '', remark: '' } },
+  data: { filters: { material: '', thickness: '', required_diameter: '', location: '' }, items: [], selectedLabel: '选择余料规格', loading: false, error: '', submitting: false, confirmOpen: false, confirmLines: [], form: { scrap_group_key: '', quantity: 1, operator_name: '', remark: '' } },
   onShow() { this.load() },
   onFilter(event) { this.setData({ [`filters.${event.currentTarget.dataset.field}`]: event.detail.value }) },
   onInput(event) { this.setData({ [`form.${event.currentTarget.dataset.field}`]: event.detail.value }) },
   async load() {
     if (this.data.loading) return
-    this.setData({ loading: true })
+    this.setData({ loading: true, error: '' })
     try {
       const items = (await api.scraps(this.data.filters)).map((item) => ({
         ...item,
@@ -19,7 +19,7 @@ Page({
       }))
       this.setData({ items })
     } catch (error) {
-      wx.showToast({ title: error.message || '加载失败', icon: 'none' })
+      this.setData({ error: error.message || '可出库余料加载失败' })
     } finally {
       this.setData({ loading: false })
     }

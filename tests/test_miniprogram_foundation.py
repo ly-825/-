@@ -199,6 +199,33 @@ class MiniProgramFoundationTest(unittest.TestCase):
             "data-list", self.read("miniprogram/pages/scraps/list.wxml")
         )
 
+    def test_scrap_write_pages_keep_labels_confirmations_and_danger_actions(
+        self,
+    ) -> None:
+        for name in ("pending", "outbound", "transactions"):
+            with self.subTest(name=name):
+                view = self.read(f"miniprogram/pages/scraps/{name}.wxml")
+                config = json.loads(
+                    self.read(f"miniprogram/pages/scraps/{name}.json")
+                )
+                self.assertIn("simple-header", view)
+                self.assertIn("<confirm-sheet", view)
+                self.assertIn("<state-view", view)
+                self.assertNotIn("eyebrow", view)
+                self.assertEqual(
+                    config.get("usingComponents", {}).get("state-view"),
+                    "/components/state-view/index",
+                )
+        self.assertIn(
+            "form-label", self.read("miniprogram/pages/scraps/pending.wxml")
+        )
+        self.assertIn(
+            "form-label", self.read("miniprogram/pages/scraps/outbound.wxml")
+        )
+        transactions = self.read("miniprogram/pages/scraps/transactions.wxml")
+        self.assertIn("ledger-list", transactions)
+        self.assertIn("danger-action", transactions)
+
     def test_every_current_inventory_write_uses_persistent_request_tracker(
         self,
     ) -> None:

@@ -1,0 +1,3 @@
+.form-section .primary-action {
+  margin-top: 0;
+}

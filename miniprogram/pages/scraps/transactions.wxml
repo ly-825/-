@@ -1,27 +1,28 @@
 <view class="container">
-  <view class="header">
-    <view class="eyebrow">SCRAP LEDGER</view>
-    <view class="title">余料流水</view>
-    <view class="subtitle">余料确认入库和出库记录。</view>
+  <view class="simple-header">
+    <view class="simple-title">余料流水</view>
+    <view class="simple-subtitle">确认入库、出库与撤销记录</view>
   </view>
 
-  <view class="card">
-    <view class="section-title">最近记录</view>
+  <state-view wx:if="{{loading}}" state="loading" title="正在读取余料流水" />
+  <state-view wx:elif="{{error}}" state="error" title="余料流水加载失败" description="{{error}}" bind:retry="load" />
+  <view wx:else class="ledger-list">
     <view wx:if="{{!items.length}}" class="empty">暂无余料流水</view>
-    <view wx:for="{{items}}" wx:key="id" class="list-item">
+    <view wx:for="{{items}}" wx:key="id" class="ledger-item">
       <view class="row">
         <view class="name">{{item.material_text}}</view>
         <view class="badge">{{item.transaction_type}}</view>
       </view>
-      <view class="meta">{{item.usable_size_text}}｜库位 {{item.location_text}}｜数量 {{item.quantity}}</view>
-      <view class="meta">{{item.before_quantity}} → {{item.after_quantity}}｜{{item.operator_name_text}}｜{{item.created_at}}</view>
-      <button wx:if="{{item.can_reverse && reverseForm.id !== item.id}}" class="btn secondary" size="mini" data-id="{{item.id}}" bindtap="showReverseForm">撤销</button>
+      <view class="ledger-change numeric">{{item.usable_size_text}}｜数量 {{item.quantity}}</view>
+      <view class="meta">库位 {{item.location_text}}｜{{item.before_quantity}} → {{item.after_quantity}}</view>
+      <view class="meta">{{item.operator_name_text}}｜{{item.created_at}}</view>
+      <button wx:if="{{item.can_reverse && reverseForm.id !== item.id}}" class="danger-action" data-id="{{item.id}}" bindtap="showReverseForm">撤销这条流水</button>
       <view wx:if="{{reverseForm.id === item.id}}" class="reverse-panel">
-        <input class="input" placeholder="操作人" value="{{reverseForm.operator_name}}" data-field="operator_name" bindinput="onReverseInput" />
-        <input class="input" placeholder="撤销原因（必填）" value="{{reverseForm.remark}}" data-field="remark" bindinput="onReverseInput" />
+        <view class="form-field"><view class="form-label">操作人</view><input class="input" placeholder="请输入姓名" value="{{reverseForm.operator_name}}" data-field="operator_name" bindinput="onReverseInput" /></view>
+        <view class="form-field"><view class="form-label">撤销原因 *</view><input class="input" placeholder="说明撤销原因" value="{{reverseForm.remark}}" data-field="remark" bindinput="onReverseInput" /></view>
         <view class="row">
           <button class="btn secondary" size="mini" bindtap="hideReverseForm">取消</button>
-          <button class="btn" size="mini" bindtap="reverse" loading="{{reversingId === item.id}}" disabled="{{reversingId !== null}}">核对并撤销</button>
+          <button class="btn danger" size="mini" bindtap="reverse" loading="{{reversingId === item.id}}" disabled="{{reversingId !== null}}">核对并撤销</button>
         </view>
       </view>
       <view wx:if="{{item.reversed_transaction_id}}" class="meta">已撤销/冲销</view>

@@ -18,6 +18,7 @@ Page({
   data: {
     items: [],
     loading: false,
+    error: '',
     submitting: false,
     confirmOpen: false,
     confirmLines: [],
@@ -26,7 +27,7 @@ Page({
   onShow() { this.load() },
   async load() {
     if (this.data.loading) return
-    this.setData({ loading: true })
+    this.setData({ loading: true, error: '' })
     try {
       const items = (await api.pendingScraps()).map((item) => ({
         ...item,
@@ -40,7 +41,7 @@ Page({
       }))
       this.setData({ items })
     } catch (error) {
-      wx.showToast({ title: error.message || '加载失败', icon: 'none' })
+      this.setData({ error: error.message || '待入库余料加载失败' })
     } finally {
       this.setData({ loading: false })
     }

@@ -1,0 +1,7 @@
+.pending-fields {
+  margin-top: 24rpx;
+}
+
+.pending-fields .input {
+  margin-bottom: 0;
+}
