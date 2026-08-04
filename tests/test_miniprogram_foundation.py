@@ -176,6 +176,29 @@ class MiniProgramFoundationTest(unittest.TestCase):
             self.assertEqual(view.count("primary-action"), 1)
             self.assertIn("<confirm-sheet", view)
 
+    def test_read_pages_use_flat_lists_and_no_english_eyebrows(self) -> None:
+        pages = (
+            "miniprogram/pages/inventory/transactions.wxml",
+            "miniprogram/pages/scraps/home.wxml",
+            "miniprogram/pages/scraps/list.wxml",
+        )
+        for page in pages:
+            with self.subTest(page=page):
+                view = self.read(page)
+                self.assertIn("simple-header", view)
+                self.assertIn("<state-view", view)
+                self.assertNotIn("eyebrow", view)
+        self.assertIn(
+            "ledger-list",
+            self.read("miniprogram/pages/inventory/transactions.wxml"),
+        )
+        self.assertIn(
+            "group-list", self.read("miniprogram/pages/scraps/home.wxml")
+        )
+        self.assertIn(
+            "data-list", self.read("miniprogram/pages/scraps/list.wxml")
+        )
+
     def test_every_current_inventory_write_uses_persistent_request_tracker(
         self,
     ) -> None:

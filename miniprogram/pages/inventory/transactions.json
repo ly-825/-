@@ -1,6 +1,7 @@
 {
   "navigationBarTitleText": "库存流水",
   "usingComponents": {
-    "confirm-sheet": "/components/confirm-sheet/index"
+    "confirm-sheet": "/components/confirm-sheet/index",
+    "state-view": "/components/state-view/index"
   }
 }

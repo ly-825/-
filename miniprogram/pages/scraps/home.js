@@ -3,7 +3,9 @@ const api = require('../../utils/api')
 Page({
   data: {
     pendingCount: 0,
-    availableQuantity: 0
+    availableQuantity: 0,
+    loading: false,
+    error: ''
   },
 
   onShow() {
@@ -11,6 +13,8 @@ Page({
   },
 
   async load() {
+    if (this.data.loading) return
+    this.setData({ loading: true, error: '' })
     try {
       const summary = await api.summary()
       this.setData({
@@ -18,7 +22,9 @@ Page({
         availableQuantity: summary.scrap_available_quantity || 0
       })
     } catch (error) {
-      wx.showToast({ title: error.message || '加载失败', icon: 'none' })
+      this.setData({ error: error.message || '余料概览加载失败' })
+    } finally {
+      this.setData({ loading: false })
     }
   },
 

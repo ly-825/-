@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "余料管理"
+  "navigationBarTitleText": "余料管理",
+  "usingComponents": {
+    "state-view": "/components/state-view/index"
+  }
 }

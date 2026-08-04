@@ -15,7 +15,7 @@ function trackerFor(transactionId) {
 }
 
 Page({
-  data: { items: [], reversingId: null, confirmOpen: false, confirmLines: [], reverseForm: { id: null, operator_name: '', remark: '' } },
+  data: { items: [], loading: false, error: '', reversingId: null, confirmOpen: false, confirmLines: [], reverseForm: { id: null, operator_name: '', remark: '' } },
   onShow() { this.load() },
   onReverseInput(event) {
     this.setData({ [`reverseForm.${event.currentTarget.dataset.field}`]: event.detail.value })
@@ -27,6 +27,8 @@ Page({
     if (!this.data.reversingId) this.setData({ reverseForm: { id: null, operator_name: '', remark: '' }, confirmOpen: false })
   },
   async load() {
+    if (this.data.loading) return
+    this.setData({ loading: true, error: '' })
     try {
       const items = (await api.productTransactions()).map((item) => ({
         ...item,
@@ -38,7 +40,9 @@ Page({
       }))
       this.setData({ items })
     } catch (error) {
-      wx.showToast({ title: error.message || '加载失败', icon: 'none' })
+      this.setData({ error: error.message || '库存流水加载失败' })
+    } finally {
+      this.setData({ loading: false })
     }
   },
   reverse() {
