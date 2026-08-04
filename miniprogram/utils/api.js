@@ -1,7 +1,31 @@
 const app = getApp()
+const { createRequestId } = require('./request-id')
+
+class ConnectionError extends Error {
+  constructor(message, code = 'CONNECTION_FAILED') {
+    super(message)
+    this.name = 'ConnectionError'
+    this.code = code
+  }
+}
+
+function configureBaseUrl(value) {
+  app.globalData.baseUrl = String(value || '').replace(/\/$/, '')
+}
 
 function baseUrl() {
-  return app.globalData.baseUrl.replace(/\/$/, '')
+  const value = app.globalData.baseUrl
+  if (!value) {
+    throw new ConnectionError('尚未连接厂内库存系统', 'NOT_CONFIGURED')
+  }
+  return value.replace(/\/$/, '')
+}
+
+function withRequestId(data = {}) {
+  return {
+    ...data,
+    client_request_id: data.client_request_id || createRequestId()
+  }
 }
 
 function errorMessage(data, fallback) {
@@ -28,11 +52,18 @@ function errorMessage(data, fallback) {
 }
 
 function request(path, options = {}) {
+  let url
+  try {
+    url = `${baseUrl()}${path}`
+  } catch (error) {
+    return Promise.reject(error)
+  }
   return new Promise((resolve, reject) => {
     wx.request({
-      url: `${baseUrl()}${path}`,
+      url,
       method: options.method || 'GET',
       data: options.data || {},
+      timeout: 8000,
       header: {
         'content-type': 'application/json'
       },
@@ -43,8 +74,12 @@ function request(path, options = {}) {
         }
         reject(new Error(errorMessage(res.data, '请求失败')))
       },
-      fail(error) {
-        reject(error)
+      fail() {
+        reject(
+          new ConnectionError(
+            '无法连接后台，请确认手机和电脑连接同一工厂 Wi-Fi'
+          )
+        )
       }
     })
   })
@@ -56,6 +91,7 @@ function uploadFile(path, filePath, name = 'file') {
       url: `${baseUrl()}${path}`,
       filePath,
       name,
+      timeout: 8000,
       success(res) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           try {
@@ -67,16 +103,23 @@ function uploadFile(path, filePath, name = 'file') {
         }
         reject(new Error(errorMessage(res.data, '上传失败')))
       },
-      fail(error) {
-        reject(error)
+      fail() {
+        reject(
+          new ConnectionError(
+            '无法连接后台，请确认手机和电脑连接同一工厂 Wi-Fi'
+          )
+        )
       }
     })
   })
 }
 
 module.exports = {
+  configureBaseUrl,
+  ConnectionError,
   request,
   uploadFile,
+  health: () => request('/health'),
   summary: () => request('/api/mobile/summary'),
   drawings: (params = {}) => request('/api/mobile/drawings', { data: params }),
   pendingDrawings: () => request('/api/mobile/drawings/pending'),
@@ -88,14 +131,14 @@ module.exports = {
   uploadDrawing: (filePath) => uploadFile('/api/mobile/drawings/upload', filePath),
   products: (params = {}) => request('/api/mobile/products', { data: params }),
   productBatches: (productCode) => request(`/api/mobile/products/${encodeURIComponent(productCode)}/batches`),
-  productInbound: (data) => request('/api/mobile/products/inbound', { method: 'POST', data }),
-  productOutbound: (data) => request('/api/mobile/products/outbound', { method: 'POST', data }),
+  productInbound: (data) => request('/api/mobile/products/inbound', { method: 'POST', data: withRequestId(data) }),
+  productOutbound: (data) => request('/api/mobile/products/outbound', { method: 'POST', data: withRequestId(data) }),
   productTransactions: () => request('/api/mobile/products/transactions'),
-  reverseProductTransaction: (id, data = {}) => request(`/api/mobile/products/transactions/${id}/reverse`, { method: 'POST', data }),
+  reverseProductTransaction: (id, data = {}) => request(`/api/mobile/products/transactions/${id}/reverse`, { method: 'POST', data: withRequestId(data) }),
   pendingScraps: () => request('/api/mobile/scraps/pending'),
-  confirmScrap: (id, data) => request(`/api/mobile/scraps/${id}/confirm`, { method: 'POST', data }),
+  confirmScrap: (id, data) => request(`/api/mobile/scraps/${id}/confirm`, { method: 'POST', data: withRequestId(data) }),
   scraps: (params = {}) => request('/api/mobile/scraps', { data: params }),
-  scrapOutbound: (data) => request('/api/mobile/scraps/outbound', { method: 'POST', data }),
+  scrapOutbound: (data) => request('/api/mobile/scraps/outbound', { method: 'POST', data: withRequestId(data) }),
   scrapTransactions: () => request('/api/mobile/scraps/transactions'),
-  reverseScrapTransaction: (id, data = {}) => request(`/api/mobile/scraps/transactions/${id}/reverse`, { method: 'POST', data })
+  reverseScrapTransaction: (id, data = {}) => request(`/api/mobile/scraps/transactions/${id}/reverse`, { method: 'POST', data: withRequestId(data) })
 }

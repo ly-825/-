@@ -1,6 +1,16 @@
+const connection = require('./utils/connection')
+
 App({
   globalData: {
-    baseUrl: 'http://192.168.31.68:8000',
-    accessToken: 'tns888888'
+    baseUrl: '',
+    connectionState: 'unknown'
+  },
+
+  onLaunch() {
+    try {
+      this.globalData.baseUrl = connection.loadSavedBaseUrl(wx)
+    } catch (error) {
+      this.globalData.baseUrl = ''
+    }
   }
 })
