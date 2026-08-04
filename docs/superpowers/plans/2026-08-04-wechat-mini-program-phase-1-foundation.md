@@ -17,7 +17,7 @@
 | 3. Mini-program connection lifecycle | Complete | QR/manual setup, persisted LAN URL, timeout and recovery states implemented. |
 | 4. Shared mobile UI | Complete | Approved tokens and the connection, state, and confirmation components implemented. |
 | 5. Three-tab shell | Complete | `计划 / 材料 / 成品`, local icons, and connection gate implemented. |
-| 6. Verification and setup | In progress | Automated suite, import, repeatable migration, docs, JSON and JS checks pass. WeChat Developer Tools visual screenshots remain blocked until the tool is logged in. |
+| 6. Verification and setup | Complete | Automated suite, import, repeatable migration, docs, JSON/JS checks, Developer Tools connection/error recovery, top-level pages, and write confirmation visual checks pass. |
 | Push | Pending | Phase 1 remains on `codex/miniprogram-phase1` until visual acceptance is complete. |
 
 The detailed checkboxes below preserve the original TDD execution recipe. The table above is the authoritative current progress record.
@@ -1761,7 +1761,7 @@ git diff --check
 
 Expected output includes `0.1.0`, `schema-ok`, and no `git diff --check` errors.
 
-- [ ] **Step 6: Perform WeChat Developer Tools visual acceptance**
+- [x] **Step 6: Perform WeChat Developer Tools visual acceptance**
 
 Use these exact viewport checks:
 
@@ -1774,6 +1774,8 @@ Use these exact viewport checks:
 7. Double-tap a current product or scrap write action: the button locks and the backend produces one inventory mutation.
 
 Capture one screenshot for the connection page and one screenshot for each of the three top-level tabs for review.
+
+Acceptance evidence captured locally under `.codex-artifacts/miniprogram-phase1/`: connection setup, connection error/recovery, plan, materials, products, and product-inbound confirmation sheet. The simulator connected to `192.168.10.225:8000`, loaded live summary data, recovered through the new `重新连接` action after a deliberate backend stop, and reported zero console errors while switching the three tabs.
 
 - [x] **Step 7: Commit documentation and review corrections**
 

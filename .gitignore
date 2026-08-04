@@ -6,3 +6,4 @@ data/
 backups/
 .DS_Store
 miniprogram/project.private.config.json
+.codex-artifacts/

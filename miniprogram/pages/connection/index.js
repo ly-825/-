@@ -51,6 +51,11 @@ Page({
     }
   },
 
+  retrySavedConnection() {
+    this.setData({ manualOpen: false })
+    this.trySavedConnection()
+  },
+
   async scanBaseUrl() {
     this.setData({ state: 'checking' })
     try {

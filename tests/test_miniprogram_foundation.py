@@ -64,6 +64,9 @@ class MiniProgramFoundationTest(unittest.TestCase):
         self.assertIn("扫描电脑连接二维码", view)
         self.assertIn("手工设置地址", view)
         self.assertIn("连接工厂 Wi-Fi", view)
+        self.assertIn("retrySavedConnection", source)
+        self.assertIn("重新连接", view)
+        self.assertIn("修改地址", view)
 
     def test_every_current_inventory_write_uses_confirmation_sheet(self) -> None:
         pages = (

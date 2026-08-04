@@ -11,8 +11,15 @@
       <view class="error-title">{{errorTitle}}</view>
       <view class="error-description">{{errorDescription}}</view>
     </view>
-    <button class="btn" bindtap="scanBaseUrl">扫描电脑连接二维码</button>
-    <button class="btn secondary" bindtap="openManual">手工设置地址</button>
+    <block wx:if="{{state === 'error'}}">
+      <button class="btn" bindtap="retrySavedConnection">重新连接</button>
+      <button class="btn secondary" bindtap="openManual">修改地址</button>
+      <button class="text-action" bindtap="scanBaseUrl">重新扫描电脑连接二维码</button>
+    </block>
+    <block wx:else>
+      <button class="btn" bindtap="scanBaseUrl">扫描电脑连接二维码</button>
+      <button class="btn secondary" bindtap="openManual">手工设置地址</button>
+    </block>
   </view>
 
   <view class="card" wx:if="{{manualOpen}}">
