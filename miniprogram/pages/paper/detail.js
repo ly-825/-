@@ -1,0 +1,1 @@
+const api=require('../../utils/api');Page({data:{group:{},items:[],loading:false,error:''},onShow(){this.load()},async load(){const g=wx.getStorageSync('paper-group')||{};this.setData({group:g,loading:true,error:''});try{this.setData({items:await api.paperBatches(g.specification_id)})}catch(e){this.setData({error:e.message})}finally{this.setData({loading:false})}}})

@@ -1,7 +1,1 @@
-<view class="container">
-  <view class="simple-header">
-    <view class="simple-title">纸材</view>
-    <connection-status state="connected" base-url="{{baseUrl}}" bind:configure="configure" />
-  </view>
-  <view class="form-section phase-note"><view class="group-row__title">纸材材料管理</view><view class="group-row__meta">纸圈、纸张库存和出入库将在第四阶段开放</view></view>
-</view>
+<view class="container"><view class="simple-header"><view class="simple-title">纸材</view><connection-status state="connected" base-url="{{baseUrl}}" bind:configure="configure" /></view><view class="group-list"><view class="group-row" wx:for="{{menus}}" wx:key="page" data-page="{{item.page}}" bindtap="open"><view><view class="group-row__title">{{item.title}}</view><view class="group-row__meta">{{item.desc}}</view></view><text>›</text></view></view></view>
