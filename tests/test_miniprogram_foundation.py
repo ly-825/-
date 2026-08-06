@@ -175,6 +175,57 @@ class MiniProgramFoundationTest(unittest.TestCase):
             self.assertIn(label, form)
         self.assertNotIn("第四阶段", self.read("miniprogram/pages/materials/paper-home.wxml"))
 
+    def test_new_material_write_pages_validate_before_confirmation(self) -> None:
+        for page in (
+            "miniprogram/pages/raw-plates/specification-form.js",
+            "miniprogram/pages/paper/specification-form.js",
+        ):
+            with self.subTest(page=page):
+                source = self.read(page)
+                self.assertIn("validateForm", source)
+                self.assertIn("wx.showToast", source)
+
+        quantity_pages = {
+            "miniprogram/pages/raw-plates/inbound.js": "Number(f.total_weight_ton)<=0",
+            "miniprogram/pages/raw-plates/outbound.js": "Number(f.quantity) <= 0",
+            "miniprogram/pages/paper/inbound.js": "Number(f.quantity) <= 0",
+            "miniprogram/pages/paper/outbound.js": "Number(f.quantity) <= 0",
+        }
+        for page, validation in quantity_pages.items():
+            with self.subTest(page=page):
+                source = self.read(page)
+                self.assertIn(validation, source)
+                self.assertIn("wx.showToast", source)
+        self.assertIn(
+            "!String(f.unit_price).trim()",
+            self.read("miniprogram/pages/paper/inbound.js"),
+        )
+
+    def test_dynamic_material_writes_pin_the_original_target_for_retry(self) -> None:
+        expected_targets = {
+            "miniprogram/pages/raw-plates/specifications.js": "specification_id",
+            "miniprogram/pages/paper/specifications.js": "specification_id",
+            "miniprogram/pages/raw-plates/detail.js": "batch_id",
+            "miniprogram/pages/raw-plates/transactions.js": "transaction_id",
+            "miniprogram/pages/paper/transactions.js": "transaction_id",
+            "miniprogram/pages/raw-plates/specification-form.js": "specification_id",
+            "miniprogram/pages/paper/specification-form.js": "specification_id",
+        }
+        for page, target_field in expected_targets.items():
+            with self.subTest(page=page):
+                source = self.read(page)
+                self.assertIn("retryPendingWrite", source)
+                self.assertIn(f"{target_field}:", source)
+                self.assertIn(f"pending.{target_field}", source)
+
+    def test_wxml_does_not_call_javascript_array_methods(self) -> None:
+        for page in (
+            "miniprogram/pages/raw-plates/list.wxml",
+            "miniprogram/pages/raw-plates/outbound.wxml",
+        ):
+            with self.subTest(page=page):
+                self.assertNotIn(".join(", self.read(page))
+
     def test_connection_page_supports_scan_manual_and_recovery(self) -> None:
         source = self.read("miniprogram/pages/connection/index.js")
         view = self.read("miniprogram/pages/connection/index.wxml")

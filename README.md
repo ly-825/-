@@ -131,7 +131,16 @@ miniprogram/
 成品
 ```
 
-第一阶段已经完成连接配置和三个模块框架；现有成品、余料功能继续作为二级页面使用。当前六类库存写操作均会先逐项核对，并在网络响应不确定时复用同一个请求编号，防止重复入库、出库或撤销。计划匹配、钢板、纸材和成品分析按后续阶段逐项接入，小程序不显示图纸、操作日志、助手或 Excel 导出入口。
+计划查料、钢板管理和纸材管理已经接入与 PC 后台相同的服务层和 SQLite 数据库。小程序当前支持：
+
+- 计划：筛选已确认图纸，输入计划数量，查看成品、余料、钢板匹配明细和用料建议。
+- 钢板：规格新增/修改/启停、按重量入库、分组库存、批次修改、FIFO 出库、流水查询和撤销。
+- 纸材：纸圈/纸张规格新增/修改/启停、批次入库、分组库存与批次明细、FIFO 出库、流水查询和撤销。
+- 成品和余料：继续使用现有小程序页面与移动接口。
+
+PC 和小程序不做数据复制或延迟同步：任一端提交成功后，另一端刷新页面即可看到相同数据。所有小程序库存写操作都会在提交前逐项确认，并携带持久化的 `client_request_id`；网络响应不确定时必须重试原请求，服务端会返回首次结果而不会重复入库、出库或撤销。同一个请求编号不得改成其他负载。
+
+Excel 导入、导出、操作日志、助手和高级统计仍只在 PC 后台提供，小程序不提供这些入口。
 
 二维码只包含版本号和局域网连接地址，不包含数据库、业务数据、密码或令牌。工厂路由器或后台电脑 IP 变化后，在电脑后台重新生成二维码并让手机重新扫描；不要修改 `miniprogram/app.js`。
 
@@ -157,7 +166,9 @@ miniprogram/
 3. 已通过电脑后台二维码完成小程序连接
 4. /api/mobile/summary 可以访问
 5. 已执行一次数据备份
-6. 产品入库、产品出库、余料确认、余料出库、流水撤销流程已抽查
+6. 计划查料结果已与 PC 页面抽查一致
+7. 钢板和纸材的规格、入库、出库、流水、撤销流程已各抽查一次
+8. 产品入库、产品出库、余料确认、余料出库、流水撤销流程已抽查
 ```
 
 正式发布前仍建议补充登录权限、正式 HTTPS 域名、服务器部署、自动备份和生产数据库方案。
@@ -257,6 +268,46 @@ python -m app.seed
 ```http
 GET /api/mobile/summary
 ```
+
+### 小程序计划查料
+
+```http
+GET /api/mobile/plans/drawings
+GET /api/mobile/plans/match
+```
+
+### 小程序钢板管理
+
+```http
+GET  /api/mobile/raw-plate-specifications
+POST /api/mobile/raw-plate-specifications
+PUT  /api/mobile/raw-plate-specifications/{specification_id}
+POST /api/mobile/raw-plate-specifications/{specification_id}/toggle
+GET  /api/mobile/raw-plates
+GET  /api/mobile/raw-plates/{batch_id}
+PUT  /api/mobile/raw-plates/{batch_id}
+POST /api/mobile/raw-plates/inbound
+POST /api/mobile/raw-plates/outbound
+GET  /api/mobile/raw-plates/transactions
+POST /api/mobile/raw-plates/transactions/{transaction_id}/reverse
+```
+
+### 小程序纸材管理
+
+```http
+GET  /api/mobile/paper-specifications
+POST /api/mobile/paper-specifications
+PUT  /api/mobile/paper-specifications/{specification_id}
+POST /api/mobile/paper-specifications/{specification_id}/toggle
+GET  /api/mobile/paper-materials
+GET  /api/mobile/paper-materials/{specification_id}/batches
+POST /api/mobile/paper-materials/inbound
+POST /api/mobile/paper-materials/outbound
+GET  /api/mobile/paper-materials/transactions
+POST /api/mobile/paper-materials/transactions/{transaction_id}/reverse
+```
+
+上述 `POST`/`PUT` 写接口都要求请求体包含唯一的 `client_request_id`。同编号、同负载可安全重试；同编号、不同负载会返回 `409`，此时应先核对原操作结果，不能生成新负载覆盖原请求。
 
 ### 小程序图纸管理
 

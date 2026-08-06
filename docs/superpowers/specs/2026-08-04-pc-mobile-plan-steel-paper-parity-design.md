@@ -221,3 +221,20 @@ PC 页面路径、表单字段和重定向保持兼容，但路由内部不再�
 3. 两端共用服务层和数据表，不存在复制的入库、FIFO、撤销或匹配规则。
 4. 所有写入完成幂等、确认、事务和操作日志闭环。
 5. 自动化测试、开发者工具构建和双端数据闭环验收全部通过。
+
+## 10. 2026-08-06 实施验收记录
+
+### 10.1 自动化与双端数据闭环
+
+- `PYTHONPATH=. .venv/bin/pytest -q`：`155 passed`，`48 subtests passed`；另有 11 条第三方库弃用警告，无失败。
+- `PYTHONPATH=. .venv/bin/pytest -q tests/test_pc_mobile_material_parity.py tests/test_mobile_plan_api.py tests/test_mobile_raw_plate_api.py tests/test_mobile_paper_api.py`：`7 passed`。
+- `node --test tests/miniprogram_connection.test.js tests/miniprogram_material_api.test.js`：`10 passed`。
+- 全部小程序 JSON 通过 `.venv/bin/python -m json.tool`，全部小程序 JavaScript 通过 `node --check`，`git diff --check` 退出码为 0。
+- `tests/test_pc_mobile_material_parity.py` 使用独立内存数据库验证：PC 服务入库后移动接口立即可见；移动接口 FIFO 出库后 PC 服务读取到相同余额；移动接口撤销后 PC 余额恢复；计划服务与移动接口返回完全相同的成品、余料、钢板统计和建议。测试没有修改 `data/app.db`。
+- 新增前端门禁验证必填字段在确认前拦截，并验证动态写入重试始终绑定原 `specification_id`、`batch_id` 或 `transaction_id`。
+
+### 10.2 运行服务与开发者工具
+
+- 后台已从本仓库重新启动为 `uvicorn app.main:app --host 0.0.0.0 --port 8000`；通过 `http://192.168.10.239:8000` 实测 `/health`、`/api/mobile/summary`、`/api/mobile/plans/drawings`、`/api/mobile/raw-plate-specifications`、`/api/mobile/raw-plates`、`/api/mobile/paper-specifications` 和 `/api/mobile/paper-materials` 均返回成功。
+- 微信开发者工具使用 AppID `wxc9c29ffe2999dff6` 对计划、钢板库存、钢板出库、纸材库存和纸材入库入口完成多次 `preview` 构建。最终构建结果为 `✔ preview`，总包大小 `188.1 KB / 192601 Byte`。
+- 为避免污染正式库存，本次没有在 `data/app.db` 新建并删除测试规格。首次现场试运行仍需按 README 的“内部试运行”清单，由操作人员用专门测试规格在真机完成一次界面操作抽查；该步骤属于现场确认，不影响上述代码、接口、共享数据库和构建验收结果。
