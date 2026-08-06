@@ -6,7 +6,7 @@ from app import admin_pages, mobile_connection_pages, paper_admin_pages
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.home import render_home
-from app.routers import drawings, inventory, mobile, mobile_plan, mobile_raw_plates
+from app.routers import drawings, inventory, mobile, mobile_paper, mobile_plan, mobile_raw_plates
 from app.schema_migrations import ensure_runtime_schema
 from app.services.drawing_upload import backfill_missing_file_hashes
 
@@ -33,6 +33,7 @@ app.include_router(inventory.router, prefix="/api/inventory", tags=["库存管�
 app.include_router(mobile.router, prefix="/api/mobile", tags=["小程序接口"])
 app.include_router(mobile_plan.router, prefix="/api/mobile", tags=["小程序计划"])
 app.include_router(mobile_raw_plates.router, prefix="/api/mobile", tags=["小程序钢板"])
+app.include_router(mobile_paper.router, prefix="/api/mobile", tags=["小程序纸材"])
 app.include_router(admin_pages.router, tags=["中文后台"])
 app.include_router(paper_admin_pages.router, tags=["纸材后台"])
 app.include_router(mobile_connection_pages.router, tags=["小程序连接"])
