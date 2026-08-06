@@ -1,5 +1,4 @@
 import html
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -10,19 +9,20 @@ from app.database import get_db
 from app.models import PaperInventoryBatch, PaperInventoryTransaction, PaperSpecification
 from app.services.inventory_service import inventory_write_lock
 from app.services.material_formats import paper_roll_size, paper_sheet_model
-from app.services.operation_log import record_operation_log
 from app.services.paper_inventory import (
     PAPER_TYPE_LABELS,
     PAPER_UNITS,
-    normalize_paper_specification,
+    create_paper_specification as create_paper_specification_record,
+    inbound_paper,
+    list_paper_specifications,
     outbound_paper_fifo,
     paper_batch_size,
     paper_inventory_groups,
-    paper_inventory_snapshot,
     paper_specification_sort_key,
     reverse_paper_transaction,
+    toggle_paper_specification as toggle_paper_specification_record,
+    update_paper_specification as update_paper_specification_record,
 )
-from app.time_utils import china_now
 
 
 router = APIRouter()
@@ -37,17 +37,6 @@ def _spec_size(spec: PaperSpecification) -> str:
     if spec.paper_type == "roll":
         return paper_roll_size(spec.thickness, spec.inner_diameter, spec.outer_diameter)
     return paper_sheet_model(spec.thickness, spec.length, spec.width)
-
-
-def _apply_spec_values(spec: PaperSpecification, values: dict[str, object]) -> None:
-    spec.paper_type = str(values["paper_type"])
-    spec.model = str(values["model"])
-    spec.material_name = str(values["material_name"])
-    spec.thickness = float(values["thickness"])
-    spec.inner_diameter = values["inner_diameter"]
-    spec.outer_diameter = values["outer_diameter"]
-    spec.length = values["length"]
-    spec.width = values["width"]
 
 
 def _optional_form_float(value: str | float | None, label: str) -> float | None:
@@ -122,21 +111,13 @@ def paper_specifications_page(
     material_name: str = "",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    query = db.query(PaperSpecification)
     keyword = q.strip()
-    if keyword:
-        like = f"%{keyword}%"
-        query = query.filter(
-            PaperSpecification.model.ilike(like)
-            | PaperSpecification.material_name.ilike(like)
-            | PaperSpecification.remark.ilike(like)
-        )
-    if paper_type in PAPER_TYPE_LABELS:
-        query = query.filter(PaperSpecification.paper_type == paper_type)
-    if material_name.strip():
-        query = query.filter(PaperSpecification.material_name.ilike(f"%{material_name.strip()}%"))
-    specs = query.all()
-    specs.sort(key=lambda spec: (*paper_specification_sort_key(spec), -int(bool(spec.is_active))))
+    specs = list_paper_specifications(
+        db,
+        q=keyword,
+        paper_type=paper_type,
+        material_name=material_name,
+    )
     rows = "".join(
         f"<tr><td>{PAPER_TYPE_LABELS[spec.paper_type]}</td><td>{html.escape(spec.model)}</td>"
         f"<td>{html.escape(spec.material_name)}</td><td>{html.escape(_spec_size(spec))}</td>"
@@ -173,18 +154,18 @@ def create_paper_specification(
     remark: str = Form(""),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    values = normalize_paper_specification(
-        paper_type,
-        model,
-        material_name,
-        thickness,
-        _optional_form_float(inner_diameter, "内径"),
-        _optional_form_float(outer_diameter, "外径"),
-        _optional_form_float(length, "长度"),
-        _optional_form_float(width, "宽度"),
+    create_paper_specification_record(
+        db,
+        paper_type=paper_type,
+        model=model,
+        material_name=material_name,
+        thickness=thickness,
+        inner_diameter=_optional_form_float(inner_diameter, "内径"),
+        outer_diameter=_optional_form_float(outer_diameter, "外径"),
+        length=_optional_form_float(length, "长度"),
+        width=_optional_form_float(width, "宽度"),
+        remark=remark,
     )
-    spec = PaperSpecification(remark=remark.strip() or None, is_active=1, **values)
-    db.add(spec)
     db.commit()
     return RedirectResponse("/admin/paper-specifications", status_code=303)
 
@@ -217,32 +198,27 @@ def update_paper_specification(
     remark: str = Form(""),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    spec = db.get(PaperSpecification, spec_id)
-    if not spec:
-        raise HTTPException(status_code=404, detail="纸材规格不存在")
-    values = normalize_paper_specification(
-        paper_type,
-        model,
-        material_name,
-        thickness,
-        _optional_form_float(inner_diameter, "内径"),
-        _optional_form_float(outer_diameter, "外径"),
-        _optional_form_float(length, "长度"),
-        _optional_form_float(width, "宽度"),
+    update_paper_specification_record(
+        db,
+        spec_id,
+        paper_type=paper_type,
+        model=model,
+        material_name=material_name,
+        thickness=thickness,
+        inner_diameter=_optional_form_float(inner_diameter, "内径"),
+        outer_diameter=_optional_form_float(outer_diameter, "外径"),
+        length=_optional_form_float(length, "长度"),
+        width=_optional_form_float(width, "宽度"),
+        is_active=is_active,
+        remark=remark,
     )
-    _apply_spec_values(spec, values)
-    spec.is_active = 1 if is_active else 0
-    spec.remark = remark.strip() or None
     db.commit()
     return RedirectResponse("/admin/paper-specifications", status_code=303)
 
 
 @router.post("/admin/paper-specifications/{spec_id}/toggle")
 def toggle_paper_specification(spec_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
-    spec = db.get(PaperSpecification, spec_id)
-    if not spec:
-        raise HTTPException(status_code=404, detail="纸材规格不存在")
-    spec.is_active = 0 if spec.is_active else 1
+    toggle_paper_specification_record(db, spec_id)
     db.commit()
     return RedirectResponse("/admin/paper-specifications", status_code=303)
 
@@ -284,53 +260,15 @@ def create_paper_inbound(
     _lock=Depends(locked_paper_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    spec = db.get(PaperSpecification, specification_id)
-    if not spec or not spec.is_active:
-        raise HTTPException(status_code=400, detail="纸材规格不存在或已停用")
-    if quantity <= 0:
-        raise HTTPException(status_code=400, detail="入库数量必须大于0")
-    try:
-        price = Decimal(str(unit_price)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    except InvalidOperation as exc:
-        raise HTTPException(status_code=400, detail="入库单价格式错误") from exc
-    if price < 0:
-        raise HTTPException(status_code=400, detail="入库单价不能小于0")
-    batch = PaperInventoryBatch(
-        specification_id=spec.id,
-        batch_code=batch_code.strip() or f"PAPER-{china_now().strftime('%Y%m%d%H%M%S')}",
-        paper_type=spec.paper_type,
-        model=spec.model,
-        material_name=spec.material_name,
-        thickness=spec.thickness,
-        inner_diameter=spec.inner_diameter,
-        outer_diameter=spec.outer_diameter,
-        length=spec.length,
-        width=spec.width,
-        quantity=quantity,
-        unit_price=price,
-        location=location.strip() or None,
-        status="available",
-    )
-    db.add(batch)
-    db.flush()
-    transaction = PaperInventoryTransaction(
-        inventory_id=batch.id,
-        transaction_type="in",
-        quantity=quantity,
-        before_quantity=0,
-        after_quantity=quantity,
-        operator_name=operator_name.strip() or None,
-        remark=remark.strip() or "纸材入库",
-    )
-    db.add(transaction)
-    record_operation_log(
+    inbound_paper(
         db,
-        "paper_inbound",
-        "paper_inventory",
-        batch.id,
-        operator_name.strip() or None,
-        transaction.remark,
-        after_data=paper_inventory_snapshot(batch),
+        specification_id=specification_id,
+        batch_code=batch_code,
+        quantity=quantity,
+        unit_price=unit_price,
+        location=location,
+        operator_name=operator_name,
+        remark=remark,
     )
     db.commit()
     return RedirectResponse("/admin/paper-materials", status_code=303)
@@ -512,7 +450,7 @@ def outbound_paper_from_page(
     _lock=Depends(locked_paper_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    records = outbound_paper_fifo(
+    outbound_paper_fifo(
         specification_id,
         quantity,
         location,
@@ -521,17 +459,6 @@ def outbound_paper_from_page(
         remark,
         db,
     )
-    for record in records:
-        batch = db.get(PaperInventoryBatch, record.inventory_id)
-        record_operation_log(
-            db,
-            "paper_outbound",
-            "paper_inventory",
-            batch.id,
-            operator_name.strip() or None,
-            record.remark,
-            after_data=paper_inventory_snapshot(batch),
-        )
     db.commit()
     return RedirectResponse("/admin/paper-materials", status_code=303)
 
@@ -607,16 +534,6 @@ def reverse_paper_transaction_from_page(
     _lock=Depends(locked_paper_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    reversal = reverse_paper_transaction(transaction_id, operator_name, remark, db)
-    batch = db.get(PaperInventoryBatch, reversal.inventory_id)
-    record_operation_log(
-        db,
-        "paper_transaction_reverse",
-        "paper_inventory",
-        batch.id,
-        operator_name.strip() or None,
-        reversal.remark,
-        after_data=paper_inventory_snapshot(batch),
-    )
+    reverse_paper_transaction(transaction_id, operator_name, remark, db)
     db.commit()
     return RedirectResponse("/admin/paper-materials/transactions", status_code=303)

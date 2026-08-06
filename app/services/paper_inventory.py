@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 from fastapi import HTTPException
@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.models import PaperInventoryBatch, PaperInventoryTransaction, PaperSpecification
 from app.services.drawing_search import natural_sort_key
 from app.services.material_formats import paper_roll_size, paper_sheet_model
+from app.services.operation_log import record_operation_log
+from app.time_utils import china_now
 
 
 PAPER_TYPES = {"roll", "sheet"}
@@ -156,6 +158,312 @@ def paper_inventory_groups(batches: list[PaperInventoryBatch]) -> list[dict[str,
     )
 
 
+def list_paper_specifications(
+    db: Session,
+    *,
+    q: str = "",
+    paper_type: str = "",
+    material_name: str = "",
+) -> list[PaperSpecification]:
+    query = db.query(PaperSpecification)
+    keyword = q.strip()
+    if keyword:
+        like = f"%{keyword}%"
+        query = query.filter(
+            PaperSpecification.model.ilike(like)
+            | PaperSpecification.material_name.ilike(like)
+            | PaperSpecification.remark.ilike(like)
+        )
+    type_value = paper_type.strip().lower()
+    if type_value:
+        if type_value not in PAPER_TYPES:
+            raise HTTPException(status_code=400, detail="纸材类型无效")
+        query = query.filter(PaperSpecification.paper_type == type_value)
+    if material_name.strip():
+        query = query.filter(
+            PaperSpecification.material_name.ilike(f"%{material_name.strip()}%")
+        )
+    specs = query.all()
+    specs.sort(key=paper_specification_sort_key)
+    return specs
+
+
+def _apply_specification_values(
+    specification: PaperSpecification, values: dict[str, object]
+) -> None:
+    for field, value in values.items():
+        setattr(specification, field, value)
+
+
+def create_paper_specification(
+    db: Session,
+    *,
+    paper_type: str,
+    model: str,
+    material_name: str,
+    thickness: float,
+    inner_diameter: float | None,
+    outer_diameter: float | None,
+    length: float | None,
+    width: float | None,
+    remark: str = "",
+) -> PaperSpecification:
+    values = normalize_paper_specification(
+        paper_type,
+        model,
+        material_name,
+        thickness,
+        inner_diameter,
+        outer_diameter,
+        length,
+        width,
+    )
+    duplicate = (
+        db.query(PaperSpecification)
+        .filter(
+            PaperSpecification.paper_type == values["paper_type"],
+            PaperSpecification.model == values["model"],
+            PaperSpecification.material_name == values["material_name"],
+            PaperSpecification.thickness == values["thickness"],
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(status_code=400, detail="相同纸材规格已存在")
+    specification = PaperSpecification(
+        **values,
+        remark=remark.strip() or None,
+        is_active=1,
+    )
+    db.add(specification)
+    db.flush()
+    return specification
+
+
+def update_paper_specification(
+    db: Session,
+    specification_id: int,
+    *,
+    paper_type: str,
+    model: str,
+    material_name: str,
+    thickness: float,
+    inner_diameter: float | None,
+    outer_diameter: float | None,
+    length: float | None,
+    width: float | None,
+    is_active: int,
+    remark: str = "",
+) -> PaperSpecification:
+    specification = db.get(PaperSpecification, specification_id)
+    if not specification:
+        raise HTTPException(status_code=404, detail="纸材规格不存在")
+    values = normalize_paper_specification(
+        paper_type,
+        model,
+        material_name,
+        thickness,
+        inner_diameter,
+        outer_diameter,
+        length,
+        width,
+    )
+    duplicate = (
+        db.query(PaperSpecification)
+        .filter(
+            PaperSpecification.id != specification.id,
+            PaperSpecification.paper_type == values["paper_type"],
+            PaperSpecification.model == values["model"],
+            PaperSpecification.material_name == values["material_name"],
+            PaperSpecification.thickness == values["thickness"],
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(status_code=400, detail="相同纸材规格已存在")
+    _apply_specification_values(specification, values)
+    specification.is_active = 1 if is_active else 0
+    specification.remark = remark.strip() or None
+    db.flush()
+    return specification
+
+
+def toggle_paper_specification(
+    db: Session, specification_id: int
+) -> PaperSpecification:
+    specification = db.get(PaperSpecification, specification_id)
+    if not specification:
+        raise HTTPException(status_code=404, detail="纸材规格不存在")
+    specification.is_active = 0 if specification.is_active else 1
+    db.flush()
+    return specification
+
+
+def list_paper_batches(
+    db: Session,
+    specification_id: int,
+    *,
+    q: str = "",
+    location: str = "",
+    include_zero: bool = False,
+) -> list[PaperInventoryBatch]:
+    if not db.get(PaperSpecification, specification_id):
+        raise HTTPException(status_code=404, detail="纸材规格不存在")
+    query = db.query(PaperInventoryBatch).filter(
+        PaperInventoryBatch.specification_id == specification_id
+    )
+    if not include_zero:
+        query = query.filter(PaperInventoryBatch.quantity > 0)
+    keyword = q.strip()
+    if keyword:
+        like = f"%{keyword}%"
+        query = query.filter(
+            PaperInventoryBatch.batch_code.ilike(like)
+            | PaperInventoryBatch.model.ilike(like)
+            | PaperInventoryBatch.material_name.ilike(like)
+        )
+    if location.strip():
+        query = query.filter(PaperInventoryBatch.location.ilike(f"%{location.strip()}%"))
+    return query.order_by(
+        PaperInventoryBatch.created_at.asc(), PaperInventoryBatch.id.asc()
+    ).all()
+
+
+def list_paper_inventory(
+    db: Session,
+    *,
+    q: str = "",
+    paper_type: str = "",
+    material_name: str = "",
+    location: str = "",
+) -> list[dict[str, Any]]:
+    query = db.query(PaperInventoryBatch).filter(PaperInventoryBatch.quantity > 0)
+    keyword = q.strip()
+    if keyword:
+        like = f"%{keyword}%"
+        query = query.filter(
+            PaperInventoryBatch.batch_code.ilike(like)
+            | PaperInventoryBatch.model.ilike(like)
+            | PaperInventoryBatch.material_name.ilike(like)
+        )
+    type_value = paper_type.strip().lower()
+    if type_value:
+        if type_value not in PAPER_TYPES:
+            raise HTTPException(status_code=400, detail="纸材类型无效")
+        query = query.filter(PaperInventoryBatch.paper_type == type_value)
+    if material_name.strip():
+        query = query.filter(
+            PaperInventoryBatch.material_name.ilike(f"%{material_name.strip()}%")
+        )
+    if location.strip():
+        query = query.filter(PaperInventoryBatch.location.ilike(f"%{location.strip()}%"))
+    return paper_inventory_groups(query.all())
+
+
+def inbound_paper(
+    db: Session,
+    *,
+    specification_id: int,
+    batch_code: str,
+    quantity: int,
+    unit_price: str | float | Decimal,
+    location: str = "",
+    operator_name: str = "",
+    remark: str = "",
+) -> dict[str, object]:
+    specification = db.get(PaperSpecification, specification_id)
+    if not specification or not specification.is_active:
+        raise HTTPException(status_code=400, detail="纸材规格不存在或已停用")
+    if quantity <= 0:
+        raise HTTPException(status_code=400, detail="入库数量必须大于0")
+    try:
+        price = Decimal(str(unit_price)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+    except InvalidOperation as exc:
+        raise HTTPException(status_code=400, detail="入库单价格式错误") from exc
+    if price < 0:
+        raise HTTPException(status_code=400, detail="入库单价不能小于0")
+    batch = PaperInventoryBatch(
+        specification_id=specification.id,
+        batch_code=batch_code.strip()
+        or f"PAPER-{china_now().strftime('%Y%m%d%H%M%S%f')}",
+        paper_type=specification.paper_type,
+        model=specification.model,
+        material_name=specification.material_name,
+        thickness=specification.thickness,
+        inner_diameter=specification.inner_diameter,
+        outer_diameter=specification.outer_diameter,
+        length=specification.length,
+        width=specification.width,
+        quantity=quantity,
+        unit_price=price,
+        location=location.strip() or None,
+        status="available",
+    )
+    db.add(batch)
+    db.flush()
+    transaction = PaperInventoryTransaction(
+        inventory_id=batch.id,
+        transaction_type="in",
+        quantity=quantity,
+        before_quantity=0,
+        after_quantity=quantity,
+        operator_name=operator_name.strip() or None,
+        remark=remark.strip() or "纸材入库",
+    )
+    db.add(transaction)
+    record_operation_log(
+        db,
+        "paper_inbound",
+        "paper_inventory",
+        batch.id,
+        operator_name.strip() or None,
+        transaction.remark,
+        after_data=paper_inventory_snapshot(batch),
+    )
+    db.flush()
+    return {"batch": batch, "transaction": transaction}
+
+
+def list_paper_transactions(
+    db: Session,
+    *,
+    q: str = "",
+    paper_type: str = "",
+    transaction_type: str = "",
+) -> list[dict[str, Any]]:
+    query = db.query(PaperInventoryTransaction)
+    if transaction_type.strip():
+        query = query.filter(
+            PaperInventoryTransaction.transaction_type == transaction_type.strip()
+        )
+    rows: list[dict[str, Any]] = []
+    keyword = q.strip().lower()
+    for record in query.order_by(PaperInventoryTransaction.created_at.desc()).limit(500):
+        batch = db.get(PaperInventoryBatch, record.inventory_id)
+        if not batch:
+            continue
+        if paper_type.strip() and batch.paper_type != paper_type.strip():
+            continue
+        searchable = " ".join(
+            str(value or "")
+            for value in (
+                batch.batch_code,
+                batch.model,
+                batch.material_name,
+                batch.location,
+                record.customer_name,
+                record.operator_name,
+                record.remark,
+            )
+        ).lower()
+        if keyword and keyword not in searchable:
+            continue
+        rows.append({"record": record, "batch": batch})
+    return rows
+
+
 def outbound_paper_fifo(
     specification_id: int,
     quantity: int,
@@ -190,6 +498,7 @@ def outbound_paper_fifo(
         if remaining <= 0:
             break
         outbound_quantity = min(batch.quantity, remaining)
+        before_data = paper_inventory_snapshot(batch)
         before_quantity = batch.quantity
         batch.quantity -= outbound_quantity
         batch.status = "used" if batch.quantity <= 0 else "available"
@@ -205,6 +514,16 @@ def outbound_paper_fifo(
         )
         db.add(record)
         records.append(record)
+        record_operation_log(
+            db,
+            "paper_outbound",
+            "paper_inventory",
+            batch.id,
+            (operator_name or "").strip() or None,
+            record.remark,
+            before_data=before_data,
+            after_data=paper_inventory_snapshot(batch),
+        )
         remaining -= outbound_quantity
     db.flush()
     return records
@@ -253,6 +572,15 @@ def reverse_paper_transaction(
     db.add(reversal)
     db.flush()
     record.reversed_transaction_id = reversal.id
+    record_operation_log(
+        db,
+        "paper_transaction_reverse",
+        "paper_inventory",
+        batch.id,
+        (operator_name or "").strip() or None,
+        reversal.remark,
+        after_data=paper_inventory_snapshot(batch),
+    )
     return reversal
 
 
