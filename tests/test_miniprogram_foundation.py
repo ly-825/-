@@ -122,6 +122,21 @@ class MiniProgramFoundationTest(unittest.TestCase):
         self.assertIn("扫描电脑连接二维码", view)
         self.assertIn("手工设置地址", view)
 
+    def test_plan_page_supports_filters_match_and_three_inventory_results(self) -> None:
+        view = self.read("miniprogram/pages/plan/home.wxml")
+        source = self.read("miniprogram/pages/plan/home.js")
+        config = json.loads(self.read("miniprogram/pages/plan/home.json"))
+        for label in ("型号或名称", "材质", "厚度", "外径", "内径", "齿数", "计划数量"):
+            self.assertIn(label, view)
+        for label in ("系统建议", "成品库存", "匹配余料", "匹配钢板"):
+            self.assertIn(label, view)
+        self.assertIn("planDrawings", source)
+        self.assertIn("planMatch", source)
+        self.assertIn("onShow", source)
+        self.assertIn("<state-view", view)
+        self.assertEqual(config["usingComponents"]["state-view"], "/components/state-view/index")
+        self.assertNotIn("第二阶段", view)
+
     def test_connection_page_supports_scan_manual_and_recovery(self) -> None:
         source = self.read("miniprogram/pages/connection/index.js")
         view = self.read("miniprogram/pages/connection/index.wxml")

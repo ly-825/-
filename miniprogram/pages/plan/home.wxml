@@ -3,8 +3,56 @@
     <view class="simple-title">计划查料</view>
     <connection-status state="connected" base-url="{{baseUrl}}" bind:configure="configure" />
   </view>
-  <view class="form-section phase-note">
-    <view class="group-row__title">计划匹配</view>
-    <view class="group-row__meta">计划筛选与库存匹配将在第二阶段开放</view>
+
+  <view class="form-section">
+    <view class="form-field"><view class="form-label">型号或名称</view><input class="input" value="{{filters.q}}" data-field="q" bindinput="onFilter" placeholder="输入产品型号或名称" /></view>
+    <view class="filter-grid">
+      <view class="form-field"><view class="form-label">材质</view><input class="input" value="{{filters.material}}" data-field="material" bindinput="onFilter" /></view>
+      <view class="form-field"><view class="form-label">厚度</view><input class="input" type="digit" value="{{filters.thickness}}" data-field="thickness" bindinput="onFilter" /></view>
+      <view class="form-field"><view class="form-label">外径</view><input class="input" type="digit" value="{{filters.outer_diameter}}" data-field="outer_diameter" bindinput="onFilter" /></view>
+      <view class="form-field"><view class="form-label">内径</view><input class="input" type="digit" value="{{filters.inner_diameter}}" data-field="inner_diameter" bindinput="onFilter" /></view>
+      <view class="form-field"><view class="form-label">齿数</view><input class="input" value="{{filters.teeth_count}}" data-field="teeth_count" bindinput="onFilter" /></view>
+    </view>
+    <button class="btn secondary" bindtap="loadDrawings">筛选图纸</button>
   </view>
+
+  <state-view wx:if="{{loading}}" state="loading" title="正在查询图纸" />
+  <state-view wx:elif="{{error}}" state="error" title="查询失败" description="{{error}}" bind:retry="loadDrawings" />
+  <view wx:elif="{{!drawings.length}}" class="empty">没有匹配的已确认图纸</view>
+  <view wx:else class="data-list">
+    <view wx:for="{{drawings}}" wx:key="id" class="data-item {{selectedDrawingId === item.id ? 'is-selected' : ''}}" data-id="{{item.id}}" bindtap="selectDrawing">
+      <view class="name">{{item.product_code || '未编号'}}｜{{item.product_name || '-'}}</view>
+      <view class="meta">{{item.material || '-'}}｜厚度 {{item.thickness || '-'}}｜外径 {{item.outer_diameter || '-'}}｜内径 {{item.inner_diameter || '-'}}｜齿数 {{item.teeth_count || '-'}}</view>
+    </view>
+  </view>
+
+  <view class="form-section">
+    <view class="form-label">已选图纸</view><view class="selected-value">{{selectedDrawingLabel}}</view>
+    <view class="form-field"><view class="form-label">计划数量</view><input class="input" type="number" value="{{quantity}}" bindinput="onQuantity" /></view>
+    <button class="primary-action" bindtap="matchMaterials" loading="{{matching}}" disabled="{{matching}}">查询可用材料</button>
+  </view>
+
+  <block wx:if="{{result}}">
+    <view class="form-section recommendation"><view class="form-label">系统建议</view><view class="recommendation-text">{{result.recommendation}}</view></view>
+    <view class="result-section">
+      <view class="result-title"><text>成品库存</text><text>{{result.product.quantity}}（{{result.product.batch_count}} 批）</text></view>
+      <view wx:if="{{!result.product.batches.length}}" class="empty">暂无匹配库存</view>
+      <view wx:else class="data-list">
+        <view wx:for="{{result.product.batches}}" wx:key="id" class="data-item">
+          <view class="name">{{item.material_code || item.raw_plate_model || item.usable_size || '未编号'}}｜数量 {{item.quantity}}</view>
+          <view class="meta">{{item.material || '-'}}｜厚度 {{item.thickness || '-'}}｜库位 {{item.location || '-'}}</view>
+        </view>
+      </view>
+    </view>
+    <view class="result-section">
+      <view class="result-title"><text>匹配余料</text><text>{{result.scrap.quantity}}（{{result.scrap.batch_count}} 批）</text></view>
+      <view wx:if="{{!result.scrap.batches.length}}" class="empty">暂无匹配库存</view>
+      <view wx:else class="data-list"><view wx:for="{{result.scrap.batches}}" wx:key="id" class="data-item"><view class="name">{{item.material_code || item.usable_size || '未编号'}}｜数量 {{item.quantity}}</view><view class="meta">{{item.material || '-'}}｜厚度 {{item.thickness || '-'}}｜库位 {{item.location || '-'}}</view></view></view>
+    </view>
+    <view class="result-section">
+      <view class="result-title"><text>匹配钢板</text><text>{{result.raw_plate.quantity}}（{{result.raw_plate.batch_count}} 批）</text></view>
+      <view wx:if="{{!result.raw_plate.batches.length}}" class="empty">暂无匹配库存</view>
+      <view wx:else class="data-list"><view wx:for="{{result.raw_plate.batches}}" wx:key="id" class="data-item"><view class="name">{{item.material_code || item.raw_plate_model || '未编号'}}｜数量 {{item.quantity}}</view><view class="meta">{{item.material || '-'}}｜厚度 {{item.thickness || '-'}}｜库位 {{item.location || '-'}}</view></view></view>
+    </view>
+  </block>
 </view>
