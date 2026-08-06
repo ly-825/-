@@ -1,7 +1,1 @@
-<view class="container">
-  <view class="simple-header">
-    <view class="simple-title">钢板</view>
-    <connection-status state="connected" base-url="{{baseUrl}}" bind:configure="configure" />
-  </view>
-  <view class="form-section phase-note"><view class="group-row__title">钢板材料管理</view><view class="group-row__meta">规格、库存和出入库将在第三阶段开放</view></view>
-</view>
+<view class="container"><view class="simple-header"><view class="simple-title">钢板</view><connection-status state="connected" base-url="{{baseUrl}}" bind:configure="configure" /></view><view class="group-list"><view class="group-row" bindtap="open" data-page="specifications"><view><view class="group-row__title">规格</view><view class="group-row__meta">新增、修改、启用或停用固定规格</view></view><text>›</text></view><view class="group-row" bindtap="open" data-page="list"><view><view class="group-row__title">库存</view><view class="group-row__meta">查看规格汇总和批次详情</view></view><text>›</text></view><view class="group-row" bindtap="open" data-page="inbound"><view><view class="group-row__title">入库</view><view class="group-row__meta">按重量换算整块数量</view></view><text>›</text></view><view class="group-row" bindtap="open" data-page="outbound"><view><view class="group-row__title">出库</view><view class="group-row__meta">按规格和库位 FIFO 出库</view></view><text>›</text></view><view class="group-row" bindtap="open" data-page="transactions"><view><view class="group-row__title">流水</view><view class="group-row__meta">查看并撤销入出库记录</view></view><text>›</text></view></view></view>

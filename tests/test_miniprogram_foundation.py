@@ -137,6 +137,44 @@ class MiniProgramFoundationTest(unittest.TestCase):
         self.assertEqual(config["usingComponents"]["state-view"], "/components/state-view/index")
         self.assertNotIn("第二阶段", view)
 
+    def test_raw_plate_pages_cover_spec_inventory_inbound_outbound_and_ledger(self) -> None:
+        app_json = json.loads(self.read("miniprogram/app.json"))
+        pages = ("specifications", "specification-form", "list", "detail", "inbound", "outbound", "transactions")
+        for name in pages:
+            base = f"miniprogram/pages/raw-plates/{name}"
+            self.assertIn(f"pages/raw-plates/{name}", app_json["pages"])
+            view, source = self.read(f"{base}.wxml"), self.read(f"{base}.js")
+            self.assertIn("simple-header", view)
+            self.assertIn("<state-view", view)
+            self.assertIn("onShow", source)
+        for name in ("specification-form", "detail", "inbound", "outbound", "transactions"):
+            base = f"miniprogram/pages/raw-plates/{name}"
+            self.assertIn("<confirm-sheet", self.read(f"{base}.wxml"))
+            self.assertIn("createPendingRequestTracker", self.read(f"{base}.js"))
+        home = self.read("miniprogram/pages/materials/steel-home.wxml")
+        for label in ("规格", "库存", "入库", "出库", "流水"):
+            self.assertIn(label, home)
+        self.assertNotIn("第三阶段", home)
+
+    def test_paper_pages_cover_both_types_inventory_and_ledger(self) -> None:
+        app_json = json.loads(self.read("miniprogram/app.json"))
+        pages = ("specifications", "specification-form", "list", "detail", "inbound", "outbound", "transactions")
+        for name in pages:
+            base = f"miniprogram/pages/paper/{name}"
+            self.assertIn(f"pages/paper/{name}", app_json["pages"])
+            view, source = self.read(f"{base}.wxml"), self.read(f"{base}.js")
+            self.assertIn("simple-header", view)
+            self.assertIn("<state-view", view)
+            self.assertIn("onShow", source)
+        for name in ("specification-form", "inbound", "outbound", "transactions"):
+            base = f"miniprogram/pages/paper/{name}"
+            self.assertIn("<confirm-sheet", self.read(f"{base}.wxml"))
+            self.assertIn("createPendingRequestTracker", self.read(f"{base}.js"))
+        form = self.read("miniprogram/pages/paper/specification-form.wxml")
+        for label in ("纸圈", "纸张", "内径", "外径", "长度", "宽度"):
+            self.assertIn(label, form)
+        self.assertNotIn("第四阶段", self.read("miniprogram/pages/materials/paper-home.wxml"))
+
     def test_connection_page_supports_scan_manual_and_recovery(self) -> None:
         source = self.read("miniprogram/pages/connection/index.js")
         view = self.read("miniprogram/pages/connection/index.wxml")

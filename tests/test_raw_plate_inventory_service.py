@@ -14,6 +14,7 @@ from app.models import (
 from app.services.raw_plate_inventory import (
     create_raw_plate_specification,
     inbound_raw_plate,
+    list_raw_plate_groups,
     outbound_raw_plate_fifo,
     reverse_raw_plate_transaction,
     toggle_raw_plate_specification,
@@ -158,6 +159,8 @@ class RawPlateInventoryServiceTest(unittest.TestCase):
                 .count(),
                 2,
             )
+            groups = list_raw_plate_groups(db)
+            self.assertEqual(groups[0]["batch_ids"], {second.id})
 
     def test_insufficient_outbound_changes_nothing(self) -> None:
         with self.Session() as db:

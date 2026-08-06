@@ -1,0 +1,1 @@
+.toolbar{display:flex;gap:16rpx}.toolbar .input{flex:1}

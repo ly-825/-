@@ -71,6 +71,7 @@ def raw_plate_summary_rows(
                 "batch_count": 0,
                 "locations": set(),
                 "batch_codes": set(),
+                "batch_ids": set(),
                 "latest": _latest_time(item),
             },
         )
@@ -80,6 +81,7 @@ def raw_plate_summary_rows(
             group["locations"].add(item.location)
         if item.material_code:
             group["batch_codes"].add(item.material_code)
+        group["batch_ids"].add(item.id)
         item_time = _latest_time(item)
         if item_time and (not group["latest"] or item_time > group["latest"]):
             group["latest"] = item_time

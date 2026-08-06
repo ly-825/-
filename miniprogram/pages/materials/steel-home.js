@@ -9,5 +9,9 @@ Page({
   },
   configure() {
     wx.reLaunch({ url: '/pages/connection/index' })
+  },
+
+  open(event) {
+    wx.navigateTo({ url: `/pages/raw-plates/${event.currentTarget.dataset.page}` })
   }
 })
