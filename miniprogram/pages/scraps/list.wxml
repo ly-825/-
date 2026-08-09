@@ -16,12 +16,15 @@
   <state-view wx:elif="{{error}}" state="error" title="余料库存加载失败" description="{{error}}" bind:retry="load" />
   <view wx:else class="data-list">
     <view wx:if="{{!items.length}}" class="empty">暂无匹配余料</view>
-    <view wx:for="{{items}}" wx:key="group_key" class="data-item">
-      <view class="row">
-        <view class="name">{{item.material}}｜{{item.usable_size}}</view>
-        <view class="badge numeric">{{item.quantity}}</view>
+    <view wx:for="{{items}}" wx:key="group_key" class="data-item detail-entry" data-index="{{index}}" bindtap="openDetail">
+      <view class="detail-entry__body">
+        <view class="row">
+          <view class="name">{{item.material}}｜{{item.usable_size}}</view>
+          <view class="badge numeric">{{item.quantity}}</view>
+        </view>
+        <view class="meta">厚度 {{item.thickness}}｜库位 {{item.location}}</view>
       </view>
-      <view class="meta">厚度 {{item.thickness}}｜库位 {{item.location}}</view>
+      <image class="group-row__chevron" src="/assets/icons/chevron-right.svg" mode="aspectFit" />
     </view>
   </view>
 </view>

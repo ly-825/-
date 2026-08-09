@@ -1,0 +1,31 @@
+.detail-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32rpx;
+  padding: 24rpx 28rpx;
+  border: 1rpx solid #E2E8F0;
+  border-radius: 20rpx;
+  background: #FFFFFF;
+}
+
+.detail-summary__label {
+  color: #475569;
+  font-size: 26rpx;
+}
+
+.detail-summary__meta {
+  margin-top: 6rpx;
+  color: #64748B;
+  font-size: 24rpx;
+}
+
+.detail-summary__value {
+  color: #0F172A;
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+.detail-section-title {
+  margin-top: 32rpx;
+}

@@ -137,6 +137,7 @@ module.exports = {
   pendingScraps: () => request('/api/mobile/scraps/pending'),
   confirmScrap: (id, data) => request(`/api/mobile/scraps/${id}/confirm`, { method: 'POST', data: trackedWriteData(data) }),
   scraps: (params = {}) => request('/api/mobile/scraps', { data: params }),
+  scrapBatches: (groupKey) => request('/api/mobile/scraps/batches', { data: { group_key: groupKey } }),
   scrapOutbound: (data) => request('/api/mobile/scraps/outbound', { method: 'POST', data: trackedWriteData(data) }),
   scrapTransactions: () => request('/api/mobile/scraps/transactions'),
   reverseScrapTransaction: (id, data = {}) => request(`/api/mobile/scraps/transactions/${id}/reverse`, { method: 'POST', data: trackedWriteData(data) }),

@@ -28,6 +28,7 @@
     "pages/scraps/home",
     "pages/scraps/pending",
     "pages/scraps/list",
+    "pages/scraps/detail",
     "pages/scraps/outbound",
     "pages/scraps/transactions"
   ],

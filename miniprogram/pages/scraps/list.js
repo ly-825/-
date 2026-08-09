@@ -14,5 +14,11 @@ Page({
     } finally {
       this.setData({ loading: false })
     }
+  },
+  openDetail(event) {
+    const item = this.data.items[event.currentTarget.dataset.index]
+    if (!item || !item.group_key) return
+    wx.setStorageSync('scrap-detail', item)
+    wx.navigateTo({ url: '/pages/scraps/detail' })
   }
 })

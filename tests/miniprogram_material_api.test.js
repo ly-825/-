@@ -41,3 +41,9 @@ test('product detail requests only the selected product ledger', async () => {
   assert.equal(lastRequest.url, 'http://factory/api/mobile/products/transactions')
   assert.deepEqual(lastRequest.data, { product_code: 'TNX 001' })
 })
+
+test('scrap detail requests only the selected grouped batches', async () => {
+  await api.scrapBatches('65Mn||2||φ80||S1')
+  assert.equal(lastRequest.url, 'http://factory/api/mobile/scraps/batches')
+  assert.deepEqual(lastRequest.data, { group_key: '65Mn||2||φ80||S1' })
+})

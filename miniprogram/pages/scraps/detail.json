@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "余料批次明细",
+  "usingComponents": {
+    "state-view": "/components/state-view/index"
+  }
+}
