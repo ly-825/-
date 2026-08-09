@@ -132,7 +132,7 @@ module.exports = {
   productBatches: (productCode) => request(`/api/mobile/products/${encodeURIComponent(productCode)}/batches`),
   productInbound: (data) => request('/api/mobile/products/inbound', { method: 'POST', data: trackedWriteData(data) }),
   productOutbound: (data) => request('/api/mobile/products/outbound', { method: 'POST', data: trackedWriteData(data) }),
-  productTransactions: () => request('/api/mobile/products/transactions'),
+  productTransactions: (params = {}) => request('/api/mobile/products/transactions', { data: params }),
   reverseProductTransaction: (id, data = {}) => request(`/api/mobile/products/transactions/${id}/reverse`, { method: 'POST', data: trackedWriteData(data) }),
   pendingScraps: () => request('/api/mobile/scraps/pending'),
   confirmScrap: (id, data) => request(`/api/mobile/scraps/${id}/confirm`, { method: 'POST', data: trackedWriteData(data) }),

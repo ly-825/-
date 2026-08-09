@@ -280,6 +280,43 @@ class MiniProgramFoundationTest(unittest.TestCase):
                     config.get("usingComponents", {}).get("state-view"),
                     "/components/state-view/index",
                 )
+
+    def test_product_batch_detail_is_registered_navigable_and_read_only(
+        self,
+    ) -> None:
+        app_json = json.loads(self.read("miniprogram/app.json"))
+        self.assertIn("pages/inventory/detail", app_json["pages"])
+
+        list_view = self.read("miniprogram/pages/inventory/list.wxml")
+        list_source = self.read("miniprogram/pages/inventory/list.js")
+        detail_view = self.read("miniprogram/pages/inventory/detail.wxml")
+        detail_source = self.read("miniprogram/pages/inventory/detail.js")
+        detail_config = json.loads(
+            self.read("miniprogram/pages/inventory/detail.json")
+        )
+
+        self.assertIn('bindtap="openDetail"', list_view)
+        self.assertIn("product-detail", list_source)
+        self.assertIn("productBatches", detail_source)
+        self.assertIn("productTransactions", detail_source)
+        self.assertIn("onShow", detail_source)
+        self.assertIn("<state-view", detail_view)
+        self.assertIn("批次", detail_view)
+        self.assertIn("流水", detail_view)
+        self.assertEqual(
+            detail_config["usingComponents"],
+            {"state-view": "/components/state-view/index"},
+        )
+        for forbidden in (
+            "confirm-sheet",
+            "primary-action",
+            "danger-action",
+            "<input",
+            "修改",
+            "删除",
+            "调整",
+        ):
+            self.assertNotIn(forbidden, detail_view)
         for name in ("inbound", "outbound"):
             view = self.read(f"miniprogram/pages/inventory/{name}.wxml")
             self.assertEqual(view.count("primary-action"), 1)

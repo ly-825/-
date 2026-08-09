@@ -35,3 +35,9 @@ test('paper specification update and outbound preserve methods', async () => {
   assert.equal(lastRequest.url, 'http://factory/api/mobile/paper-materials/outbound')
   assert.equal(lastRequest.method, 'POST')
 })
+
+test('product detail requests only the selected product ledger', async () => {
+  await api.productTransactions({ product_code: 'TNX 001' })
+  assert.equal(lastRequest.url, 'http://factory/api/mobile/products/transactions')
+  assert.deepEqual(lastRequest.data, { product_code: 'TNX 001' })
+})

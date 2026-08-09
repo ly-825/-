@@ -21,6 +21,7 @@
     "pages/paper/outbound",
     "pages/paper/transactions",
     "pages/inventory/list",
+    "pages/inventory/detail",
     "pages/inventory/inbound",
     "pages/inventory/outbound",
     "pages/inventory/transactions",

@@ -30,5 +30,15 @@ Page({
     } finally {
       this.setData({ loading: false })
     }
+  },
+
+  openDetail(event) {
+    const item = this.data.items[event.currentTarget.dataset.index]
+    if (!item || !item.product_code) return
+    wx.setStorageSync('product-detail', {
+      product_code: item.product_code,
+      quantity: item.quantity
+    })
+    wx.navigateTo({ url: '/pages/inventory/detail' })
   }
 })

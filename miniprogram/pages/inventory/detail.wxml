@@ -1,0 +1,44 @@
+<view class="container">
+  <view class="simple-header">
+    <view class="simple-title">成品批次明细</view>
+    <view class="simple-subtitle">{{product.product_code || '-'}}</view>
+  </view>
+
+  <state-view wx:if="{{loading}}" state="loading" title="正在读取成品批次" />
+  <state-view wx:elif="{{error}}" state="error" title="成品批次加载失败" description="{{error}}" bind:retry="load" />
+  <block wx:else>
+    <view class="detail-summary">
+      <view class="detail-summary__label">当前总数量</view>
+      <view class="detail-summary__value numeric">{{totalQuantity}}</view>
+    </view>
+
+    <view class="section-title detail-section-title">批次</view>
+    <state-view wx:if="{{!batches.length}}" state="empty" title="暂无成品批次" />
+    <view wx:else class="data-list">
+      <view wx:for="{{batches}}" wx:key="id" class="data-item">
+        <view class="row">
+          <view class="name">批次 #{{item.id}}</view>
+          <view class="badge numeric">{{item.quantity}}</view>
+        </view>
+        <view class="meta">库位 {{item.location_text}}｜{{item.status_text}}</view>
+        <view class="meta">材质 {{item.material_text}}｜纸材质 {{item.paper_material_text}}</view>
+        <view class="meta">总成品厚度 {{item.product_thickness_text}}｜钢板厚度 {{item.plate_thickness_text}}</view>
+        <view class="meta">入库 {{item.created_at_text}}｜更新 {{item.updated_at_text}}</view>
+      </view>
+    </view>
+
+    <view class="section-title detail-section-title">流水</view>
+    <state-view wx:if="{{!transactions.length}}" state="empty" title="暂无相关流水" />
+    <view wx:else class="ledger-list">
+      <view wx:for="{{transactions}}" wx:key="id" class="ledger-item">
+        <view class="row">
+          <view class="name">{{item.transaction_type_text}}</view>
+          <view class="badge numeric">{{item.quantity}}</view>
+        </view>
+        <view class="meta">操作前 {{item.before_quantity}}｜操作后 {{item.after_quantity}}｜库位 {{item.location || '-'}}</view>
+        <view class="meta">客户/去向 {{item.customer_text}}｜操作人 {{item.operator_text}}</view>
+        <view class="meta">{{item.remark_text}}｜{{item.created_at_text}}</view>
+      </view>
+    </view>
+  </block>
+</view>

@@ -1,0 +1,9 @@
+.detail-entry {
+  display: flex;
+  align-items: center;
+}
+
+.detail-entry__body {
+  min-width: 0;
+  flex: 1;
+}
