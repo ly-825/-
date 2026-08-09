@@ -155,8 +155,8 @@ class InventoryItemOut(BaseModel):
     plate_thickness: float | None = None
     status: str
     source_product_code: str | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

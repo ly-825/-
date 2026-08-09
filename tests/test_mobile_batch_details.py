@@ -121,6 +121,30 @@ class MobileBatchDetailsTest(unittest.TestCase):
             self.assertIsNotNone(payload["created_at"])
             self.assertIsNotNone(payload["updated_at"])
 
+    def test_product_batch_response_accepts_legacy_replayed_payload(self) -> None:
+        legacy_payload = {
+            "id": 1,
+            "material_code": "TNX-LEGACY",
+            "inventory_type": "product",
+            "material": "65Mn",
+            "thickness": 1.2,
+            "shape": "circle",
+            "diameter": 80,
+            "length": 80,
+            "width": 80,
+            "usable_size": "φ80",
+            "quantity": 3,
+            "location": "A-01",
+            "paper_material": "黑纸",
+            "status": "available",
+            "source_product_code": "TNX-LEGACY",
+        }
+
+        payload = InventoryItemOut.model_validate(legacy_payload)
+
+        self.assertIsNone(payload.created_at)
+        self.assertIsNone(payload.updated_at)
+
     def test_scrap_details_return_selected_batches_sources_and_transactions(
         self,
     ) -> None:
