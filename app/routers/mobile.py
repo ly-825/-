@@ -1,9 +1,16 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing
+from app.models import (
+    InventoryTransactionRecord,
+    MaterialInventory,
+    ProductDrawing,
+    ScrapGenerationRecord,
+)
 from app.schemas import DrawingConfirm, DrawingOut, DrawingUploadOut
 from app.services.drawing_parameters import common_normal_value_from_text, first_int_value, normalize_tooth_type, plain_float_value
 from app.services.drawing_upload import delete_uploaded_drawing, save_uploaded_drawing
@@ -109,6 +116,27 @@ class TransactionOut(BaseModel):
     created_at: str
 
 
+class ScrapBatchOut(BaseModel):
+    id: int
+    source_product_code: str | None
+    source_drawing_label: str
+    quantity: int
+    location: str
+    status: str
+    usable_size: str
+    theoretical_size: str | None
+    actual_size: str | None
+    operator_name: str | None
+    registered_at: str
+
+
+class ScrapBatchDetailsOut(BaseModel):
+    group_key: str
+    total_quantity: int
+    batches: list[ScrapBatchOut]
+    transactions: list[TransactionOut]
+
+
 class InventoryItemOut(BaseModel):
     id: int
     material_code: str | None
@@ -123,8 +151,12 @@ class InventoryItemOut(BaseModel):
     quantity: int
     location: str | None
     paper_material: str | None = None
+    product_thickness: float | None = None
+    plate_thickness: float | None = None
     status: str
     source_product_code: str | None
+    created_at: datetime
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -671,8 +703,29 @@ def product_outbound(payload: ProductOutboundPayload, db: Session = Depends(get_
 
 
 @router.get("/products/transactions", response_model=list[TransactionOut])
-def product_transactions(db: Session = Depends(get_db)) -> list[TransactionOut]:
-    records = db.query(InventoryTransactionRecord).order_by(InventoryTransactionRecord.created_at.desc()).limit(500).all()
+def product_transactions(
+    product_code: str = "",
+    db: Session = Depends(get_db),
+) -> list[TransactionOut]:
+    query = db.query(MaterialInventory.id).filter(
+        MaterialInventory.inventory_type == "product"
+    )
+    code = product_code.strip()
+    if code:
+        query = query.filter(
+            (MaterialInventory.material_code == code)
+            | (MaterialInventory.source_product_code == code)
+        )
+    inventory_ids = [row[0] for row in query.all()]
+    if not inventory_ids:
+        return []
+    records = (
+        db.query(InventoryTransactionRecord)
+        .filter(InventoryTransactionRecord.inventory_id.in_(inventory_ids))
+        .order_by(InventoryTransactionRecord.created_at.desc())
+        .limit(500)
+        .all()
+    )
     return _transaction_rows(records, "product", db)
 
 
@@ -720,6 +773,108 @@ def reverse_product_transaction(transaction_id: int, payload: TransactionReverse
 @router.get("/scraps/pending", response_model=list[InventoryItemOut])
 def pending_scraps(db: Session = Depends(get_db)) -> list[MaterialInventory]:
     return db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "scrap", MaterialInventory.status == "pending").order_by(MaterialInventory.created_at.desc()).all()
+
+
+@router.get("/scraps/batches", response_model=ScrapBatchDetailsOut)
+def scrap_batch_details(
+    group_key: str,
+    db: Session = Depends(get_db),
+) -> ScrapBatchDetailsOut:
+    batches = find_scrap_batches_for_outbound(group_key, db)
+    batch_ids = [item.id for item in batches]
+    generation_records = (
+        db.query(ScrapGenerationRecord)
+        .filter(ScrapGenerationRecord.scrap_inventory_id.in_(batch_ids))
+        .order_by(
+            ScrapGenerationRecord.registered_at.desc(),
+            ScrapGenerationRecord.id.desc(),
+        )
+        .all()
+        if batch_ids
+        else []
+    )
+    generation_map: dict[int, ScrapGenerationRecord] = {}
+    for record in generation_records:
+        if record.scrap_inventory_id is not None:
+            generation_map.setdefault(record.scrap_inventory_id, record)
+
+    drawing_ids = {
+        drawing_id
+        for item in batches
+        if (
+            drawing_id := (
+                generation_map.get(item.id).source_drawing_id
+                if generation_map.get(item.id)
+                else item.source_drawing_id
+            )
+        )
+    }
+    drawing_map = {
+        drawing.id: drawing
+        for drawing in db.query(ProductDrawing)
+        .filter(ProductDrawing.id.in_(drawing_ids))
+        .all()
+    } if drawing_ids else {}
+
+    rows = []
+    for item in batches:
+        generation = generation_map.get(item.id)
+        drawing_id = (
+            generation.source_drawing_id
+            if generation and generation.source_drawing_id
+            else item.source_drawing_id
+        )
+        drawing = drawing_map.get(drawing_id)
+        source_drawing_label = "-"
+        if drawing:
+            source_drawing_label = (
+                f"{drawing.product_code or f'图纸 #{drawing.id}'} V{drawing.version}"
+            )
+        rows.append(
+            ScrapBatchOut(
+                id=item.id,
+                source_product_code=(
+                    generation.source_product_code
+                    if generation and generation.source_product_code
+                    else item.source_product_code
+                ),
+                source_drawing_label=source_drawing_label,
+                quantity=item.quantity,
+                location=_scrap_location_label(item),
+                status=item.status,
+                usable_size=(
+                    item.usable_size
+                    or (
+                        f"φ{item.diameter:g}"
+                        if item.diameter is not None
+                        else "-"
+                    )
+                ),
+                theoretical_size=(
+                    generation.theoretical_size if generation else None
+                ),
+                actual_size=generation.actual_size if generation else None,
+                operator_name=generation.operator_name if generation else None,
+                registered_at=(
+                    generation.registered_at if generation else item.created_at
+                ).isoformat(),
+            )
+        )
+
+    transaction_records = (
+        db.query(InventoryTransactionRecord)
+        .filter(InventoryTransactionRecord.inventory_id.in_(batch_ids))
+        .order_by(InventoryTransactionRecord.created_at.desc())
+        .all()
+        if batch_ids
+        else []
+    )
+    return ScrapBatchDetailsOut(
+        group_key=group_key,
+        total_quantity=sum(item.quantity for item in batches),
+        batches=rows,
+        transactions=_transaction_rows(transaction_records, "scrap", db),
+    )
 
 
 @router.post("/scraps/{inventory_id}/confirm", response_model=InventoryItemOut)
