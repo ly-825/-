@@ -224,6 +224,30 @@ def resolve_session(
     return account
 
 
+def revoke_session(
+    db: Session,
+    raw_token: str,
+    client_type: str,
+    now: datetime | None = None,
+) -> bool:
+    if not raw_token:
+        return False
+    session = (
+        db.query(AuthSession)
+        .filter(
+            AuthSession.token_hash == hash_secret(raw_token, _required_pepper()),
+            AuthSession.client_type == client_type,
+            AuthSession.revoked_at.is_(None),
+        )
+        .first()
+    )
+    if not session:
+        return False
+    session.revoked_at = _clock(now)
+    db.commit()
+    return True
+
+
 def disable_account(db: Session, account: Account) -> None:
     account.is_active = False
     account.session_version += 1

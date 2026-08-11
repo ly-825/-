@@ -1162,6 +1162,9 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
           </div>
         </details>
       </nav>
+      <form action="/auth/logout" method="post" style="margin-top:auto;padding-top:16px;">
+        <button type="submit" class="btn secondary" style="width:100%;">退出登录</button>
+      </form>
     </aside>
     <main>{raw_plate_low_stock_banner()}{body}</main>
   </div>

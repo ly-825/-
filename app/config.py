@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     wechat_app_secret: str | None = None
     pc_session_hours: int = 12
     mobile_session_days: int = 30
+    auth_cookie_name: str = "tns_session"
+    production: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
