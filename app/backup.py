@@ -37,6 +37,11 @@ def backup_sqlite(source: Path, destination: Path) -> BackupResult:
         destination_connection = sqlite3.connect(temporary)
         try:
             source_connection.backup(destination_connection)
+            journal_mode = destination_connection.execute(
+                "PRAGMA journal_mode=DELETE"
+            ).fetchone()
+            if journal_mode != ("delete",):
+                raise ValueError("无法将备份转换为独立 SQLite 文件")
         finally:
             destination_connection.close()
             source_connection.close()

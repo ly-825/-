@@ -2,31 +2,18 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DATA_DIR="$PROJECT_ROOT/data"
-BACKUP_ROOT="$PROJECT_ROOT/backups"
-TIMESTAMP="$(date '+%Y-%m-%d_%H%M%S')"
-BACKUP_DIR="$BACKUP_ROOT/$TIMESTAMP"
+BACKUP_ROOT="${BACKUP_ROOT:-$PROJECT_ROOT/backups}"
+DATABASE_PATH="${DATABASE_PATH:-$PROJECT_ROOT/data/app.db}"
+UPLOAD_DIR="${UPLOAD_DIR:-$PROJECT_ROOT/data/uploads}"
+PYTHON_BIN="${PYTHON_BIN:-$PROJECT_ROOT/.venv/bin/python}"
 
-mkdir -p "$BACKUP_DIR"
+mkdir -p "$BACKUP_ROOT"
+exec 9>"${BACKUP_ROOT}/.backup.lock"
+flock -n 9 || { echo "backup already running" >&2; exit 75; }
 
-if [ -f "$DATA_DIR/app.db" ]; then
-  cp "$DATA_DIR/app.db" "$BACKUP_DIR/app.db"
-fi
-
-if [ -d "$DATA_DIR/uploads" ]; then
-  mkdir -p "$BACKUP_DIR/uploads"
-  cp -R "$DATA_DIR/uploads/." "$BACKUP_DIR/uploads/"
-fi
-
-cat > "$BACKUP_DIR/README.txt" <<EOF
-Backup time: $TIMESTAMP
-Source data directory: $DATA_DIR
-
-Restore manually:
-1. Stop backend service.
-2. Copy app.db back to data/app.db.
-3. Copy uploads contents back to data/uploads.
-4. Restart backend service.
-EOF
-
-echo "Backup created: $BACKUP_DIR"
+cd "$PROJECT_ROOT"
+exec "$PYTHON_BIN" scripts/backup.py \
+  --database "$DATABASE_PATH" \
+  --uploads "$UPLOAD_DIR" \
+  --backup-root "$BACKUP_ROOT" \
+  --retention-days "${BACKUP_RETENTION_DAYS:-7}"
