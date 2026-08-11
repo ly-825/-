@@ -25,7 +25,7 @@ Page({
     if (this.data.loading) return
     this.setData({ loading: true, error: '' })
     try {
-      const [products, drawings] = await Promise.all([api.products(), api.confirmedDrawings()])
+      const [products, drawings] = await Promise.all([api.products(), api.productOptions()])
       const drawingMap = {}
       drawings.forEach((drawing) => { if (drawing.product_code) drawingMap[drawing.product_code] = drawing })
       const displayProducts = products.map((item) => ({

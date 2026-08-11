@@ -1,5 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
 
 const auth = require('../miniprogram/utils/auth')
 
@@ -46,4 +48,15 @@ test('activation sends wx login code with username and activation code', async (
   ])
   assert.deepEqual(saved, [['tns_auth_session', 'new-session']])
   assert.equal(result.account.display_name, '张三')
+})
+
+test('registered inventory selectors use safe product options instead of drawings', () => {
+  for (const relativePath of [
+    '../miniprogram/pages/inventory/inbound.js',
+    '../miniprogram/pages/inventory/outbound.js'
+  ]) {
+    const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8')
+    assert.match(source, /api\.productOptions\(/)
+    assert.doesNotMatch(source, /api\.confirmedDrawings\(/)
+  }
 })

@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from app import admin_pages, mobile_connection_pages, paper_admin_pages
 from app.auth import api as auth_api
 from app.auth import pages as auth_pages
-from app.auth.dependencies import require_owner_account
+from app.auth.dependencies import require_mobile_account, require_owner_account
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.routers import drawings, inventory, mobile, mobile_paper, mobile_plan, mobile_raw_plates
@@ -38,6 +38,7 @@ app = FastAPI(
 )
 
 owner_dependencies = [Depends(require_owner_account)]
+employee_dependencies = [Depends(require_mobile_account)]
 
 app.include_router(auth_pages.router, tags=["身份验证"])
 app.include_router(auth_api.router, tags=["小程序身份验证"])
@@ -54,9 +55,24 @@ app.include_router(
     dependencies=owner_dependencies,
 )
 app.include_router(mobile.router, prefix="/api/mobile", tags=["小程序接口"])
-app.include_router(mobile_plan.router, prefix="/api/mobile", tags=["小程序计划"])
-app.include_router(mobile_raw_plates.router, prefix="/api/mobile", tags=["小程序钢板"])
-app.include_router(mobile_paper.router, prefix="/api/mobile", tags=["小程序纸材"])
+app.include_router(
+    mobile_plan.router,
+    prefix="/api/mobile",
+    tags=["小程序计划"],
+    dependencies=employee_dependencies,
+)
+app.include_router(
+    mobile_raw_plates.router,
+    prefix="/api/mobile",
+    tags=["小程序钢板"],
+    dependencies=employee_dependencies,
+)
+app.include_router(
+    mobile_paper.router,
+    prefix="/api/mobile",
+    tags=["小程序纸材"],
+    dependencies=employee_dependencies,
+)
 app.include_router(
     admin_pages.router,
     tags=["中文后台"],

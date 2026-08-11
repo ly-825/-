@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import require_mobile_account, require_owner_account
 from app.database import get_db
 from app.models import (
     InventoryTransactionRecord,
@@ -83,6 +84,15 @@ class ProductInventoryGroupOut(BaseModel):
     locations: list[str]
     paper_materials: list[str] = []
     latest: str | None
+
+
+class ProductOptionOut(BaseModel):
+    id: int
+    product_code: str
+    product_name: str | None
+    material: str | None
+    product_thickness: float | None
+    plate_thickness: float | None
 
 
 class ScrapInventoryGroupOut(BaseModel):
@@ -377,7 +387,11 @@ def _transaction_rows(records: list[InventoryTransactionRecord], inventory_type:
     return rows
 
 
-@router.get("/summary", response_model=MobileSummaryOut)
+@router.get(
+    "/summary",
+    response_model=MobileSummaryOut,
+    dependencies=[Depends(require_mobile_account)],
+)
 def summary(db: Session = Depends(get_db)) -> MobileSummaryOut:
     product_available_quantity = sum(
         item.quantity for item in db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "product", MaterialInventory.quantity > 0).all()
@@ -394,7 +408,11 @@ def summary(db: Session = Depends(get_db)) -> MobileSummaryOut:
     )
 
 
-@router.post("/drawings/upload", response_model=DrawingUploadOut)
+@router.post(
+    "/drawings/upload",
+    response_model=DrawingUploadOut,
+    dependencies=[Depends(require_owner_account)],
+)
 def upload_drawing(file: UploadFile = File(...), db: Session = Depends(get_db)) -> DrawingUploadOut:
     drawing, duplicated = save_uploaded_drawing(file, db)
     record_operation_log(
@@ -410,7 +428,11 @@ def upload_drawing(file: UploadFile = File(...), db: Session = Depends(get_db)) 
     return DrawingUploadOut(drawing=drawing, duplicated=duplicated)
 
 
-@router.get("/drawings", response_model=list[DrawingOut])
+@router.get(
+    "/drawings",
+    response_model=list[DrawingOut],
+    dependencies=[Depends(require_owner_account)],
+)
 def drawings(
     status: str | None = None,
     q: str = "",
@@ -454,12 +476,20 @@ def drawings(
     return query.order_by(ProductDrawing.created_at.desc()).all()
 
 
-@router.get("/drawings/pending", response_model=list[DrawingOut])
+@router.get(
+    "/drawings/pending",
+    response_model=list[DrawingOut],
+    dependencies=[Depends(require_owner_account)],
+)
 def pending_drawings(db: Session = Depends(get_db)) -> list[ProductDrawing]:
     return db.query(ProductDrawing).filter(ProductDrawing.confirmed == 0).order_by(ProductDrawing.created_at.desc()).all()
 
 
-@router.get("/drawings/confirmed", response_model=list[DrawingOut])
+@router.get(
+    "/drawings/confirmed",
+    response_model=list[DrawingOut],
+    dependencies=[Depends(require_owner_account)],
+)
 def confirmed_drawings(
     q: str = "",
     product_category: str = "",
@@ -497,7 +527,11 @@ def confirmed_drawings(
     )
 
 
-@router.get("/drawings/{drawing_id}", response_model=DrawingOut)
+@router.get(
+    "/drawings/{drawing_id}",
+    response_model=DrawingOut,
+    dependencies=[Depends(require_owner_account)],
+)
 def drawing_detail(drawing_id: int, db: Session = Depends(get_db)) -> ProductDrawing:
     drawing = db.get(ProductDrawing, drawing_id)
     if not drawing:
@@ -505,7 +539,10 @@ def drawing_detail(drawing_id: int, db: Session = Depends(get_db)) -> ProductDra
     return drawing
 
 
-@router.delete("/drawings/{drawing_id}")
+@router.delete(
+    "/drawings/{drawing_id}",
+    dependencies=[Depends(require_owner_account)],
+)
 def delete_drawing(drawing_id: int, db: Session = Depends(get_db)) -> dict[str, int | str]:
     drawing = db.get(ProductDrawing, drawing_id)
     if not drawing:
@@ -518,7 +555,11 @@ def delete_drawing(drawing_id: int, db: Session = Depends(get_db)) -> dict[str, 
     return {"id": drawing_id, "message": "图纸已删除"}
 
 
-@router.post("/drawings/{drawing_id}/confirm", response_model=DrawingOut)
+@router.post(
+    "/drawings/{drawing_id}/confirm",
+    response_model=DrawingOut,
+    dependencies=[Depends(require_owner_account)],
+)
 def confirm_drawing(drawing_id: int, payload: DrawingConfirm, db: Session = Depends(get_db)) -> ProductDrawing:
     drawing = db.get(ProductDrawing, drawing_id)
     if not drawing:
@@ -544,7 +585,11 @@ def confirm_drawing(drawing_id: int, payload: DrawingConfirm, db: Session = Depe
     return drawing
 
 
-@router.post("/drawings/{drawing_id}/rerun", response_model=DrawingOut)
+@router.post(
+    "/drawings/{drawing_id}/rerun",
+    response_model=DrawingOut,
+    dependencies=[Depends(require_owner_account)],
+)
 def rerun_drawing(drawing_id: int, db: Session = Depends(get_db)) -> ProductDrawing:
     drawing = db.get(ProductDrawing, drawing_id)
     if not drawing:
@@ -566,7 +611,29 @@ def rerun_drawing(drawing_id: int, db: Session = Depends(get_db)) -> ProductDraw
     return drawing
 
 
-@router.get("/products", response_model=list[ProductInventoryGroupOut])
+@router.get(
+    "/product-options",
+    response_model=list[ProductOptionOut],
+    dependencies=[Depends(require_mobile_account)],
+)
+def product_options(db: Session = Depends(get_db)) -> list[ProductDrawing]:
+    return (
+        db.query(ProductDrawing)
+        .filter(
+            ProductDrawing.confirmed == 1,
+            ProductDrawing.is_active == 1,
+            ProductDrawing.product_code.is_not(None),
+        )
+        .order_by(ProductDrawing.product_code.asc(), ProductDrawing.id.asc())
+        .all()
+    )
+
+
+@router.get(
+    "/products",
+    response_model=list[ProductInventoryGroupOut],
+    dependencies=[Depends(require_mobile_account)],
+)
 def products(q: str = "", material: str = "", thickness: str = "", db: Session = Depends(get_db)) -> list[ProductInventoryGroupOut]:
     query = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "product")
     keyword = q.strip()
@@ -587,12 +654,20 @@ def products(q: str = "", material: str = "", thickness: str = "", db: Session =
     return _group_product_inventory(query.order_by(MaterialInventory.created_at.desc()).all())
 
 
-@router.get("/products/{product_code}/batches", response_model=list[InventoryItemOut])
+@router.get(
+    "/products/{product_code}/batches",
+    response_model=list[InventoryItemOut],
+    dependencies=[Depends(require_mobile_account)],
+)
 def product_batches(product_code: str, db: Session = Depends(get_db)) -> list[MaterialInventory]:
     return db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "product", MaterialInventory.material_code == product_code).order_by(MaterialInventory.created_at.desc()).all()
 
 
-@router.post("/products/inbound", response_model=InventoryItemOut)
+@router.post(
+    "/products/inbound",
+    response_model=InventoryItemOut,
+    dependencies=[Depends(require_mobile_account)],
+)
 def product_inbound(payload: ProductInboundPayload, db: Session = Depends(get_db)) -> dict:
     with inventory_write_lock():
         operation_type = "product_inbound"
@@ -638,7 +713,10 @@ def product_inbound(payload: ProductInboundPayload, db: Session = Depends(get_db
         return response_data
 
 
-@router.post("/products/outbound")
+@router.post(
+    "/products/outbound",
+    dependencies=[Depends(require_mobile_account)],
+)
 def product_outbound(payload: ProductOutboundPayload, db: Session = Depends(get_db)) -> dict[str, int | str]:
     with inventory_write_lock():
         operation_type = "product_outbound"
@@ -702,7 +780,11 @@ def product_outbound(payload: ProductOutboundPayload, db: Session = Depends(get_
         return response_data
 
 
-@router.get("/products/transactions", response_model=list[TransactionOut])
+@router.get(
+    "/products/transactions",
+    response_model=list[TransactionOut],
+    dependencies=[Depends(require_mobile_account)],
+)
 def product_transactions(
     product_code: str = "",
     db: Session = Depends(get_db),
@@ -729,7 +811,11 @@ def product_transactions(
     return _transaction_rows(records, "product", db)
 
 
-@router.post("/products/transactions/{transaction_id}/reverse", response_model=TransactionOut)
+@router.post(
+    "/products/transactions/{transaction_id}/reverse",
+    response_model=TransactionOut,
+    dependencies=[Depends(require_mobile_account)],
+)
 def reverse_product_transaction(transaction_id: int, payload: TransactionReversePayload, db: Session = Depends(get_db)) -> dict:
     with inventory_write_lock():
         operation_type = "product_transaction_reverse"
@@ -770,12 +856,20 @@ def reverse_product_transaction(transaction_id: int, payload: TransactionReverse
         return response_data
 
 
-@router.get("/scraps/pending", response_model=list[InventoryItemOut])
+@router.get(
+    "/scraps/pending",
+    response_model=list[InventoryItemOut],
+    dependencies=[Depends(require_mobile_account)],
+)
 def pending_scraps(db: Session = Depends(get_db)) -> list[MaterialInventory]:
     return db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "scrap", MaterialInventory.status == "pending").order_by(MaterialInventory.created_at.desc()).all()
 
 
-@router.get("/scraps/batches", response_model=ScrapBatchDetailsOut)
+@router.get(
+    "/scraps/batches",
+    response_model=ScrapBatchDetailsOut,
+    dependencies=[Depends(require_mobile_account)],
+)
 def scrap_batch_details(
     group_key: str,
     db: Session = Depends(get_db),
@@ -877,7 +971,11 @@ def scrap_batch_details(
     )
 
 
-@router.post("/scraps/{inventory_id}/confirm", response_model=InventoryItemOut)
+@router.post(
+    "/scraps/{inventory_id}/confirm",
+    response_model=InventoryItemOut,
+    dependencies=[Depends(require_mobile_account)],
+)
 def confirm_scrap(inventory_id: int, payload: ScrapConfirmPayload, db: Session = Depends(get_db)) -> dict:
     with inventory_write_lock():
         operation_type = "scrap_confirm"
@@ -930,7 +1028,11 @@ def confirm_scrap(inventory_id: int, payload: ScrapConfirmPayload, db: Session =
         return response_data
 
 
-@router.get("/scraps", response_model=list[ScrapInventoryGroupOut])
+@router.get(
+    "/scraps",
+    response_model=list[ScrapInventoryGroupOut],
+    dependencies=[Depends(require_mobile_account)],
+)
 def scraps(material: str = "", thickness: str = "", required_diameter: str = "", location: str = "", db: Session = Depends(get_db)) -> list[ScrapInventoryGroupOut]:
     query = db.query(MaterialInventory).filter(MaterialInventory.inventory_type == "scrap", MaterialInventory.status == "available", MaterialInventory.quantity > 0)
     if material.strip():
@@ -953,7 +1055,10 @@ def scraps(material: str = "", thickness: str = "", required_diameter: str = "",
     return [ScrapInventoryGroupOut(**value) for value in grouped.values()]
 
 
-@router.post("/scraps/outbound")
+@router.post(
+    "/scraps/outbound",
+    dependencies=[Depends(require_mobile_account)],
+)
 def scrap_outbound(payload: ScrapOutboundPayload, db: Session = Depends(get_db)) -> dict[str, int | str]:
     with inventory_write_lock():
         operation_type = "scrap_outbound"
@@ -1010,13 +1115,21 @@ def scrap_outbound(payload: ScrapOutboundPayload, db: Session = Depends(get_db))
         return response_data
 
 
-@router.get("/scraps/transactions", response_model=list[TransactionOut])
+@router.get(
+    "/scraps/transactions",
+    response_model=list[TransactionOut],
+    dependencies=[Depends(require_mobile_account)],
+)
 def scrap_transactions(db: Session = Depends(get_db)) -> list[TransactionOut]:
     records = db.query(InventoryTransactionRecord).order_by(InventoryTransactionRecord.created_at.desc()).limit(500).all()
     return _transaction_rows(records, "scrap", db)
 
 
-@router.post("/scraps/transactions/{transaction_id}/reverse", response_model=TransactionOut)
+@router.post(
+    "/scraps/transactions/{transaction_id}/reverse",
+    response_model=TransactionOut,
+    dependencies=[Depends(require_mobile_account)],
+)
 def reverse_scrap_transaction(transaction_id: int, payload: TransactionReversePayload, db: Session = Depends(get_db)) -> dict:
     with inventory_write_lock():
         operation_type = "scrap_transaction_reverse"
