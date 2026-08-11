@@ -1,4 +1,5 @@
 const api = require('../../utils/api')
+const auth = require('../../utils/auth')
 const connection = require('../../utils/connection')
 
 Page({
@@ -24,7 +25,11 @@ Page({
     }
     connection.saveBaseUrl(wx, baseUrl)
     getApp().globalData.connectionState = 'connected'
-    wx.switchTab({ url: '/pages/plan/home' })
+    if (auth.hasSession(wx)) {
+      wx.switchTab({ url: '/pages/plan/home' })
+      return
+    }
+    wx.reLaunch({ url: '/pages/auth/login' })
   },
 
   async trySavedConnection() {

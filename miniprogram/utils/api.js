@@ -1,4 +1,5 @@
 const app = getApp()
+const auth = require('./auth')
 
 class ConnectionError extends Error {
   constructor(message, code = 'CONNECTION_FAILED') {
@@ -64,12 +65,16 @@ function request(path, options = {}) {
       data: options.data || {},
       timeout: 8000,
       header: {
-        'content-type': 'application/json'
+        'content-type': 'application/json',
+        ...auth.authorizationHeader(wx)
       },
       success(res) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data)
           return
+        }
+        if (res.statusCode === 401) {
+          auth.handleUnauthorized(wx)
         }
         reject(new Error(errorMessage(res.data, '请求失败')))
       },
@@ -91,6 +96,7 @@ function uploadFile(path, filePath, name = 'file') {
       filePath,
       name,
       timeout: 8000,
+      header: auth.authorizationHeader(wx),
       success(res) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           try {
@@ -99,6 +105,9 @@ function uploadFile(path, filePath, name = 'file') {
             resolve(res.data)
           }
           return
+        }
+        if (res.statusCode === 401) {
+          auth.handleUnauthorized(wx)
         }
         reject(new Error(errorMessage(res.data, '上传失败')))
       },

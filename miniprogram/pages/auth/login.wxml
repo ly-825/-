@@ -1,0 +1,18 @@
+<view class="page-shell auth-page">
+  <view class="auth-card">
+    <view class="page-title">库存系统</view>
+    <view class="page-subtitle">员工微信登录</view>
+    <button class="primary-button" loading="{{loading}}" disabled="{{loading}}" bindtap="wechatLogin">微信登录</button>
+  </view>
+
+  <view class="auth-card">
+    <view class="section-title">首次使用</view>
+    <view class="field-label">工号</view>
+    <input class="field-input" value="{{username}}" placeholder="请输入老板创建的工号" bindinput="onUsername" />
+    <view class="field-label">8 位激活码</view>
+    <input class="field-input" value="{{activationCode}}" type="number" maxlength="8" placeholder="请输入一次性激活码" bindinput="onActivationCode" />
+    <button class="secondary-button" loading="{{loading}}" disabled="{{loading}}" bindtap="activate">绑定微信并登录</button>
+  </view>
+
+  <view wx:if="{{error}}" class="error-box">{{error}}</view>
+</view>

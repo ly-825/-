@@ -68,9 +68,10 @@ class MiniProgramFoundationTest(unittest.TestCase):
         self.assertNotIn("radial-gradient", wxss)
         self.assertNotIn("linear-gradient", wxss)
 
-    def test_manifest_has_three_tabs_and_connection_first(self) -> None:
+    def test_manifest_has_three_tabs_with_auth_then_connection(self) -> None:
         app_json = json.loads(self.read("miniprogram/app.json"))
-        self.assertEqual(app_json["pages"][0], "pages/connection/index")
+        self.assertEqual(app_json["pages"][0], "pages/auth/login")
+        self.assertEqual(app_json["pages"][1], "pages/connection/index")
         self.assertEqual(
             [
                 (item["pagePath"], item["text"])

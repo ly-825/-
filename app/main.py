@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI
 from fastapi.responses import RedirectResponse
 
 from app import admin_pages, mobile_connection_pages, paper_admin_pages
+from app.auth import api as auth_api
 from app.auth import pages as auth_pages
 from app.auth.dependencies import require_owner_account
 from app.config import settings
@@ -39,6 +40,7 @@ app = FastAPI(
 owner_dependencies = [Depends(require_owner_account)]
 
 app.include_router(auth_pages.router, tags=["身份验证"])
+app.include_router(auth_api.router, tags=["小程序身份验证"])
 app.include_router(
     drawings.router,
     prefix="/api/drawings",

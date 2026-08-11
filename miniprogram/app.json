@@ -1,5 +1,6 @@
 {
   "pages": [
+    "pages/auth/login",
     "pages/connection/index",
     "pages/plan/home",
     "pages/materials/home",
