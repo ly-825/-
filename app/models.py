@@ -214,3 +214,38 @@ class OperationLog(Base):
     before_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=china_now, index=True)
+
+
+class Account(Base):
+    __tablename__ = "accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(100))
+    role: Mapped[str] = mapped_column(String(20), index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    wechat_openid: Mapped[str | None] = mapped_column(
+        String(100), unique=True, nullable=True, index=True
+    )
+    activation_code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    activation_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True, index=True)
+    session_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=china_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=china_now, onupdate=china_now
+    )
+
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    session_version: Mapped[int] = mapped_column(Integer)
+    client_type: Mapped[str] = mapped_column(String(20), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=china_now)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=china_now)

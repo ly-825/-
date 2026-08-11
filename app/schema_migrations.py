@@ -18,6 +18,8 @@ TIMESTAMP_COLUMNS = {
     "scrap_generation_records": ("registered_at",),
     "mobile_request_records": ("created_at",),
     "operation_logs": ("created_at",),
+    "accounts": ("activation_expires_at", "created_at", "updated_at"),
+    "auth_sessions": ("expires_at", "revoked_at", "created_at", "last_seen_at"),
 }
 
 

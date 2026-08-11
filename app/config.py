@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     machining_margin: float = 2.0
     raw_plate_low_stock_threshold: int = 2
     admin_access_token: str | None = None
+    auth_pepper: str | None = None
+    owner_totp_secret: str | None = None
+    wechat_app_id: str | None = None
+    wechat_app_secret: str | None = None
+    pc_session_hours: int = 12
+    mobile_session_days: int = 30
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
