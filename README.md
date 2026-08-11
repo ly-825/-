@@ -72,6 +72,37 @@ DASHSCOPE_API_KEY=你的APIKey
 
 如果不填 API Key，系统会使用 `ezdxf` 的候选几何信息返回保守结果，并要求人工确认。
 
+### 登录与微信配置
+
+生产运行前需要在 `.env` 中配置以下项目，真实值不得提交到 Git：
+
+```text
+PRODUCTION=false
+AUTH_PEPPER=
+OWNER_TOTP_SECRET=
+WECHAT_APP_ID=
+WECHAT_APP_SECRET=
+PC_SESSION_HOURS=12
+MOBILE_SESSION_DAYS=30
+```
+
+生成服务端密钥和老板动态验证码密钥：
+
+```bash
+openssl rand -hex 32
+.venv/bin/python -c 'import pyotp; print(pyotp.random_base32())'
+```
+
+将第一条结果填入 `AUTH_PEPPER`，第二条结果填入 `OWNER_TOTP_SECRET`。微信公众平台提供的小程序 AppID 和 AppSecret 分别填入 `WECHAT_APP_ID`、`WECHAT_APP_SECRET`。服务器正式启用 HTTPS 后将 `PRODUCTION` 改为 `true`，此时接口文档会关闭。
+
+首次创建唯一的老板账号：
+
+```bash
+.venv/bin/python scripts/create_owner.py --username owner --display-name 老板
+```
+
+命令会要求输入至少 12 位密码，并输出一次性的身份验证器配置地址。配置完成后，老板使用账号、密码和六位动态验证码登录 PC 后台。
+
 注意：
 
 ```text
@@ -105,7 +136,7 @@ cd /Users/luck/Desktop/杭州特耐时/backend
 .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## 微信小程序（厂内 Wi-Fi）
+## 微信小程序
 
 小程序代码位于：
 
@@ -116,11 +147,11 @@ miniprogram/
 使用方式：
 
 ```text
-1. 后端电脑启动服务并保持运行
-2. 电脑打开 http://127.0.0.1:8000/admin/mobile-connection
-3. 手机连接与后台电脑相同的工厂 Wi-Fi
-4. 小程序首次打开后点击“扫描电脑连接二维码”
-5. 连接检查通过后，小程序自动保存地址并进入“计划”页
+1. 后端服务启动并保持运行
+2. 私有测试阶段通过后台连接页配置测试地址
+3. 小程序打开后先进入员工登录页
+4. 首次使用时输入老板在 PC 后台创建的工号和 8 位激活码，完成微信绑定
+5. 后续直接微信登录；登录成功后进入“计划”页
 ```
 
 小程序底部只保留三个业务入口：
@@ -141,6 +172,8 @@ miniprogram/
 PC 和小程序不做数据复制或延迟同步：任一端提交成功后，另一端刷新页面即可看到相同数据。所有小程序库存写操作都会在提交前逐项确认，并携带持久化的 `client_request_id`；网络响应不确定时必须重试原请求，服务端会返回首次结果而不会重复入库、出库或撤销。同一个请求编号不得改成其他负载。
 
 Excel 导入、导出、操作日志、助手和高级统计仍只在 PC 后台提供，小程序不提供这些入口。
+
+图纸文件、预览、文件哈希和识别原始数据仅老板的 PC 后台可访问。员工小程序选择产品时使用精简产品选项接口，不会获得图纸文件数据。
 
 二维码只包含版本号和局域网连接地址，不包含数据库、业务数据、密码或令牌。工厂路由器或后台电脑 IP 变化后，在电脑后台重新生成二维码并让手机重新扫描；不要修改 `miniprogram/app.js`。
 
@@ -171,7 +204,7 @@ Excel 导入、导出、操作日志、助手和高级统计仍只在 PC 后台�
 8. 产品入库、产品出库、余料确认、余料出库、流水撤销流程已抽查
 ```
 
-正式发布前仍建议补充登录权限、正式 HTTPS 域名、服务器部署、自动备份和生产数据库方案。
+正式发布还需要完成 ICP 备案、HTTPS 域名、个人 ECS 部署和自动备份；登录与角色权限已经由后端强制执行。
 
 ## 数据备份
 
@@ -309,7 +342,7 @@ POST /api/mobile/paper-materials/transactions/{transaction_id}/reverse
 
 上述 `POST`/`PUT` 写接口都要求请求体包含唯一的 `client_request_id`。同编号、同负载可安全重试；同编号、不同负载会返回 `409`，此时应先核对原操作结果，不能生成新负载覆盖原请求。
 
-### 小程序图纸管理
+### 老板图纸接口（仅 PC 老板会话）
 
 ```http
 POST /api/mobile/drawings/upload
@@ -319,6 +352,12 @@ GET /api/mobile/drawings/confirmed
 GET /api/mobile/drawings/{drawing_id}
 POST /api/mobile/drawings/{drawing_id}/confirm
 POST /api/mobile/drawings/{drawing_id}/rerun
+```
+
+员工小程序不能调用以上接口。员工入库、出库选择产品时使用：
+
+```http
+GET /api/mobile/product-options
 ```
 
 ### 小程序产品库存
@@ -383,7 +422,6 @@ POST /api/inventory
 
 ## 下一步建议
 
-- 增加用户和权限
-- 增加小程序前端页面
-- 增加 MySQL/PostgreSQL 生产配置
+- 完成个人 ECS、HTTPS 域名和 systemd 服务部署
+- 配置 SQLite 在线备份、异地保存和定期恢复演练
 - 增加图纸模板规则库
