@@ -1,13 +1,15 @@
 import hashlib
 import json
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from app.backup import backup_sqlite, verify_sqlite
+from app.backup import backup_sqlite, validate_bundle, verify_sqlite
 from scripts.backup import create_backup_bundle, prune_backup_directories
 
 
@@ -163,6 +165,118 @@ class BackupBundleTest(unittest.TestCase):
         self.assertTrue(recent.exists())
         self.assertTrue(unrelated.exists())
         self.assertTrue(outside.exists())
+
+
+class BackupRestoreTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.database = self.root / "source" / "app.db"
+        self.uploads = self.root / "source" / "uploads"
+        self.database.parent.mkdir(parents=True)
+        self.uploads.mkdir()
+        with sqlite3.connect(self.database) as connection:
+            connection.execute("CREATE TABLE stock (quantity INTEGER)")
+            connection.execute("INSERT INTO stock(quantity) VALUES (7)")
+        (self.uploads / "drawing.dxf").write_text("drawing-data", encoding="utf-8")
+        self.bundle = create_backup_bundle(
+            self.database,
+            self.uploads,
+            self.root / "backups",
+            created_at=datetime(2026, 8, 11, 2, 0, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        )
+        self.restore_script = Path(__file__).resolve().parents[1] / "scripts" / "restore_backup.py"
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def run_restore(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(self.restore_script), str(self.bundle), *arguments],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def rewrite_manifest_hash(self) -> None:
+        manifest_path = self.bundle / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        database_bytes = (self.bundle / "app.db").read_bytes()
+        manifest["database_sha256"] = hashlib.sha256(database_bytes).hexdigest()
+        manifest["database_size"] = len(database_bytes)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    def test_validate_bundle_accepts_matching_manifest_and_database(self) -> None:
+        manifest = validate_bundle(self.bundle)
+
+        self.assertEqual(manifest.database, "app.db")
+        self.assertEqual(manifest.uploads, "uploads")
+        self.assertEqual(manifest.format_version, 1)
+
+    def test_validate_bundle_rejects_hash_mismatch(self) -> None:
+        database_path = self.bundle / "app.db"
+        database_bytes = bytearray(database_path.read_bytes())
+        database_bytes[-1] ^= 1
+        database_path.write_bytes(database_bytes)
+
+        with self.assertRaisesRegex(ValueError, "哈希"):
+            validate_bundle(self.bundle)
+
+    def test_validate_bundle_rejects_corrupt_database_even_with_matching_hash(self) -> None:
+        (self.bundle / "app.db").write_bytes(b"not sqlite")
+        self.rewrite_manifest_hash()
+
+        with self.assertRaises(ValueError):
+            validate_bundle(self.bundle)
+
+    def test_default_restore_command_only_verifies(self) -> None:
+        result = self.run_restore()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("验证通过", result.stdout)
+        self.assertFalse((self.root / "restored").exists())
+
+    def test_restore_refuses_existing_target_without_replace(self) -> None:
+        target = self.root / "restored"
+        target.mkdir()
+        marker = target / "keep.txt"
+        marker.write_text("keep", encoding="utf-8")
+
+        result = self.run_restore("--target", str(target))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "keep")
+
+    def test_restore_writes_verified_bundle_to_fresh_target(self) -> None:
+        target = self.root / "restored"
+
+        result = self.run_restore("--target", str(target))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        verify_sqlite(target / "app.db")
+        self.assertEqual((target / "uploads" / "drawing.dxf").read_text(), "drawing-data")
+        self.assertTrue((target / "manifest.json").is_file())
+
+    def test_replace_requires_literal_confirmation_and_preserves_old_target(self) -> None:
+        target = self.root / "restored"
+        target.mkdir()
+        (target / "keep.txt").write_text("old-data", encoding="utf-8")
+
+        refused = self.run_restore("--target", str(target), "--replace")
+        accepted = self.run_restore(
+            "--target",
+            str(target),
+            "--replace",
+            "--confirm",
+            "RESTORE",
+        )
+
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        preserved = list(self.root.glob("pre-restore-*/keep.txt"))
+        self.assertEqual(len(preserved), 1)
+        self.assertEqual(preserved[0].read_text(encoding="utf-8"), "old-data")
+        verify_sqlite(target / "app.db")
 
 
 if __name__ == "__main__":
