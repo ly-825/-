@@ -215,26 +215,31 @@ data/app.db
 data/uploads/
 ```
 
-试运行期间，建议每天使用前或重要操作前执行一次备份：
+系统使用 SQLite 在线备份 API 生成一致快照，运行中的服务无需停机，也不会直接拷贝活动数据库文件。手工触发：
 
 ```bash
 bash scripts/backup.sh
 ```
 
-备份会生成到：
+备份会生成数据库、上传文件和 SHA-256 清单：
 
 ```text
 backups/年-月-日_时分秒/
 ```
 
-恢复时：
+默认先做只读验证：
 
-```text
-1. 停止后端服务
-2. 将备份中的 app.db 复制回 data/app.db
-3. 将备份中的 uploads 内容复制回 data/uploads/
-4. 重新启动后端服务
+```bash
+.venv/bin/python scripts/restore_backup.py backups/年-月-日_时分秒
 ```
+
+恢复演练应写入新的临时目录，不覆盖当前数据：
+
+```bash
+.venv/bin/python scripts/restore_backup.py backups/年-月-日_时分秒 --target /tmp/tenaishi-restore-test
+```
+
+个人 ECS 本地备份目录为 `/srv/tenaishi/backups`，保留 7 天；阿里云 ECS 文件备份同时保护 `/srv/tenaishi/backups` 和 `/srv/tenaishi/data/uploads`，云端保留 30 天。
 
 后台包含：
 

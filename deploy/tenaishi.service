@@ -1,0 +1,23 @@
+[Unit]
+Description=Tenaishi inventory backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tenaishi
+Group=tenaishi
+WorkingDirectory=/srv/tenaishi/app
+EnvironmentFile=/etc/tenaishi/tenaishi.env
+ExecStart=/srv/tenaishi/app/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/tenaishi/data /srv/tenaishi/backups
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

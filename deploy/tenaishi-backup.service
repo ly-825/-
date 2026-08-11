@@ -1,0 +1,17 @@
+[Unit]
+Description=Tenaishi verified SQLite backup
+After=tenaishi.service
+
+[Service]
+Type=oneshot
+User=tenaishi
+Group=tenaishi
+WorkingDirectory=/srv/tenaishi/app
+EnvironmentFile=/etc/tenaishi/tenaishi.env
+ExecStart=/srv/tenaishi/app/scripts/backup.sh
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/tenaishi/data /srv/tenaishi/backups
