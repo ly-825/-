@@ -10,10 +10,13 @@ Page({
     port: '8000',
     errorTitle: '',
     errorDescription: '',
-    manualOpen: false
+    manualOpen: false,
+    canEdit: true
   },
 
   onShow() {
+    const app = getApp()
+    this.setData({ canEdit: app.globalData.canEditConnection !== false })
     this.trySavedConnection()
   },
 
@@ -23,8 +26,12 @@ Page({
     if (!health || health.status !== 'ok') {
       throw new Error('后台健康检查未通过')
     }
-    connection.saveBaseUrl(wx, baseUrl)
-    getApp().globalData.connectionState = 'connected'
+    const app = getApp()
+    if (this.data.canEdit) {
+      connection.saveBaseUrl(wx, baseUrl)
+    }
+    app.globalData.baseUrl = baseUrl
+    app.globalData.connectionState = 'connected'
     if (auth.hasSession(wx)) {
       wx.switchTab({ url: '/pages/plan/home' })
       return
@@ -33,14 +40,23 @@ Page({
   },
 
   async trySavedConnection() {
-    let saved = ''
-    try {
-      saved = connection.loadSavedBaseUrl(wx)
-    } catch (error) {
-      saved = ''
+    const app = getApp()
+    let saved = app.globalData.baseUrl
+    if (!saved && this.data.canEdit) {
+      try {
+        saved = connection.loadSavedBaseUrl(wx)
+      } catch (error) {
+        saved = ''
+      }
     }
     if (!saved) {
-      this.setData({ state: 'setup' })
+      this.setData({
+        state: this.data.canEdit ? 'setup' : 'error',
+        errorTitle: this.data.canEdit ? '' : '正式版连接地址未配置',
+        errorDescription: this.data.canEdit
+          ? ''
+          : app.globalData.connectionError || '请使用个人 API 域名重新构建小程序'
+      })
       return
     }
     this.setData({ state: 'checking', baseUrl: saved })
@@ -50,8 +66,10 @@ Page({
       getApp().globalData.connectionState = 'error'
       this.setData({
         state: 'error',
-        errorTitle: '无法连接厂内库存系统',
-        errorDescription: '请连接工厂 Wi-Fi，并确认后台电脑已经启动。'
+        errorTitle: this.data.canEdit ? '无法连接厂内库存系统' : '无法连接云端库存系统',
+        errorDescription: this.data.canEdit
+          ? '请连接工厂 Wi-Fi，并确认后台电脑已经启动。'
+          : '请检查网络，或联系管理员检查云端服务。'
       })
     }
   },
@@ -62,6 +80,7 @@ Page({
   },
 
   async scanBaseUrl() {
+    if (!this.data.canEdit) return
     this.setData({ state: 'checking' })
     try {
       const baseUrl = await connection.scanBaseUrl(wx)
@@ -77,6 +96,7 @@ Page({
   },
 
   openManual() {
+    if (!this.data.canEdit) return
     this.setData({ manualOpen: true, state: 'setup' })
   },
 
@@ -89,6 +109,7 @@ Page({
   },
 
   async testAndSave() {
+    if (!this.data.canEdit) return
     try {
       const baseUrl = connection.normalizeBaseUrl(
         `http://${this.data.ip}:${this.data.port}`

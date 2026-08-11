@@ -57,8 +57,9 @@ class LinuxDeployAssetTest(unittest.TestCase):
 
         self.assertIn("${TENAISHI_SITE_DOMAIN}", nginx)
         self.assertIn("${TENAISHI_API_DOMAIN}", nginx)
-        self.assertNotIn("tnsautoparts.com", nginx)
-        self.assertNotIn("115.120.248.123", nginx)
+        for line in nginx.splitlines():
+            if line.strip().startswith("server_name "):
+                self.assertIn("${TENAISHI_", line)
         self.assertIn("proxy_pass http://127.0.0.1:8000", nginx)
         self.assertIn("proxy_set_header X-Real-IP $remote_addr", nginx)
         self.assertIn("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for", nginx)
@@ -89,7 +90,15 @@ class LinuxDeployAssetTest(unittest.TestCase):
         self.assertIn('https://${TENAISHI_API_DOMAIN}/health', smoke)
         self.assertIn('http://${TENAISHI_PUBLIC_IP}:8000/health', smoke)
         self.assertRegex(smoke, r"if\s+curl[^\n]+8000/health")
-        self.assertNotIn("115.120.248.123", smoke)
+        literal_addresses = set(re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", smoke))
+        self.assertLessEqual(literal_addresses, {"127.0.0.1"})
+
+    def test_release_build_is_documented_as_external_and_fail_closed(self) -> None:
+        readme = self.read("deploy/README.md")
+
+        self.assertIn("scripts/build_miniprogram_release.py", readme)
+        self.assertIn("$HOME/.config/tenaishi/deploy-target.env", readme)
+        self.assertIn("不要直接上传 `miniprogram/`", readme)
 
 
 if __name__ == "__main__":

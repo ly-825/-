@@ -11,11 +11,14 @@ Page({
   },
 
   onShow() {
-    let baseUrl = ''
-    try {
-      baseUrl = connection.loadSavedBaseUrl(wx)
-    } catch (error) {
-      baseUrl = ''
+    const app = getApp()
+    let baseUrl = app.globalData.baseUrl
+    if (!baseUrl && app.globalData.canEditConnection) {
+      try {
+        baseUrl = connection.loadSavedBaseUrl(wx)
+      } catch (error) {
+        baseUrl = ''
+      }
     }
     if (!baseUrl) {
       wx.reLaunch({ url: '/pages/connection/index' })

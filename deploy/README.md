@@ -82,3 +82,17 @@ nginx -t
 ```
 
 模板仅代理到 `127.0.0.1:8000`，不包含额外 Basic Auth。应用自身的老板登录和员工小程序会话负责身份验证。
+
+## 小程序正式版构建
+
+开发版和体验版保留局域网扫码与手工连接。正式版不读取已保存的局域网地址，只使用仓库外部署目标文件中的个人 API 域名。
+
+备案、HTTPS 证书和微信合法域名都就绪后，在项目根目录执行：
+
+```bash
+.venv/bin/python scripts/build_miniprogram_release.py \
+  --target-file "$HOME/.config/tenaishi/deploy-target.env" \
+  --output dist/miniprogram-release
+```
+
+构建器会拒绝缺失的域名、IP 地址和已存在的输出目录。在微信开发者工具中导入 `dist/miniprogram-release` 并上传。不要直接上传 `miniprogram/`，其 `release-config.js` 故意为空，用于在未正确构建时关闭正式连接。

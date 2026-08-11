@@ -1,5 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
 
 const connection = require('../miniprogram/utils/connection')
 const {
@@ -44,6 +46,61 @@ test('parses only version 1 connection QR payloads', () => {
       ),
     /版本/
   )
+})
+
+test('release uses explicit personal HTTPS endpoint and cannot edit connection', () => {
+  assert.equal(
+    connection.baseUrlForEnvironment('release', {
+      releaseBaseUrl: 'https://personal-inventory.example.test',
+      wxApi: { getStorageSync: () => 'http://192.168.1.9:8000' }
+    }),
+    'https://personal-inventory.example.test'
+  )
+  assert.equal(connection.canEditConnection('release'), false)
+  assert.equal(connection.canEditConnection('develop'), true)
+})
+
+test('release ignores saved LAN and rejects absent or IP endpoints', () => {
+  const wxApi = { getStorageSync: () => 'http://192.168.1.9:8000' }
+
+  assert.throws(
+    () => connection.baseUrlForEnvironment('release', { releaseBaseUrl: '', wxApi }),
+    /正式环境/
+  )
+  assert.throws(
+    () => connection.baseUrlForEnvironment('release', {
+      releaseBaseUrl: 'https://203.0.113.7',
+      wxApi
+    }),
+    /域名/
+  )
+})
+
+test('app selects endpoint from mini-program environment and release config', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '../miniprogram/app.js'),
+    'utf8'
+  )
+
+  assert.match(source, /getAccountInfoSync/)
+  assert.match(source, /release-config/)
+  assert.match(source, /baseUrlForEnvironment/)
+  assert.match(source, /canEditConnection/)
+})
+
+test('release connection page hides LAN scan and manual controls', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '../miniprogram/pages/connection/index.js'),
+    'utf8'
+  )
+  const view = fs.readFileSync(
+    path.join(__dirname, '../miniprogram/pages/connection/index.wxml'),
+    'utf8'
+  )
+
+  assert.match(source, /canEdit/)
+  assert.match(source, /globalData\.baseUrl/)
+  assert.match(view, /wx:if="\{\{canEdit\}\}"/)
 })
 
 test('request id is stable under injected clock and random source', () => {

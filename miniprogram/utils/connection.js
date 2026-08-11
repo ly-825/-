@@ -36,6 +36,40 @@ function normalizeBaseUrl(value) {
   return `http://${matched[1]}:${port}`
 }
 
+function isIpv4(host) {
+  const parts = host.split('.').map(Number)
+  return (
+    parts.length === 4 &&
+    parts.every(
+      (part) => Number.isInteger(part) && part >= 0 && part <= 255
+    )
+  )
+}
+
+function normalizeReleaseBaseUrl(value) {
+  const text = String(value || '').trim().replace(/\/+$/, '')
+  const matched = text.match(/^https:\/\/([^/:]+)(?::443)?$/)
+  if (!matched) {
+    throw new Error('正式环境必须配置个人 HTTPS API 域名')
+  }
+  const host = matched[1].toLowerCase()
+  if (!host.includes('.') || isIpv4(host)) {
+    throw new Error('正式环境必须使用个人 API 域名，不能使用 IP')
+  }
+  return `https://${host}`
+}
+
+function canEditConnection(envVersion) {
+  return envVersion !== 'release'
+}
+
+function baseUrlForEnvironment(envVersion, options = {}) {
+  if (envVersion === 'release') {
+    return normalizeReleaseBaseUrl(options.releaseBaseUrl)
+  }
+  return loadSavedBaseUrl(options.wxApi)
+}
+
 function parseConnectionPayload(rawValue) {
   let payload
   try {
@@ -75,6 +109,9 @@ async function scanBaseUrl(wxApi = wx) {
 module.exports = {
   STORAGE_KEY,
   normalizeBaseUrl,
+  normalizeReleaseBaseUrl,
+  canEditConnection,
+  baseUrlForEnvironment,
   parseConnectionPayload,
   loadSavedBaseUrl,
   saveBaseUrl,
