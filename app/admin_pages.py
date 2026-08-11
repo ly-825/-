@@ -1114,6 +1114,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
         <div class="nav-root">
           <a href="/admin">后台首页</a>
           <a href="/admin/mobile-connection">小程序连接</a>
+          <a href="/admin/employees">员工管理</a>
         </div>
         <details class="nav-section" data-nav-section="drawing">
           <summary>图纸管理</summary>

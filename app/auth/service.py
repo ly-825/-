@@ -254,6 +254,27 @@ def disable_account(db: Session, account: Account) -> None:
     db.commit()
 
 
+def enable_account(db: Session, account: Account) -> None:
+    account.is_active = True
+    db.commit()
+
+
+def regenerate_activation(
+    db: Session,
+    account: Account,
+    now: datetime | None = None,
+) -> str:
+    if account.wechat_openid:
+        raise ValueError("请先解绑微信")
+    current_time = _clock(now)
+    activation_code = new_activation_code()
+    account.activation_code_hash = hash_secret(activation_code, _required_pepper())
+    account.activation_expires_at = current_time + timedelta(hours=24)
+    account.session_version += 1
+    db.commit()
+    return activation_code
+
+
 def unbind_wechat(
     db: Session,
     account: Account,

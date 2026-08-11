@@ -3,6 +3,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.auth.context import get_current_account
 from app.models import MaterialInventory, OperationLog, ProductDrawing
 
 
@@ -79,11 +80,12 @@ def record_operation_log(
     before_data: dict[str, Any] | None = None,
     after_data: dict[str, Any] | None = None,
 ) -> OperationLog:
+    actor = get_current_account()
     log = OperationLog(
         action=action,
         object_type=object_type,
         object_id=object_id,
-        operator_name=operator_name or None,
+        operator_name=actor.display_name if actor else operator_name or None,
         remark=remark or None,
         before_data=before_data,
         after_data=after_data,
