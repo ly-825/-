@@ -58,3 +58,27 @@ sqlite3 "$target/app.db" 'PRAGMA integrity_check;'
 ## ICP 前限制
 
 备案通过前只允许从所有者当前公网 IP 访问 SSH。安全组不得开放 80、443 或 8000，FastAPI 也只能监听 `127.0.0.1:8000`。个人 ECS 的实际安装和连接必须等待所有者明确提供并确认目标信息。
+
+## 安全更新
+
+服务器代码更新使用：
+
+```bash
+deploy/update-server.sh
+```
+
+脚本要求工作区干净，先完成一次已校验备份，再执行 fast-forward 更新、安装锁定依赖、重启单进程服务并等待本地健康检查。备份失败时不会切换 Git 版本。
+
+## 备案通过后的 Nginx 模板
+
+域名只从仓库外的个人部署目标文件读取。备案和证书准备完成后才渲染模板：
+
+```bash
+source "$HOME/.config/tenaishi/deploy-target.env"
+envsubst '$TENAISHI_SITE_DOMAIN $TENAISHI_API_DOMAIN' \
+  < /srv/tenaishi/app/deploy/nginx-personal-inventory.conf \
+  > /etc/nginx/sites-available/tenaishi
+nginx -t
+```
+
+模板仅代理到 `127.0.0.1:8000`，不包含额外 Basic Auth。应用自身的老板登录和员工小程序会话负责身份验证。
