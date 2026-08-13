@@ -55,7 +55,7 @@ Retain the existing project-root, backup, virtual-environment, Uvicorn, and wait
 Run:
 
 ```bash
-.venv/bin/python -m unittest tests.test_windows_update_scripts.WindowsUpdateScriptTests.test_update_script_contains_safe_update_flow -v
+.venv/bin/python -m unittest discover -s tests -p 'test_windows_update_scripts.py' -v
 ```
 
 Expected: FAIL because the current script has no `main` guard and still contains `git pull --ff-only`.
@@ -125,7 +125,7 @@ if errorlevel 1 (
 Run:
 
 ```bash
-.venv/bin/python -m unittest tests.test_windows_update_scripts -v
+.venv/bin/python -m unittest discover -s tests -p 'test_windows_update_scripts.py' -v
 ```
 
 Expected: 2 tests pass.

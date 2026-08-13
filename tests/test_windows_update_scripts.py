@@ -30,10 +30,18 @@ class WindowsUpdateScriptTests(unittest.TestCase):
         dirty_check = script.index("git status --porcelain")
         fetch = script.index("git fetch --no-auto-maintenance origin main")
         merge = script.index("git merge --ff-only FETCH_HEAD")
+        dependency_update = script.index('if not exist ".venv\\Scripts\\python.exe"')
+
+        fetch_failure_block = script[fetch:merge]
+        merge_failure_block = script[merge:dependency_update]
 
         self.assertLess(branch_guard, backup)
         self.assertLess(dirty_check, fetch)
         self.assertLess(fetch, merge)
+        self.assertIn("if errorlevel 1", fetch_failure_block)
+        self.assertIn("exit /b 1", fetch_failure_block)
+        self.assertIn("if errorlevel 1", merge_failure_block)
+        self.assertIn("exit /b 1", merge_failure_block)
         self.assertNotIn("git pull --ff-only", script)
         self.assertNotIn("echo y | git fetch", script.lower())
         self.assertIn('".venv\\Scripts\\python.exe" -m pip install -r requirements.txt', script)
