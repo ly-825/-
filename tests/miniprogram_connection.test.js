@@ -101,6 +101,8 @@ test('release connection page hides LAN scan and manual controls', () => {
   assert.match(source, /canEdit/)
   assert.match(source, /globalData\.baseUrl/)
   assert.match(view, /wx:if="\{\{canEdit\}\}"/)
+  assert.match(view, /wx:if="\{\{!canEdit && state === 'error'\}\}"/)
+  assert.doesNotMatch(view, /&amp;&amp;/)
 })
 
 test('request id is stable under injected clock and random source', () => {

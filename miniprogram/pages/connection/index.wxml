@@ -6,7 +6,7 @@
 
   <state-view wx:if="{{state === 'checking'}}" state="loading" title="正在检查连接" description="{{baseUrl}}" />
 
-  <view class="form-section" wx:if="{{!canEdit &amp;&amp; state === 'error'}}">
+  <view class="form-section" wx:if="{{!canEdit && state === 'error'}}">
     <view class="error-box">
       <view class="error-title">{{errorTitle}}</view>
       <view class="error-description">{{errorDescription}}</view>
