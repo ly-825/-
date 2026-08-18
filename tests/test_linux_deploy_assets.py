@@ -25,6 +25,8 @@ class LinuxDeployAssetTest(unittest.TestCase):
             "rsync",
             "util-linux",
             "curl",
+            "gettext-base",
+            "sqlite3",
         ):
             self.assertIn(value, setup)
         self.assertNotRegex(setup, r"\b(ufw|iptables|firewall-cmd)\b")
@@ -55,21 +57,29 @@ class LinuxDeployAssetTest(unittest.TestCase):
     def test_nginx_uses_personal_placeholders_and_secure_proxy_boundary(self) -> None:
         nginx = self.read("deploy/nginx-personal-inventory.conf")
 
-        self.assertIn("${TENAISHI_SITE_DOMAIN}", nginx)
-        self.assertIn("${TENAISHI_API_DOMAIN}", nginx)
+        self.assertNotIn("${TENAISHI_SITE_DOMAIN}", nginx)
+        self.assertEqual(nginx.count("server_name ${TENAISHI_API_DOMAIN};"), 2)
         for line in nginx.splitlines():
             if line.strip().startswith("server_name "):
                 self.assertIn("${TENAISHI_", line)
-        self.assertIn("proxy_pass http://127.0.0.1:8000", nginx)
+        self.assertEqual(nginx.count("proxy_pass http://127.0.0.1:8000"), 1)
         self.assertIn("proxy_set_header X-Real-IP $remote_addr", nginx)
         self.assertIn("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for", nginx)
         self.assertIn("proxy_set_header X-Forwarded-Proto $scheme", nginx)
         self.assertIn("client_max_body_size 100m", nginx)
-        self.assertGreaterEqual(nginx.count("location ~ /\\."), 2)
+        self.assertEqual(nginx.count("location ~ /\\."), 1)
         self.assertNotIn("auth_basic", nginx)
         http_block = nginx.split("server {", 2)[1]
         self.assertNotIn("Strict-Transport-Security", http_block)
-        self.assertGreaterEqual(nginx.count("Strict-Transport-Security"), 2)
+        self.assertEqual(nginx.count("Strict-Transport-Security"), 1)
+        self.assertIn(
+            "/etc/letsencrypt/live/${TENAISHI_API_DOMAIN}/fullchain.pem",
+            nginx,
+        )
+        self.assertIn(
+            "/etc/letsencrypt/live/${TENAISHI_API_DOMAIN}/privkey.pem",
+            nginx,
+        )
 
     def test_update_is_clean_backup_first_and_fast_forward_only(self) -> None:
         update = self.read("deploy/update-server.sh")

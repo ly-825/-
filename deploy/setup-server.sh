@@ -8,7 +8,7 @@ ENV_FILE="$ENV_DIR/tenaishi.env"
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update -y
-apt-get install -y git python3 python3-venv python3-pip nginx rsync util-linux curl
+apt-get install -y git python3 python3-venv python3-pip nginx rsync util-linux curl gettext-base sqlite3
 
 id -u tenaishi >/dev/null 2>&1 || useradd --system --create-home --home-dir /srv/tenaishi --shell /usr/sbin/nologin tenaishi
 install -d -o tenaishi -g tenaishi -m 0750 /srv/tenaishi/app /srv/tenaishi/data /srv/tenaishi/data/uploads /srv/tenaishi/data/previews /srv/tenaishi/data/qrcodes /srv/tenaishi/backups

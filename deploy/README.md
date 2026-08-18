@@ -75,7 +75,7 @@ deploy/update-server.sh
 
 ```bash
 source "$HOME/.config/tenaishi/deploy-target.env"
-envsubst '$TENAISHI_SITE_DOMAIN $TENAISHI_API_DOMAIN' \
+envsubst '$TENAISHI_API_DOMAIN' \
   < /srv/tenaishi/app/deploy/nginx-personal-inventory.conf \
   > /etc/nginx/sites-available/tenaishi
 nginx -t
