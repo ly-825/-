@@ -3253,7 +3253,7 @@ def product_outbound_analysis_page(
             """
             for row in result["detail_rows"]
         )
-        detail_table = f"<section class='card'><h2>逐单明细</h2><table class='mobile-list'><thead><tr><th>入库时间</th><th>产品型号</th><th>数量</th><th>库位</th><th>操作人</th><th>备注</th></tr></thead><tbody>{detail_rows or "<tr><td colspan='6'>当前条件暂无入库明细。</td></tr>"}</tbody></table></section>"
+        detail_table = f"""<section class='card'><h2>逐单明细</h2><table class='mobile-list'><thead><tr><th>入库时间</th><th>产品型号</th><th>数量</th><th>库位</th><th>操作人</th><th>备注</th></tr></thead><tbody>{detail_rows or "<tr><td colspan='6'>当前条件暂无入库明细。</td></tr>"}</tbody></table></section>"""
         stats = f"""
         <section class="grid">
           <div class="card stat"><span class="muted">入库总量</span><strong>{summary['total_quantity']}</strong></div>
@@ -3262,7 +3262,7 @@ def product_outbound_analysis_page(
           <div class="card stat"><span class="muted">月均入库</span><strong>{summary['monthly_avg']}</strong></div>
         </section>"""
         recommendation = ""
-        monthly_table = f"<section class='card'><h2>月度汇总</h2><table class='mobile-list'><thead><tr><th>月份</th><th>入库量</th><th>入库次数</th><th>型号数</th></tr></thead><tbody>{monthly_rows or "<tr><td colspan='4'>当前条件暂无月度数据。</td></tr>"}</tbody></table></section>"
+        monthly_table = f"""<section class='card'><h2>月度汇总</h2><table class='mobile-list'><thead><tr><th>月份</th><th>入库量</th><th>入库次数</th><th>型号数</th></tr></thead><tbody>{monthly_rows or "<tr><td colspan='4'>当前条件暂无月度数据。</td></tr>"}</tbody></table></section>"""
         mode_fields = ""
         mode_note = ""
         description = "按产品型号和时间范围查看成品入库情况。"
@@ -3281,7 +3281,7 @@ def product_outbound_analysis_page(
             """
             for row in result["detail_rows"]
         )
-        detail_table = f"<section class='card'><h2>逐单明细</h2><table class='mobile-list'><thead><tr><th>出库时间</th><th>产品型号</th><th>数量</th><th>客户/去向</th><th>用途</th><th>库位</th><th>操作人</th><th>备注</th></tr></thead><tbody>{detail_rows or "<tr><td colspan='8'>当前条件暂无出库明细。</td></tr>"}</tbody></table></section>"
+        detail_table = f"""<section class='card'><h2>逐单明细</h2><table class='mobile-list'><thead><tr><th>出库时间</th><th>产品型号</th><th>数量</th><th>客户/去向</th><th>用途</th><th>库位</th><th>操作人</th><th>备注</th></tr></thead><tbody>{detail_rows or "<tr><td colspan='8'>当前条件暂无出库明细。</td></tr>"}</tbody></table></section>"""
         stats = f"""
         <section class="grid">
           <div class="card stat"><span class="muted">销售出库量</span><strong>{summary['sales_quantity']}</strong></div>
@@ -3302,7 +3302,7 @@ def product_outbound_analysis_page(
           </div>
           <p class="muted">建议量按“月均销售”和“最近3个月月均”两者较高者估算，适合做生产计划初步参考。</p>
         </section>"""
-        monthly_table = f"<section class='card'><h2>月度汇总</h2><table class='mobile-list'><thead><tr><th>月份</th><th>销售出库量</th><th>总出库量</th><th>出库次数</th><th>客户数</th></tr></thead><tbody>{monthly_rows or "<tr><td colspan='5'>当前条件暂无月度数据。</td></tr>"}</tbody></table></section>"
+        monthly_table = f"""<section class='card'><h2>月度汇总</h2><table class='mobile-list'><thead><tr><th>月份</th><th>销售出库量</th><th>总出库量</th><th>出库次数</th><th>客户数</th></tr></thead><tbody>{monthly_rows or "<tr><td colspan='5'>当前条件暂无月度数据。</td></tr>"}</tbody></table></section>"""
         mode_fields = f"""
         <div><label>客户/去向</label><input name="customer" value="{html.escape(customer)}" list="analysis-customer-options" placeholder="可按客户筛选"><datalist id="analysis-customer-options">{customer_options}</datalist></div>
         <div><label>用途</label><select name="purpose">{''.join(purpose_options)}</select></div>"""
