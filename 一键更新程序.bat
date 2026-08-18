@@ -33,6 +33,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
+set "CURRENT_BRANCH="
+for /f "delims=" %%i in ('git branch --show-current') do set "CURRENT_BRANCH=%%i"
+
+if /I not "%CURRENT_BRANCH%"=="main" (
+    echo.
+    echo 更新失败：当前不是 main 正式分支，请联系管理员处理。
+    echo.
+    call :wait "按回车关闭窗口..."
+    exit /b 1
+)
+
 where py >nul 2>nul
 if not errorlevel 1 (
     set "PY_CMD=py -3"
@@ -70,10 +81,19 @@ for /f %%i in ('git status --porcelain') do (
 )
 
 echo 正在拉取最新代码...
-git pull --ff-only
+git fetch --no-auto-maintenance origin main
 if errorlevel 1 (
     echo.
-    echo 更新失败：拉取代码失败。请检查网络，或联系管理员处理。
+    echo 更新失败：下载代码失败。请检查网络，或联系管理员处理。
+    echo.
+    call :wait "按回车关闭窗口..."
+    exit /b 1
+)
+
+git merge --ff-only FETCH_HEAD
+if errorlevel 1 (
+    echo.
+    echo 更新失败：本地代码无法安全快进到正式版本，请联系管理员处理。
     echo.
     call :wait "按回车关闭窗口..."
     exit /b 1

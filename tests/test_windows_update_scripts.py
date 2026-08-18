@@ -18,7 +18,32 @@ class WindowsUpdateScriptTests(unittest.TestCase):
         self.assertIn("git status --porcelain", script)
         self.assertIn("data\\app.db", script)
         self.assertIn("data\\uploads", script)
-        self.assertIn("git pull --ff-only", script)
+
+        self.assertIn('set "CURRENT_BRANCH="', script)
+        self.assertIn("git branch --show-current", script)
+        self.assertIn('if /I not "%CURRENT_BRANCH%"=="main"', script)
+        self.assertIn("git fetch --no-auto-maintenance origin main", script)
+        self.assertIn("git merge --ff-only FETCH_HEAD", script)
+
+        branch_guard = script.index('if /I not "%CURRENT_BRANCH%"=="main"')
+        backup = script.index('set "BACKUP_DIR=backups\\%BACKUP_TIME%"')
+        dirty_check = script.index("git status --porcelain")
+        fetch = script.index("git fetch --no-auto-maintenance origin main")
+        merge = script.index("git merge --ff-only FETCH_HEAD")
+        dependency_update = script.index('if not exist ".venv\\Scripts\\python.exe"')
+
+        fetch_failure_block = script[fetch:merge]
+        merge_failure_block = script[merge:dependency_update]
+
+        self.assertLess(branch_guard, backup)
+        self.assertLess(dirty_check, fetch)
+        self.assertLess(fetch, merge)
+        self.assertIn("if errorlevel 1", fetch_failure_block)
+        self.assertIn("exit /b 1", fetch_failure_block)
+        self.assertIn("if errorlevel 1", merge_failure_block)
+        self.assertIn("exit /b 1", merge_failure_block)
+        self.assertNotIn("git pull --ff-only", script)
+        self.assertNotIn("echo y | git fetch", script.lower())
         self.assertIn('".venv\\Scripts\\python.exe" -m pip install -r requirements.txt', script)
         self.assertIn("uvicorn app.main:app --host 0.0.0.0 --port 8000", script)
         self.assertNotIn("\npause", script.lower())
