@@ -105,6 +105,10 @@ class LinuxDeployAssetTest(unittest.TestCase):
         self.assertRegex(smoke, r"if\s+curl[^\n]+8000/health")
         literal_addresses = set(re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", smoke))
         self.assertLessEqual(literal_addresses, {"127.0.0.1"})
+        self.assertIn('/auth/login', smoke)
+        self.assertIn('使用小程序扫码登录', smoke)
+        self.assertNotIn('browser_secret', smoke)
+        self.assertNotIn('request_token', smoke)
 
     def test_release_build_is_documented_as_external_and_fail_closed(self) -> None:
         readme = self.read("deploy/README.md")
@@ -112,6 +116,22 @@ class LinuxDeployAssetTest(unittest.TestCase):
         self.assertIn("scripts/build_miniprogram_release.py", readme)
         self.assertIn("$HOME/.config/tenaishi/deploy-target.env", readme)
         self.assertIn("不要直接上传 `miniprogram/`", readme)
+
+    def test_wechat_admin_cutover_and_recovery_are_documented(self) -> None:
+        readme = self.read("deploy/README.md")
+        for value in (
+            "python scripts/manage_superadmin.py bootstrap",
+            "python scripts/manage_superadmin.py reset-wechat",
+            "LEGACY_PASSWORD_LOGIN_ENABLED=true",
+            "LEGACY_PASSWORD_LOGIN_ENABLED=false",
+            "scripts/backup.sh",
+            "PRAGMA integrity_check",
+            "PRAGMA foreign_key_check",
+            "/auth/legacy-login",
+        ):
+            self.assertIn(value, readme)
+        self.assertIn("阶段 A", readme)
+        self.assertIn("阶段 B", readme)
 
 
 if __name__ == "__main__":
