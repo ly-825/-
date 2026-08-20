@@ -97,6 +97,7 @@ def request_status(
 @router.post("/scan")
 def scan_request(
     payload: RequestTokenIn,
+    request: Request,
     account: Account = Depends(require_miniprogram_account),
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
@@ -107,7 +108,7 @@ def scan_request(
     return {
         **summary,
         "system_name": "杭州特耐时库存系统",
-        "verified_domain": "inventory.tenaishi.com",
+        "verified_domain": request.url.hostname or "",
     }
 
 

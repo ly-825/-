@@ -96,6 +96,7 @@ class PcWechatLoginTest(unittest.TestCase):
         )
         self.assertEqual(summary.status_code, 200)
         self.assertEqual(summary.json()["device_summary"], "Chrome · macOS")
+        self.assertEqual(summary.json()["verified_domain"], "inventory.example.com")
 
         approved = self.client.post(
             "/api/auth/pc-login/decision",
