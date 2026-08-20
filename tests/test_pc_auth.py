@@ -74,7 +74,7 @@ class PcAuthTest(unittest.TestCase):
 
     def login_owner(self):
         return self.client.post(
-            "/auth/login",
+            "/auth/legacy-login",
             data={
                 "username": "owner",
                 "password": "strong-password-123",
@@ -88,6 +88,13 @@ class PcAuthTest(unittest.TestCase):
         response = self.client.get("/admin", follow_redirects=False)
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/auth/login")
+
+    def test_login_page_is_qr_only(self) -> None:
+        response = self.client.get("/auth/login")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("使用小程序扫码登录", response.text)
+        self.assertIn("/api/auth/pc-login/requests", response.text)
+        self.assertNotIn('name="password"', response.text)
 
     def test_owner_login_sets_secure_cookie_and_opens_admin(self) -> None:
         response = self.login_owner()
@@ -144,7 +151,7 @@ class PcAuthTest(unittest.TestCase):
 
     def test_wrong_password_and_wrong_totp_use_identical_error(self) -> None:
         wrong_password = self.client.post(
-            "/auth/login",
+            "/auth/legacy-login",
             data={
                 "username": "owner",
                 "password": "wrong-password",
@@ -152,7 +159,7 @@ class PcAuthTest(unittest.TestCase):
             },
         )
         wrong_totp = self.client.post(
-            "/auth/login",
+            "/auth/legacy-login",
             data={
                 "username": "owner",
                 "password": "strong-password-123",
@@ -165,6 +172,21 @@ class PcAuthTest(unittest.TestCase):
         self.assertIn("账号或验证信息不正确", wrong_password.text)
         self.assertEqual(wrong_password.text, wrong_totp.text)
 
+    def test_legacy_login_can_be_disabled(self) -> None:
+        with patch("app.auth.pages.settings.legacy_password_login_enabled", False):
+            self.assertEqual(self.client.get("/auth/legacy-login").status_code, 404)
+            self.assertEqual(
+                self.client.post(
+                    "/auth/legacy-login",
+                    data={
+                        "username": "owner",
+                        "password": "strong-password-123",
+                        "totp_code": "000000",
+                    },
+                ).status_code,
+                404,
+            )
+
     def test_production_app_wires_public_login_and_owner_protected_routes(self) -> None:
         route_map = {
             (route.path, method): route
@@ -173,6 +195,7 @@ class PcAuthTest(unittest.TestCase):
         }
 
         self.assertIn(("/auth/login", "GET"), route_map)
+        self.assertIn(("/auth/legacy-login", "GET"), route_map)
         for key in (
             ("/admin", "GET"),
             ("/api/drawings/upload", "POST"),
