@@ -61,11 +61,18 @@ def _http_error(exc: Exception) -> HTTPException:
 
 
 def _source_ip(request: Request) -> str | None:
+    peer = request.client.host if request.client else None
+    try:
+        peer_is_loopback = bool(peer and ipaddress.ip_address(peer).is_loopback)
+    except ValueError:
+        peer_is_loopback = False
+    if not peer_is_loopback:
+        return peer
     candidate = request.headers.get("X-Real-IP", "").strip()
     try:
         return str(ipaddress.ip_address(candidate))
     except ValueError:
-        return request.client.host if request.client else None
+        return peer
 
 
 @router.post("/requests")

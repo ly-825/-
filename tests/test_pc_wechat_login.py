@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -166,7 +167,7 @@ class PcWechatLoginTest(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.json()["device_summary"], "Chrome")
 
-    def test_public_inputs_are_bounded_and_proxy_ip_is_recorded(self) -> None:
+    def test_public_inputs_are_bounded_and_untrusted_proxy_ip_is_ignored(self) -> None:
         oversized = "x" * 513
         self.assertEqual(
             self.client.post(
@@ -189,9 +190,19 @@ class PcWechatLoginTest(unittest.TestCase):
         )
         self.assertEqual(created.status_code, 200)
         with self.Session() as db:
-            self.assertEqual(db.query(PcLoginRequest).one().source_ip, "203.0.113.9")
+            self.assertEqual(db.query(PcLoginRequest).one().source_ip, "testclient")
 
-    def test_creation_removes_old_terminal_requests_but_keeps_active_rows(self) -> None:
+    def test_real_ip_header_is_used_only_from_loopback_proxy(self) -> None:
+        from app.auth.pc_login_api import _source_ip
+
+        request = Request({
+            "type": "http",
+            "headers": [(b"x-real-ip", b"203.0.113.9")],
+            "client": ("127.0.0.1", 12345),
+        })
+        self.assertEqual(_source_ip(request), "203.0.113.9")
+
+    def test_creation_removes_all_old_expired_requests_but_keeps_active_rows(self) -> None:
         with self.Session() as db:
             db.add_all([
                 PcLoginRequest(
@@ -204,11 +215,29 @@ class PcWechatLoginTest(unittest.TestCase):
                     status="pending", expires_at=self.now + timedelta(minutes=1),
                     created_at=self.now,
                 ),
+                PcLoginRequest(
+                    request_token_hash="e" * 64, browser_secret_hash="f" * 64,
+                    status="pending", expires_at=self.now - timedelta(days=2),
+                    created_at=self.now - timedelta(days=2),
+                ),
+                PcLoginRequest(
+                    request_token_hash="1" * 64, browser_secret_hash="2" * 64,
+                    status="approved", expires_at=self.now - timedelta(days=2),
+                    created_at=self.now - timedelta(days=2),
+                ),
+                PcLoginRequest(
+                    request_token_hash="3" * 64, browser_secret_hash="4" * 64,
+                    status="scanned", expires_at=self.now - timedelta(days=2),
+                    created_at=self.now - timedelta(days=2),
+                ),
             ])
             db.commit()
             create_login_challenge(db, "Chrome", None, now=self.now)
             hashes = {row.request_token_hash for row in db.query(PcLoginRequest).all()}
             self.assertNotIn("a" * 64, hashes)
+            self.assertNotIn("e" * 64, hashes)
+            self.assertNotIn("1" * 64, hashes)
+            self.assertNotIn("3" * 64, hashes)
             self.assertIn("c" * 64, hashes)
 
     def test_service_rejects_wrong_secret_deny_expiry_and_replays(self) -> None:
