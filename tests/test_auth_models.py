@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.config import Settings
 from app.database import Base, build_engine
-from app.models import Account, AuthSession
+from app.models import Account, AuthSession, PcLoginRequest
 from app.schema_migrations import TIMESTAMP_COLUMNS
 
 
@@ -17,6 +17,8 @@ class AuthModelTest(unittest.TestCase):
         self.assertIsNone(settings.wechat_app_secret)
         self.assertEqual(settings.pc_session_hours, 12)
         self.assertEqual(settings.mobile_session_days, 30)
+        self.assertEqual(settings.pc_login_request_seconds, 120)
+        self.assertTrue(settings.legacy_password_login_enabled)
         self.assertEqual(
             TIMESTAMP_COLUMNS["accounts"],
             ("activation_expires_at", "created_at", "updated_at"),
@@ -53,6 +55,23 @@ class AuthModelTest(unittest.TestCase):
                 "last_seen_at",
             },
         )
+        self.assertGreaterEqual(
+            {column.name for column in PcLoginRequest.__table__.columns},
+            {
+                "request_token_hash",
+                "browser_secret_hash",
+                "status",
+                "device_summary",
+                "source_ip",
+                "approved_account_id",
+                "expires_at",
+                "approved_at",
+                "consumed_at",
+                "created_at",
+            },
+        )
+        self.assertEqual(PcLoginRequest.__table__.c.status.index, True)
+        self.assertEqual(PcLoginRequest.__table__.c.request_token_hash.unique, True)
 
     def test_sqlite_engine_enables_wal_foreign_keys_and_busy_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -249,3 +249,25 @@ class AuthSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=china_now)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=china_now)
+
+
+class PcLoginRequest(Base):
+    __tablename__ = "pc_login_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_token_hash: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True
+    )
+    browser_secret_hash: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    device_summary: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    source_ip: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    approved_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id"), nullable=True, index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=china_now)
