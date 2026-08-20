@@ -9,16 +9,22 @@ from sqlalchemy.orm import sessionmaker
 
 from app.auth.security import hash_password, verify_password
 from app.auth.service import (
+    activate_account,
     activate_employee,
     authenticate_owner,
+    create_managed_account,
     create_employee,
     create_owner,
     disable_account,
+    login_bound_wechat,
+    regenerate_activation,
     resolve_session,
     unbind_wechat,
 )
+from app.auth.roles import EMPLOYEE, OWNER, SUPERADMIN
 from app.database import Base
 from app.models import Account, AuthSession
+from scripts.manage_superadmin import bootstrap_superadmin
 
 
 class AuthServiceTest(unittest.TestCase):
@@ -142,6 +148,96 @@ class AuthServiceTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "账号已存在"):
                 create_employee(db, "owner", "重名员工", now=self.now)
             self.assertEqual(db.query(Account).count(), 1)
+
+    def test_superadmin_creates_owner_with_short_lived_activation(self) -> None:
+        with self.Session() as db:
+            superadmin, _ = bootstrap_superadmin(
+                db, "admin", "主管理员", now=self.now
+            )
+            owner, owner_code = create_managed_account(
+                db,
+                actor=superadmin,
+                username="boss1",
+                display_name="老板一",
+                role=OWNER,
+                now=self.now,
+            )
+
+            self.assertEqual(owner.activation_expires_at, self.now + timedelta(minutes=30))
+            bound_owner, token = activate_account(
+                db, "boss1", owner_code, "openid-owner-1", now=self.now
+            )
+            self.assertEqual(bound_owner.role, OWNER)
+            self.assertIsNotNone(resolve_session(db, token, "miniprogram", now=self.now))
+
+    def test_role_hierarchy_and_activation_lifetimes(self) -> None:
+        with self.Session() as db:
+            superadmin, _ = bootstrap_superadmin(
+                db, "admin", "主管理员", now=self.now
+            )
+            owner, _ = create_managed_account(
+                db, actor=superadmin, username="boss1", display_name="老板一",
+                role=OWNER, now=self.now,
+            )
+            employee, _ = create_managed_account(
+                db, actor=owner, username="tns020", display_name="员工",
+                role=EMPLOYEE, now=self.now,
+            )
+            self.assertEqual(employee.activation_expires_at, self.now + timedelta(hours=24))
+            with self.assertRaisesRegex(ValueError, "无权创建该角色账号"):
+                create_managed_account(
+                    db, actor=owner, username="boss2", display_name="老板二",
+                    role=OWNER, now=self.now,
+                )
+            with self.assertRaisesRegex(ValueError, "无权创建该角色账号"):
+                create_managed_account(
+                    db, actor=employee, username="tns021", display_name="员工二",
+                    role=EMPLOYEE, now=self.now,
+                )
+
+    def test_generic_binding_rejects_duplicate_openid_without_role_leak(self) -> None:
+        with self.Session() as db:
+            first, first_code = create_employee(db, "tns030", "员工甲", now=self.now)
+            activate_account(db, first.username, first_code, "shared-openid", now=self.now)
+            second, second_code = create_employee(db, "tns031", "员工乙", now=self.now)
+            with self.assertRaisesRegex(ValueError, "^微信已绑定其他账号$"):
+                activate_account(db, second.username, second_code, "shared-openid", now=self.now)
+
+    def test_employee_compatibility_activation_rejects_admin_account(self) -> None:
+        with self.Session() as db:
+            superadmin, code = bootstrap_superadmin(
+                db, "admin", "主管理员", now=self.now
+            )
+            with self.assertRaisesRegex(ValueError, "激活码无效或已过期"):
+                activate_employee(
+                    db, superadmin.username, code, "admin-openid", now=self.now
+                )
+            db.refresh(superadmin)
+            self.assertIsNone(superadmin.wechat_openid)
+            self.assertIsNotNone(superadmin.activation_code_hash)
+
+    def test_bound_wechat_login_and_revocation_are_role_neutral(self) -> None:
+        with self.Session() as db:
+            superadmin, code = bootstrap_superadmin(
+                db, "admin", "主管理员", now=self.now
+            )
+            account, _ = activate_account(
+                db, superadmin.username, code, "admin-openid", now=self.now
+            )
+            version = account.session_version
+            logged_in, token = login_bound_wechat(db, "admin-openid", now=self.now)
+            self.assertEqual(logged_in.role, SUPERADMIN)
+            self.assertIsNotNone(resolve_session(db, token, "miniprogram", now=self.now))
+
+            unbind_wechat(db, account, now=self.now)
+            self.assertEqual(account.session_version, version + 1)
+            self.assertEqual(account.activation_expires_at, self.now + timedelta(minutes=30))
+            self.assertIsNone(resolve_session(db, token, "miniprogram", now=self.now))
+
+            regenerated_version = account.session_version
+            regenerate_activation(db, account, now=self.now)
+            self.assertEqual(account.session_version, regenerated_version + 1)
+            self.assertEqual(account.activation_expires_at, self.now + timedelta(minutes=30))
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.auth.roles import ACCOUNT_ROLES, EMPLOYEE, OWNER, can_manage_role
 from app.auth.security import (
     hash_password,
     hash_secret,
@@ -123,6 +124,24 @@ def create_employee(
     display_name: str,
     now: datetime | None = None,
 ) -> tuple[Account, str]:
+    return _create_activation_account(
+        db, username, display_name, EMPLOYEE, now=now
+    )
+
+
+def activation_lifetime(role: str) -> timedelta:
+    if role not in ACCOUNT_ROLES:
+        raise ValueError("不支持的账号角色")
+    return timedelta(hours=24) if role == EMPLOYEE else timedelta(minutes=30)
+
+
+def _create_activation_account(
+    db: Session,
+    username: str,
+    display_name: str,
+    role: str,
+    now: datetime | None = None,
+) -> tuple[Account, str]:
     normalized_username = _normalized_username(username)
     if db.query(Account).filter(Account.username == normalized_username).first():
         raise ValueError("账号已存在")
@@ -131,9 +150,9 @@ def create_employee(
     account = Account(
         username=normalized_username,
         display_name=display_name.strip(),
-        role="employee",
+        role=role,
         activation_code_hash=hash_secret(activation_code, _required_pepper()),
-        activation_expires_at=current_time + timedelta(hours=24),
+        activation_expires_at=current_time + activation_lifetime(role),
         is_active=True,
         session_version=1,
     )
@@ -143,7 +162,38 @@ def create_employee(
     return account, activation_code
 
 
+def create_managed_account(
+    db: Session,
+    *,
+    actor: Account,
+    username: str,
+    display_name: str,
+    role: str,
+    now: datetime | None = None,
+) -> tuple[Account, str]:
+    if not can_manage_role(actor.role, role):
+        raise ValueError("无权创建该角色账号")
+    return _create_activation_account(db, username, display_name, role, now=now)
+
+
 def activate_employee(
+    db: Session,
+    username: str,
+    activation_code: str,
+    wechat_openid: str,
+    now: datetime | None = None,
+) -> tuple[Account, str]:
+    account = (
+        db.query(Account)
+        .filter(Account.username == _normalized_username(username))
+        .first()
+    )
+    if account is None or account.role != EMPLOYEE:
+        raise ValueError("激活码无效或已过期")
+    return activate_account(db, username, activation_code, wechat_openid, now=now)
+
+
+def activate_account(
     db: Session,
     username: str,
     activation_code: str,
@@ -158,7 +208,7 @@ def activate_employee(
     )
     activation_is_valid = bool(
         account
-        and account.role == "employee"
+        and account.role in ACCOUNT_ROLES
         and account.is_active
         and account.activation_code_hash
         and account.activation_expires_at
@@ -177,11 +227,37 @@ def activate_employee(
         .first()
     )
     if existing_binding:
-        raise ValueError("微信已绑定其他员工")
+        raise ValueError("微信已绑定其他账号")
     account.wechat_openid = wechat_openid
     account.activation_code_hash = None
     account.activation_expires_at = None
     db.commit()
+    token = create_session(
+        db,
+        account,
+        "miniprogram",
+        current_time + timedelta(days=settings.mobile_session_days),
+    )
+    return account, token
+
+
+def login_bound_wechat(
+    db: Session,
+    wechat_openid: str,
+    now: datetime | None = None,
+) -> tuple[Account, str]:
+    current_time = _clock(now)
+    account = (
+        db.query(Account)
+        .filter(
+            Account.wechat_openid == wechat_openid,
+            Account.is_active.is_(True),
+            Account.role.in_(ACCOUNT_ROLES),
+        )
+        .first()
+    )
+    if account is None:
+        raise ValueError("微信账号未绑定或已停用")
     token = create_session(
         db,
         account,
@@ -250,7 +326,7 @@ def revoke_session(
 
 def disable_account(db: Session, account: Account) -> None:
     account.is_active = False
-    account.session_version += 1
+    revoke_all_sessions(db, account, commit=False)
     db.commit()
 
 
@@ -269,8 +345,8 @@ def regenerate_activation(
     current_time = _clock(now)
     activation_code = new_activation_code()
     account.activation_code_hash = hash_secret(activation_code, _required_pepper())
-    account.activation_expires_at = current_time + timedelta(hours=24)
-    account.session_version += 1
+    account.activation_expires_at = current_time + activation_lifetime(account.role)
+    revoke_all_sessions(db, account, commit=False)
     db.commit()
     return activation_code
 
@@ -284,7 +360,18 @@ def unbind_wechat(
     activation_code = new_activation_code()
     account.wechat_openid = None
     account.activation_code_hash = hash_secret(activation_code, _required_pepper())
-    account.activation_expires_at = current_time + timedelta(hours=24)
-    account.session_version += 1
+    account.activation_expires_at = current_time + activation_lifetime(account.role)
+    revoke_all_sessions(db, account, commit=False)
     db.commit()
     return activation_code
+
+
+def revoke_all_sessions(
+    db: Session,
+    account: Account,
+    *,
+    commit: bool = True,
+) -> None:
+    account.session_version += 1
+    if commit:
+        db.commit()
