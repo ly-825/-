@@ -88,7 +88,7 @@ class RoleBoundaryTest(unittest.TestCase):
             self.drawing_id = drawing.id
 
         login = self.client.post(
-            "/auth/login",
+            "/auth/legacy-login",
             data={
                 "username": "owner",
                 "password": "strong-password-123",

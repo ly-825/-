@@ -52,7 +52,7 @@ class EmployeeAdminTest(unittest.TestCase):
             self.owner = create_owner(db, "owner", "老板", "strong-password-123")
 
         response = self.client.post(
-            "/auth/login",
+            "/auth/legacy-login",
             data={
                 "username": "owner",
                 "password": "strong-password-123",
