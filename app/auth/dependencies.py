@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.auth.context import current_account
+from app.auth.roles import EMPLOYEE
 from app.auth.service import resolve_session
 from app.config import settings
 from app.database import get_db
@@ -48,10 +49,7 @@ async def require_owner_account(
         current_account.reset(context_token)
 
 
-async def require_mobile_account(
-    request: Request,
-    db: Session = Depends(get_db),
-) -> AsyncGenerator[Account, None]:
+def _miniprogram_account(request: Request, db: Session) -> Account:
     raw_token, client_type = raw_request_token(request)
     if not raw_token or client_type != "miniprogram":
         raise HTTPException(
@@ -64,7 +62,27 @@ async def require_mobile_account(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="请先登录",
         )
-    if account.role != "employee":
+    return account
+
+
+async def require_miniprogram_account(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AsyncGenerator[Account, None]:
+    account = _miniprogram_account(request, db)
+    context_token = current_account.set(account)
+    try:
+        yield account
+    finally:
+        current_account.reset(context_token)
+
+
+async def require_mobile_account(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AsyncGenerator[Account, None]:
+    account = _miniprogram_account(request, db)
+    if account.role != EMPLOYEE:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问")
     context_token = current_account.set(account)
     try:

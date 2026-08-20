@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 
 import pyotp
@@ -10,9 +11,9 @@ from sqlalchemy.pool import StaticPool
 
 from app.auth.pages import router as auth_pages_router
 from app.auth.dependencies import require_mobile_account
-from app.auth.service import activate_employee, create_employee, create_owner
+from app.auth.service import activate_employee, create_employee, create_owner, create_session
 from app.database import Base, get_db
-from app.models import OperationLog, ProductDrawing
+from app.models import Account, OperationLog, ProductDrawing
 from app.routers.mobile import router as mobile_router
 from app.main import app as production_app
 
@@ -51,7 +52,19 @@ class RoleBoundaryTest(unittest.TestCase):
         self.client = TestClient(app, base_url="https://testserver")
 
         with self.Session() as db:
-            create_owner(db, "owner", "老板", "strong-password-123")
+            owner = create_owner(db, "owner", "老板", "strong-password-123")
+            self.owner_mobile_token = create_session(
+                db, owner, "miniprogram", datetime(2099, 1, 1)
+            )
+            superadmin = Account(
+                username="admin", display_name="主管理员", role="superadmin",
+                is_active=True, session_version=1,
+            )
+            db.add(superadmin)
+            db.commit()
+            self.superadmin_mobile_token = create_session(
+                db, superadmin, "miniprogram", datetime(2099, 1, 1)
+            )
             _, activation_code = create_employee(db, "TNS008", "张三")
             _, self.employee_token = activate_employee(
                 db, "TNS008", activation_code, "openid-employee"
@@ -155,6 +168,15 @@ class RoleBoundaryTest(unittest.TestCase):
 
         self.assertEqual(anonymous.status_code, 401)
         self.assertEqual(employee.status_code, 200)
+
+    def test_admin_mobile_identities_cannot_use_employee_business_routes(self) -> None:
+        for token in (self.owner_mobile_token, self.superadmin_mobile_token):
+            with self.subTest(token=token[:6]):
+                response = self.client.get(
+                    "/api/mobile/summary",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                self.assertEqual(response.status_code, 403)
 
     def test_verified_employee_name_overrides_payload_operator_in_audit_log(self) -> None:
         response = self.client.post(
