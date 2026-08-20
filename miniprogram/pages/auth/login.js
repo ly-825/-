@@ -26,7 +26,7 @@ Page({
     }
     api.configureBaseUrl(baseUrl)
     if (auth.hasSession(wx)) {
-      this.openBusinessHome()
+      this.openBusinessHome(auth.loadAccount(wx))
     }
   },
 
@@ -41,10 +41,10 @@ Page({
   async wechatLogin() {
     this.setData({ loading: true, error: '' })
     try {
-      await auth.login(wx, api.request)
-      this.openBusinessHome()
+      const result = await auth.login(wx, api.request)
+      this.openBusinessHome(result.account)
     } catch (error) {
-      this.setData({ error: error.message || '尚未绑定，请使用工号和激活码完成首次绑定' })
+      this.setData({ error: error.message || '尚未绑定，请使用账号和激活码完成首次绑定' })
     } finally {
       this.setData({ loading: false })
     }
@@ -54,22 +54,29 @@ Page({
     const username = this.data.username.trim()
     const activationCode = this.data.activationCode.trim()
     if (!username || !/^\d{8}$/.test(activationCode)) {
-      this.setData({ error: '请输入工号和 8 位激活码' })
+      this.setData({ error: '请输入账号和 8 位激活码' })
       return
     }
     this.setData({ loading: true, error: '' })
     try {
-      await auth.activate(wx, api.request, username, activationCode)
-      this.openBusinessHome()
+      const result = await auth.activate(wx, api.request, username, activationCode)
+      this.openBusinessHome(result.account)
     } catch (error) {
-      this.setData({ error: error.message || '绑定失败，请核对工号和激活码' })
+      this.setData({ error: error.message || '绑定失败，请核对账号和激活码' })
     } finally {
       this.setData({ loading: false })
     }
   },
 
-  openBusinessHome() {
-    getApp().globalData.authenticated = true
-    wx.switchTab({ url: '/pages/plan/home' })
+  openBusinessHome(account) {
+    const app = getApp()
+    app.globalData.authenticated = true
+    app.globalData.account = account || auth.loadAccount(wx)
+    const url = auth.homeForRole(app.globalData.account && app.globalData.account.role)
+    if (url === '/pages/plan/home') {
+      wx.switchTab({ url })
+      return
+    }
+    wx.reLaunch({ url })
   }
 })

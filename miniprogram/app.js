@@ -7,6 +7,7 @@ App({
     baseUrl: '',
     connectionState: 'unknown',
     authenticated: false,
+    account: null,
     envVersion: 'develop',
     canEditConnection: true,
     connectionError: ''
@@ -22,6 +23,7 @@ App({
     this.globalData.envVersion = envVersion
     this.globalData.canEditConnection = connection.canEditConnection(envVersion)
     this.globalData.authenticated = auth.hasSession(wx)
+    this.globalData.account = auth.loadAccount(wx)
     try {
       this.globalData.baseUrl = connection.baseUrlForEnvironment(envVersion, {
         releaseBaseUrl: releaseConfig.releaseBaseUrl,

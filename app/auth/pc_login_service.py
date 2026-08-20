@@ -75,6 +75,13 @@ def scan_login_request(
     current_time = _clock(now)
     row = _request(db, request_token)
     _expire_if_needed(db, row, current_time)
+    if row.status == "scanned":
+        return {
+            "status": "scanned",
+            "device_summary": row.device_summary or "未知浏览器",
+            "requested_at": row.created_at.isoformat(),
+            "expires_at": row.expires_at.isoformat(),
+        }
     updated = db.query(PcLoginRequest).filter(
         PcLoginRequest.id == row.id,
         PcLoginRequest.status == "pending",

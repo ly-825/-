@@ -1,4 +1,5 @@
 const SESSION_KEY = 'tns_auth_session'
+const ACCOUNT_KEY = 'tns_auth_account'
 
 function authorizationHeader(wxApi) {
   if (!wxApi || typeof wxApi.getStorageSync !== 'function') {
@@ -12,8 +13,26 @@ function saveSession(wxApi, token) {
   wxApi.setStorageSync(SESSION_KEY, token)
 }
 
+function safeAccount(account = {}) {
+  return {
+    username: String(account.username || ''),
+    display_name: String(account.display_name || ''),
+    role: String(account.role || '')
+  }
+}
+
+function saveAccount(wxApi, account) {
+  wxApi.setStorageSync(ACCOUNT_KEY, safeAccount(account))
+}
+
+function loadAccount(wxApi) {
+  const account = wxApi.getStorageSync(ACCOUNT_KEY)
+  return account && typeof account === 'object' ? safeAccount(account) : null
+}
+
 function clearSession(wxApi) {
   wxApi.removeStorageSync(SESSION_KEY)
+  wxApi.removeStorageSync(ACCOUNT_KEY)
 }
 
 function hasSession(wxApi) {
@@ -49,6 +68,7 @@ async function login(wxApi, request) {
     data: { wx_code: wxCode }
   })
   saveSession(wxApi, result.token)
+  saveAccount(wxApi, result.account)
   return result
 }
 
@@ -63,15 +83,24 @@ async function activate(wxApi, request, username, activationCode) {
     }
   })
   saveSession(wxApi, result.token)
+  saveAccount(wxApi, result.account)
   return result
+}
+
+function homeForRole(role) {
+  return role === 'employee' ? '/pages/plan/home' : '/pages/account/home'
 }
 
 module.exports = {
   SESSION_KEY,
+  ACCOUNT_KEY,
   activate,
   authorizationHeader,
   clearSession,
   handleUnauthorized,
   hasSession,
-  login
+  homeForRole,
+  loadAccount,
+  login,
+  saveAccount
 }

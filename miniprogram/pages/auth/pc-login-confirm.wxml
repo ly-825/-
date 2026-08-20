@@ -1,0 +1,13 @@
+<view class="page-shell">
+  <view class="simple-header"><view class="page-title">确认电脑登录</view><view class="page-subtitle">请核对以下请求，不认识的设备请拒绝。</view></view>
+  <view wx:if="{{loading}}" class="auth-card">正在读取登录请求…</view>
+  <view wx:elif="{{summary}}" class="auth-card">
+    <view class="group-row"><text>系统</text><text>{{summary.system_name}}</text></view>
+    <view class="group-row"><text>域名</text><text>{{summary.verified_domain}}</text></view>
+    <view class="group-row"><text>设备</text><text>{{summary.device_summary}}</text></view>
+    <view class="group-row"><text>申请时间</text><text>{{summary.requested_at}}</text></view>
+    <button class="primary-action" loading="{{submitting}}" disabled="{{submitting}}" bindtap="confirm">确认登录</button>
+    <button class="danger-action" loading="{{submitting}}" disabled="{{submitting}}" bindtap="deny">拒绝</button>
+  </view>
+  <view wx:if="{{error}}" class="error-box">{{error}}</view>
+</view>

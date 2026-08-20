@@ -21,6 +21,7 @@ test('unauthorized response clears session and opens login page', () => {
 
   assert.deepEqual(calls, [
     ['remove', 'tns_auth_session'],
+    ['remove', 'tns_auth_account'],
     ['reLaunch', '/pages/auth/login']
   ])
 })
@@ -34,7 +35,7 @@ test('activation sends wx login code with username and activation code', async (
   let sent
   const request = async (path, options) => {
     sent = [path, options]
-    return { token: 'new-session', account: { display_name: '张三', role: 'employee' } }
+    return { token: 'new-session', account: { username: 'tns008', display_name: '张三', role: 'employee', openid: 'must-drop' } }
   }
 
   const result = await auth.activate(wx, request, 'TNS008', '12345678')
@@ -46,8 +47,17 @@ test('activation sends wx login code with username and activation code', async (
       data: { username: 'TNS008', activation_code: '12345678', wx_code: 'wx-code-1' }
     }
   ])
-  assert.deepEqual(saved, [['tns_auth_session', 'new-session']])
+  assert.deepEqual(saved, [
+    ['tns_auth_session', 'new-session'],
+    ['tns_auth_account', { username: 'tns008', display_name: '张三', role: 'employee' }]
+  ])
   assert.equal(result.account.display_name, '张三')
+})
+
+test('role routing separates employee tabs from administrator home', () => {
+  assert.equal(auth.homeForRole('employee'), '/pages/plan/home')
+  assert.equal(auth.homeForRole('owner'), '/pages/account/home')
+  assert.equal(auth.homeForRole('superadmin'), '/pages/account/home')
 })
 
 test('registered inventory selectors use safe product options instead of drawings', () => {

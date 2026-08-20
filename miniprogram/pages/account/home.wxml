@@ -1,0 +1,13 @@
+<view class="page-shell">
+  <view class="simple-header">
+    <view class="page-title">{{account.display_name}}</view>
+    <view class="page-subtitle">{{roleLabel}}</view>
+  </view>
+  <view class="auth-card">
+    <view class="section-title">电脑后台</view>
+    <view class="page-subtitle">扫描电脑上的登录二维码，并在手机上确认后才能登录。</view>
+    <button class="primary-action" loading="{{loading}}" disabled="{{loading}}" bindtap="scanPcLogin">扫码登录电脑后台</button>
+  </view>
+  <view wx:if="{{error}}" class="error-box">{{error}}</view>
+  <button class="secondary-button" bindtap="logout">退出登录</button>
+</view>

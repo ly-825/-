@@ -147,6 +147,24 @@ class PcWechatLoginTest(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 403)
 
+    def test_confirmation_page_can_reload_scanned_request_summary(self) -> None:
+        created = self.client.post(
+            "/api/auth/pc-login/requests", json={"device_summary": "Chrome"}
+        ).json()
+        first = self.client.post(
+            "/api/auth/pc-login/scan",
+            headers=self.headers(self.admin_token),
+            json={"request_token": created["request_token"]},
+        )
+        second = self.client.post(
+            "/api/auth/pc-login/scan",
+            headers=self.headers(self.admin_token),
+            json={"request_token": created["request_token"]},
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()["device_summary"], "Chrome")
+
     def test_service_rejects_wrong_secret_deny_expiry_and_replays(self) -> None:
         with self.Session() as db:
             admin = db.query(Account).filter_by(role="superadmin").one()
