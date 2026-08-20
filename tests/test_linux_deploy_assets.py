@@ -65,6 +65,7 @@ class LinuxDeployAssetTest(unittest.TestCase):
         self.assertEqual(nginx.count("proxy_pass http://127.0.0.1:8000"), 2)
         self.assertIn("limit_req_zone $binary_remote_addr zone=tenaishi_auth:10m rate=20r/m", nginx)
         self.assertIn("pc-login/(requests|scan|decision|consume)", nginx)
+        self.assertIn("client_max_body_size 16k", nginx)
         self.assertNotIn("pc-login/(requests|status|scan", nginx)
         self.assertIn("proxy_set_header X-Real-IP $remote_addr", nginx)
         self.assertIn("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for", nginx)

@@ -48,6 +48,10 @@ def create_login_challenge(
     now: datetime | None = None,
 ) -> LoginChallenge:
     current_time = _clock(now)
+    db.query(PcLoginRequest).filter(
+        PcLoginRequest.expires_at < current_time - timedelta(days=1),
+        PcLoginRequest.status.in_(("expired", "denied", "consumed")),
+    ).delete(synchronize_session=False)
     request_token = new_session_token()
     browser_secret = new_session_token()
     row = PcLoginRequest(

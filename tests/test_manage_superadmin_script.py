@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.auth.service import activate_account, resolve_session
@@ -52,6 +53,15 @@ class ManageSuperadminScriptTest(unittest.TestCase):
             self.assertIsNone(resolve_session(db, token, "miniprogram", now=self.now))
             with self.assertRaisesRegex(ValueError, "主管理员账号不存在"):
                 reset_superadmin_wechat(db, "missing", now=self.now)
+
+    def test_database_rejects_second_superadmin_even_without_cli(self) -> None:
+        with self.Session() as db:
+            db.add_all([
+                Account(username="admin1", display_name="一", role="superadmin", is_active=True, session_version=1),
+                Account(username="admin2", display_name="二", role="superadmin", is_active=True, session_version=1),
+            ])
+            with self.assertRaises(IntegrityError):
+                db.commit()
 
 
 if __name__ == "__main__":

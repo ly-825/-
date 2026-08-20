@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.roles import SUPERADMIN
@@ -22,9 +23,13 @@ def bootstrap_superadmin(
 ) -> tuple[Account, str]:
     if db.query(Account).filter(Account.role == SUPERADMIN).first():
         raise ValueError("主管理员已存在")
-    return _create_activation_account(
-        db, username, display_name, SUPERADMIN, now=now
-    )
+    try:
+        return _create_activation_account(
+            db, username, display_name, SUPERADMIN, now=now
+        )
+    except IntegrityError as exc:
+        db.rollback()
+        raise ValueError("主管理员已存在") from exc
 
 
 def _sole_superadmin(db: Session, username: str) -> Account:

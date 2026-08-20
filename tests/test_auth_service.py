@@ -1,4 +1,6 @@
 import re
+import tempfile
+import threading
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -6,6 +8,7 @@ from unittest.mock import patch
 import pyotp
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from pathlib import Path
 
 from app.auth.security import hash_password, verify_password
 from app.auth.service import (
@@ -23,6 +26,7 @@ from app.auth.service import (
 )
 from app.auth.roles import EMPLOYEE, OWNER, SUPERADMIN
 from app.database import Base
+from app.database import build_engine
 from app.models import Account, AuthSession
 from scripts.manage_superadmin import bootstrap_superadmin
 
@@ -238,6 +242,48 @@ class AuthServiceTest(unittest.TestCase):
             regenerate_activation(db, account, now=self.now)
             self.assertEqual(account.session_version, regenerated_version + 1)
             self.assertEqual(account.activation_expires_at, self.now + timedelta(minutes=30))
+
+    def test_activation_code_is_consumed_atomically_across_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            engine = build_engine(f"sqlite:///{Path(directory) / 'auth.db'}")
+            Base.metadata.create_all(engine)
+            Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+            with Session() as db:
+                _, code = create_employee(db, "tns040", "并发员工", now=self.now)
+
+            barrier = threading.Barrier(2)
+            results: list[tuple[str, str]] = []
+            results_lock = threading.Lock()
+
+            def activate(openid: str) -> None:
+                try:
+                    with Session() as db:
+                        barrier.wait(timeout=5)
+                        activate_account(db, "tns040", code, openid, now=self.now)
+                    result = ("ok", openid)
+                except Exception as exc:  # assertion below checks the exact public result
+                    result = (type(exc).__name__, str(exc))
+                with results_lock:
+                    results.append(result)
+
+            threads = [
+                threading.Thread(target=activate, args=("openid-a",)),
+                threading.Thread(target=activate, args=("openid-b",)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+
+            self.assertEqual(sum(kind == "ok" for kind, _ in results), 1, results)
+            self.assertEqual(
+                sum(message == "激活码无效或已过期" for _, message in results),
+                1,
+                results,
+            )
+            with Session() as db:
+                self.assertEqual(db.query(AuthSession).count(), 1)
+            engine.dispose()
 
 
 if __name__ == "__main__":

@@ -1,10 +1,11 @@
 import base64
 import io
+import ipaddress
 from datetime import datetime
 
 import qrcode
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_miniprogram_account
@@ -24,15 +25,15 @@ router = APIRouter(prefix="/api/auth/pc-login")
 
 
 class CreateLoginRequestIn(BaseModel):
-    device_summary: str | None = None
+    device_summary: str | None = Field(default=None, max_length=200)
 
 
 class RequestTokenIn(BaseModel):
-    request_token: str
+    request_token: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class BrowserRequestIn(RequestTokenIn):
-    browser_secret: str
+    browser_secret: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class DecisionIn(RequestTokenIn):
@@ -59,6 +60,14 @@ def _http_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=409, detail=message)
 
 
+def _source_ip(request: Request) -> str | None:
+    candidate = request.headers.get("X-Real-IP", "").strip()
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return request.client.host if request.client else None
+
+
 @router.post("/requests")
 def create_request(
     payload: CreateLoginRequestIn,
@@ -68,7 +77,7 @@ def create_request(
     challenge = create_login_challenge(
         db,
         payload.device_summary,
-        request.client.host if request.client else None,
+        _source_ip(request),
     )
     qr_payload = f"tns-inventory-login:v1:{challenge.request_token}"
     return {

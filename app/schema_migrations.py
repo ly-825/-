@@ -86,6 +86,16 @@ def ensure_runtime_schema(engine: Engine) -> None:
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_pc_login_requests_status ON pc_login_requests (status)"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_pc_login_requests_approved_account_id ON pc_login_requests (approved_account_id)"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_pc_login_requests_expires_at ON pc_login_requests (expires_at)"))
+        if "accounts" in tables:
+            duplicate_superadmins = connection.execute(text(
+                "SELECT COUNT(*) FROM accounts WHERE role = 'superadmin'"
+            )).scalar_one()
+            if duplicate_superadmins > 1:
+                raise RuntimeError("数据库存在多个主管理员，拒绝创建唯一索引")
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_single_superadmin "
+                "ON accounts (role) WHERE role = 'superadmin'"
+            ))
         if "product_drawings" in tables:
             drawing_columns = table_columns["product_drawings"]
             if "file_hash" not in drawing_columns:

@@ -133,6 +133,7 @@ def _create_account_response(
             username=username,
             display_name=display_name,
             role=role,
+            commit=False,
         )
     except ValueError as exc:
         if "无权" in str(exc):
@@ -181,13 +182,13 @@ def _mutate(
     activation_code = ""
     try:
         if action == "disable":
-            disable_account(db, account)
+            disable_account(db, account, commit=False)
         elif action == "enable":
-            enable_account(db, account)
+            enable_account(db, account, commit=False)
         elif action == "unbind-wechat":
-            activation_code = unbind_wechat(db, account)
+            activation_code = unbind_wechat(db, account, commit=False)
         elif action == "regenerate-activation":
-            activation_code = regenerate_activation(db, account)
+            activation_code = regenerate_activation(db, account, commit=False)
         else:
             raise HTTPException(status_code=404, detail="操作不存在")
     except ValueError as exc:

@@ -31,10 +31,13 @@ Page({
     }
   },
 
-  logout() {
-    auth.clearSession(wx)
-    getApp().globalData.authenticated = false
-    getApp().globalData.account = null
-    wx.reLaunch({ url: '/pages/auth/login' })
+  async logout() {
+    try {
+      await auth.logout(wx, api.request)
+    } finally {
+      getApp().globalData.authenticated = false
+      getApp().globalData.account = null
+      wx.reLaunch({ url: '/pages/auth/login' })
+    }
   }
 })

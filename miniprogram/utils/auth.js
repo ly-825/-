@@ -91,6 +91,14 @@ function homeForRole(role) {
   return role === 'employee' ? '/pages/plan/home' : '/pages/account/home'
 }
 
+async function logout(wxApi, request) {
+  try {
+    await request('/api/auth/logout', { method: 'POST' })
+  } finally {
+    clearSession(wxApi)
+  }
+}
+
 module.exports = {
   SESSION_KEY,
   ACCOUNT_KEY,
@@ -102,5 +110,6 @@ module.exports = {
   homeForRole,
   loadAccount,
   login,
+  logout,
   saveAccount
 }

@@ -116,6 +116,19 @@ class OwnerAdminTest(unittest.TestCase):
         self.assertNotIn("openid-never-render", page.text)
         self.assertNotIn(code, page.text)
 
+    def test_failed_audit_rolls_back_privileged_account_creation(self) -> None:
+        with patch(
+            "app.auth.account_pages.record_operation_log",
+            side_effect=RuntimeError("audit unavailable"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+                self.superadmin_client.post(
+                    "/admin/accounts/owners",
+                    data={"username": "rollback-owner", "display_name": "回滚老板"},
+                )
+        with self.Session() as db:
+            self.assertIsNone(db.query(Account).filter_by(username="rollback-owner").first())
+
 
 if __name__ == "__main__":
     unittest.main()

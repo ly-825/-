@@ -166,6 +166,51 @@ class PcWechatLoginTest(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.json()["device_summary"], "Chrome")
 
+    def test_public_inputs_are_bounded_and_proxy_ip_is_recorded(self) -> None:
+        oversized = "x" * 513
+        self.assertEqual(
+            self.client.post(
+                "/api/auth/pc-login/status",
+                json={"request_token": oversized, "browser_secret": oversized},
+            ).status_code,
+            422,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/auth/pc-login/requests",
+                json={"device_summary": "x" * 201},
+            ).status_code,
+            422,
+        )
+        created = self.client.post(
+            "/api/auth/pc-login/requests",
+            headers={"X-Real-IP": "203.0.113.9"},
+            json={"device_summary": "Chrome"},
+        )
+        self.assertEqual(created.status_code, 200)
+        with self.Session() as db:
+            self.assertEqual(db.query(PcLoginRequest).one().source_ip, "203.0.113.9")
+
+    def test_creation_removes_old_terminal_requests_but_keeps_active_rows(self) -> None:
+        with self.Session() as db:
+            db.add_all([
+                PcLoginRequest(
+                    request_token_hash="a" * 64, browser_secret_hash="b" * 64,
+                    status="consumed", expires_at=self.now - timedelta(days=2),
+                    created_at=self.now - timedelta(days=2),
+                ),
+                PcLoginRequest(
+                    request_token_hash="c" * 64, browser_secret_hash="d" * 64,
+                    status="pending", expires_at=self.now + timedelta(minutes=1),
+                    created_at=self.now,
+                ),
+            ])
+            db.commit()
+            create_login_challenge(db, "Chrome", None, now=self.now)
+            hashes = {row.request_token_hash for row in db.query(PcLoginRequest).all()}
+            self.assertNotIn("a" * 64, hashes)
+            self.assertIn("c" * 64, hashes)
+
     def test_service_rejects_wrong_secret_deny_expiry_and_replays(self) -> None:
         with self.Session() as db:
             admin = db.query(Account).filter_by(role="superadmin").one()
@@ -182,6 +227,33 @@ class PcWechatLoginTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "不可使用"):
                 consume_login_request(
                     db, challenge.request_token, challenge.browser_secret, now=self.now
+                )
+
+    def test_duplicate_decision_inactive_approver_and_approved_expiry_fail(self) -> None:
+        with self.Session() as db:
+            admin = db.query(Account).filter_by(role="superadmin").one()
+            duplicate = create_login_challenge(db, "Chrome", None, now=self.now)
+            scan_login_request(db, duplicate.request_token, admin, now=self.now)
+            decide_login_request(db, duplicate.request_token, admin, True, now=self.now)
+            with self.assertRaisesRegex(ValueError, "已处理"):
+                decide_login_request(db, duplicate.request_token, admin, True, now=self.now)
+
+            admin.is_active = False
+            db.commit()
+            with self.assertRaisesRegex(ValueError, "确认账号已失效"):
+                consume_login_request(
+                    db, duplicate.request_token, duplicate.browser_secret, now=self.now
+                )
+            admin.is_active = True
+            db.commit()
+
+            expired = create_login_challenge(db, "Safari", None, now=self.now)
+            scan_login_request(db, expired.request_token, admin, now=self.now)
+            decide_login_request(db, expired.request_token, admin, True, now=self.now)
+            with self.assertRaisesRegex(ValueError, "已过期"):
+                consume_login_request(
+                    db, expired.request_token, expired.browser_secret,
+                    now=self.now + timedelta(seconds=121),
                 )
 
             expiring = create_login_challenge(db, "Safari", None, now=self.now)

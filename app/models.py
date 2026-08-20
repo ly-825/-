@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -218,6 +218,14 @@ class OperationLog(Base):
 
 class Account(Base):
     __tablename__ = "accounts"
+    __table_args__ = (
+        Index(
+            "uq_accounts_single_superadmin",
+            "role",
+            unique=True,
+            sqlite_where=text("role = 'superadmin'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(80), unique=True, index=True)

@@ -117,7 +117,7 @@ nginx -t
 5. 以 `tenaishi` 服务账号在 ECS 终端创建唯一主管理员：
 
    ```bash
-   python scripts/manage_superadmin.py bootstrap --username admin --display-name 主管理员
+   .venv/bin/python scripts/manage_superadmin.py bootstrap --username admin --display-name 主管理员
    ```
 
    30 分钟一次性激活码只交给真实主管理员本人。
@@ -140,7 +140,7 @@ nginx -t
 主管理员遗失或更换微信时，先运行 `scripts/backup.sh`，再在 ECS 终端执行：
 
 ```bash
-python scripts/manage_superadmin.py reset-wechat --username <准确的主管理员账号>
+.venv/bin/python scripts/manage_superadmin.py reset-wechat --username <准确的主管理员账号>
 ```
 
 新激活码只有 30 分钟有效，只交给真实主管理员本人。重置会递增 `session_version`，旧微信和旧会话立即失效。

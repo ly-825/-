@@ -60,6 +60,19 @@ test('role routing separates employee tabs from administrator home', () => {
   assert.equal(auth.homeForRole('superadmin'), '/pages/account/home')
 })
 
+test('administrator logout revokes server session before clearing local state', async () => {
+  const calls = []
+  const wx = {
+    removeStorageSync: (key) => calls.push(['remove', key])
+  }
+  await auth.logout(wx, async (path, options) => calls.push(['request', path, options]))
+  assert.deepEqual(calls, [
+    ['request', '/api/auth/logout', { method: 'POST' }],
+    ['remove', 'tns_auth_session'],
+    ['remove', 'tns_auth_account']
+  ])
+})
+
 test('registered inventory selectors use safe product options instead of drawings', () => {
   for (const relativePath of [
     '../miniprogram/pages/inventory/inbound.js',
