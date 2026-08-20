@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 
 from app import admin_pages, mobile_connection_pages, paper_admin_pages
 from app.auth import api as auth_api
+from app.auth import pc_login_api
 from app.auth import pages as auth_pages
 from app.auth.dependencies import require_mobile_account, require_owner_account
 from app.config import settings
@@ -42,6 +43,7 @@ employee_dependencies = [Depends(require_mobile_account)]
 
 app.include_router(auth_pages.router, tags=["身份验证"])
 app.include_router(auth_api.router, tags=["小程序身份验证"])
+app.include_router(pc_login_api.router, tags=["电脑微信扫码登录"])
 app.include_router(
     drawings.router,
     prefix="/api/drawings",

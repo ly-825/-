@@ -72,6 +72,7 @@ class AuthModelTest(unittest.TestCase):
         )
         self.assertEqual(PcLoginRequest.__table__.c.status.index, True)
         self.assertEqual(PcLoginRequest.__table__.c.request_token_hash.unique, True)
+        self.assertEqual(PcLoginRequest.__table__.c.source_ip.type.length, 64)
 
     def test_sqlite_engine_enables_wal_foreign_keys_and_busy_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

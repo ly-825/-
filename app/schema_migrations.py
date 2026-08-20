@@ -73,7 +73,7 @@ def ensure_runtime_schema(engine: Engine) -> None:
                 browser_secret_hash VARCHAR(64) NOT NULL UNIQUE,
                 status VARCHAR(20) NOT NULL DEFAULT 'pending',
                 device_summary VARCHAR(200),
-                source_ip VARCHAR(200),
+                source_ip VARCHAR(64),
                 approved_account_id INTEGER REFERENCES accounts(id),
                 expires_at DATETIME NOT NULL,
                 approved_at DATETIME,

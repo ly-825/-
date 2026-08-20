@@ -263,7 +263,7 @@ class PcLoginRequest(Base):
     )
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     device_summary: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    source_ip: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    source_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     approved_account_id: Mapped[int | None] = mapped_column(
         ForeignKey("accounts.id"), nullable=True, index=True
     )
