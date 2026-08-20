@@ -32,6 +32,7 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
         self.assertLess(home_html.index("<summary>纸材材料管理</summary>"), home_html.index("<summary>成品管理</summary>"))
         self.assertIn('href="/admin/reports/outbound">综合出库统计', home_html)
         self.assertIn('href="/admin/reports/product-outbound">产品出入库分析', home_html)
+        self.assertIn('href="/admin/accounts">账号管理', home_html)
 
     def test_product_outbound_analysis_links_to_comprehensive_outbound_report(self) -> None:
         with self.Session() as db:

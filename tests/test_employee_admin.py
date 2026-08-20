@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth.pages import router as auth_router
+from app.auth.account_pages import router as account_router
 from app.auth.service import create_owner
 from app.database import Base, get_db
 from app.models import Account, OperationLog
@@ -36,6 +37,7 @@ class EmployeeAdminTest(unittest.TestCase):
 
         app = FastAPI()
         app.include_router(auth_router)
+        app.include_router(account_router)
 
         def override_db():
             db = self.Session()
@@ -95,7 +97,7 @@ class EmployeeAdminTest(unittest.TestCase):
         self.assertNotIn(activation_code, self.client.get("/admin/employees").text)
 
         with self.Session() as db:
-            log = db.query(OperationLog).filter_by(action="employee_create").one()
+            log = db.query(OperationLog).filter_by(action="account_create").one()
             self.assertEqual(log.operator_name, "老板")
             self.assertEqual(log.after_data["account_id"], self.employee().id)
             self.assertEqual(log.after_data["role"], "employee")

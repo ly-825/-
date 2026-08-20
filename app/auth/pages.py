@@ -164,7 +164,6 @@ def _employee_management_page(
     return page("员工管理", body, notice=notice)
 
 
-@router.get("/admin/employees", response_class=HTMLResponse)
 def employee_management(
     db: Session = Depends(get_db),
     owner: Account = Depends(require_owner_account),
@@ -172,7 +171,6 @@ def employee_management(
     return _employee_management_page(db)
 
 
-@router.post("/admin/employees", response_class=HTMLResponse)
 def employee_create(
     username: str = Form(...),
     display_name: str = Form(...),
@@ -200,7 +198,6 @@ def _employee_redirect() -> RedirectResponse:
     return RedirectResponse("/admin/employees", status_code=303)
 
 
-@router.post("/admin/employees/{account_id}/disable")
 def employee_disable(
     account_id: int,
     db: Session = Depends(get_db),
@@ -213,7 +210,6 @@ def employee_disable(
     return _employee_redirect()
 
 
-@router.post("/admin/employees/{account_id}/enable")
 def employee_enable(
     account_id: int,
     db: Session = Depends(get_db),
@@ -226,7 +222,6 @@ def employee_enable(
     return _employee_redirect()
 
 
-@router.post("/admin/employees/{account_id}/unbind-wechat", response_class=HTMLResponse)
 def employee_unbind_wechat(
     account_id: int,
     db: Session = Depends(get_db),
@@ -239,7 +234,6 @@ def employee_unbind_wechat(
     return _employee_management_page(db, activation_code=activation_code)
 
 
-@router.post("/admin/employees/{account_id}/regenerate-activation", response_class=HTMLResponse)
 def employee_regenerate_activation(
     account_id: int,
     db: Session = Depends(get_db),
