@@ -85,7 +85,7 @@ def record_operation_log(
         action=action,
         object_type=object_type,
         object_id=object_id,
-        operator_name=actor.display_name if actor else operator_name or None,
+        operator_name=actor.display_name.strip() if actor else operator_name or None,
         remark=remark or None,
         before_data=before_data,
         after_data=after_data,

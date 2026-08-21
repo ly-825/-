@@ -169,14 +169,18 @@ class RoleBoundaryTest(unittest.TestCase):
         self.assertEqual(anonymous.status_code, 401)
         self.assertEqual(employee.status_code, 200)
 
-    def test_admin_mobile_identities_cannot_use_employee_business_routes(self) -> None:
-        for token in (self.owner_mobile_token, self.superadmin_mobile_token):
+    def test_all_account_roles_can_use_mobile_business_routes(self) -> None:
+        for token in (
+            self.employee_token,
+            self.owner_mobile_token,
+            self.superadmin_mobile_token,
+        ):
             with self.subTest(token=token[:6]):
                 response = self.client.get(
                     "/api/mobile/summary",
                     headers={"Authorization": f"Bearer {token}"},
                 )
-                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.status_code, 200)
 
     def test_verified_employee_name_overrides_payload_operator_in_audit_log(self) -> None:
         response = self.client.post(

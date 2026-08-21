@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.auth.context import current_account
-from app.auth.roles import EMPLOYEE, PC_ADMIN_ROLES
+from app.auth.roles import ACCOUNT_ROLES, PC_ADMIN_ROLES
 from app.auth.service import resolve_session
 from app.config import settings
 from app.database import get_db
@@ -85,7 +85,7 @@ async def require_mobile_account(
     db: Session = Depends(get_db),
 ) -> AsyncGenerator[Account, None]:
     account = _miniprogram_account(request, db)
-    if account.role != EMPLOYEE:
+    if account.role not in ACCOUNT_ROLES:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问")
     context_token = current_account.set(account)
     try:
