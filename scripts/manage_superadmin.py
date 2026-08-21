@@ -79,8 +79,9 @@ def main() -> None:
             )
         else:
             account, code = reset_superadmin_wechat(db, args.username)
+        account_username = account.username
 
-    print(f"主管理员账号：{account.username}")
+    print(f"主管理员账号：{account_username}")
     print("一次性激活码（30 分钟内有效）：")
     print(code)
 

@@ -2,6 +2,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -80,6 +81,51 @@ class ManageSuperadminScriptTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("管理唯一主管理员的微信绑定", result.stdout)
+
+    def test_reset_cli_prints_new_code_after_committing(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = Path(directory) / "app.db"
+            engine = create_engine(f"sqlite:///{database_path}")
+            Base.metadata.create_all(engine)
+            engine.dispose()
+            environment = os.environ.copy()
+            environment.pop("PYTHONPATH", None)
+            environment.update({
+                "AUTH_PEPPER": "subprocess-test-pepper",
+                "DATABASE_URL": f"sqlite:///{database_path}",
+            })
+            bootstrap = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/manage_superadmin.py",
+                    "bootstrap",
+                    "--username",
+                    "admin",
+                ],
+                cwd=project_root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(bootstrap.returncode, 0, bootstrap.stderr)
+            reset = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/manage_superadmin.py",
+                    "reset-wechat",
+                    "--username",
+                    "admin",
+                ],
+                cwd=project_root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(reset.returncode, 0, reset.stderr)
+            self.assertRegex(reset.stdout, re.compile(r"\n\d{8}\n$"))
 
 
 if __name__ == "__main__":
