@@ -21,7 +21,10 @@ App({
       envVersion = 'develop'
     }
     this.globalData.envVersion = envVersion
-    this.globalData.canEditConnection = connection.canEditConnection(envVersion)
+    this.globalData.canEditConnection = connection.canEditConnection(
+      envVersion,
+      releaseConfig.releaseBaseUrl
+    )
     this.globalData.authenticated = auth.hasSession(wx)
     this.globalData.account = auth.loadAccount(wx)
     try {
