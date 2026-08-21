@@ -204,15 +204,15 @@ class MiniProgramFoundationTest(unittest.TestCase):
                 self.assertIn("wx.showToast", source)
 
         quantity_pages = {
-            "miniprogram/pages/raw-plates/inbound.js": "Number(f.total_weight_ton)<=0",
-            "miniprogram/pages/raw-plates/outbound.js": "Number(f.quantity) <= 0",
-            "miniprogram/pages/paper/inbound.js": "Number(f.quantity) <= 0",
-            "miniprogram/pages/paper/outbound.js": "Number(f.quantity) <= 0",
+            "miniprogram/pages/raw-plates/inbound.js": "total_weight_ton",
+            "miniprogram/pages/raw-plates/outbound.js": "quantity",
+            "miniprogram/pages/paper/inbound.js": "quantity",
+            "miniprogram/pages/paper/outbound.js": "quantity",
         }
-        for page, validation in quantity_pages.items():
+        for page, field in quantity_pages.items():
             with self.subTest(page=page):
                 source = self.read(page)
-                self.assertIn(validation, source)
+                self.assertRegex(source, rf"Number\(\w+\.{field}\)\s*<=\s*0")
                 self.assertIn("wx.showToast", source)
         self.assertIn(
             "!String(f.unit_price).trim()",
