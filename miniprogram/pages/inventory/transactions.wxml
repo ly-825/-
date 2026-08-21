@@ -17,7 +17,7 @@
       <view class="meta">{{item.operator_name_text}}｜{{item.remark_text}}｜{{item.created_at}}</view>
       <button wx:if="{{item.can_reverse && reverseForm.id !== item.id}}" class="danger-action" data-id="{{item.id}}" bindtap="showReverseForm">撤销这条流水</button>
       <view wx:if="{{reverseForm.id === item.id}}" class="reverse-panel">
-        <view class="form-field"><view class="form-label">操作人</view><input class="input" placeholder="请输入姓名" value="{{reverseForm.operator_name}}" data-field="operator_name" bindinput="onReverseInput" /></view>
+        <view class="form-field"><view class="form-label">操作人</view><view class="selected-value">{{operatorName || '当前账号'}}</view></view>
         <view class="form-field"><view class="form-label">撤销原因 *</view><input class="input" placeholder="说明撤销原因" value="{{reverseForm.remark}}" data-field="remark" bindinput="onReverseInput" /></view>
         <view class="row">
           <button class="btn secondary" size="mini" bindtap="hideReverseForm">取消</button>

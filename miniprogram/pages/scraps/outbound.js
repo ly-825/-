@@ -1,12 +1,16 @@
 const api = require('../../utils/api')
 const { createPendingRequestTracker } = require('../../utils/request-id')
 const { retryPendingWrite } = require('../../utils/pending-write')
+const { currentOperatorName } = require('../../utils/operator')
 
 const requestTracker = createPendingRequestTracker('scrap-outbound')
 
 Page({
-  data: { filters: { material: '', thickness: '', required_diameter: '', location: '' }, items: [], selectedLabel: '选择余料规格', loading: false, error: '', submitting: false, confirmOpen: false, confirmLines: [], form: { scrap_group_key: '', quantity: 1, operator_name: '', remark: '' } },
-  onShow() { this.load() },
+  data: { filters: { material: '', thickness: '', required_diameter: '', location: '' }, items: [], selectedLabel: '选择余料规格', operatorName: '', loading: false, error: '', submitting: false, confirmOpen: false, confirmLines: [], form: { scrap_group_key: '', quantity: 1, remark: '' } },
+  onShow() {
+    this.setData({ operatorName: currentOperatorName(wx) })
+    this.load()
+  },
   onFilter(event) { this.setData({ [`filters.${event.currentTarget.dataset.field}`]: event.detail.value }) },
   onInput(event) { this.setData({ [`form.${event.currentTarget.dataset.field}`]: event.detail.value }) },
   async load() {
@@ -39,7 +43,7 @@ Page({
       confirmLines: [
         { label: '余料规格', value: this.data.selectedLabel },
         { label: '数量', value: String(this.data.form.quantity) },
-        { label: '操作人', value: this.data.form.operator_name || '未填写' },
+        { label: '操作人', value: this.data.operatorName || '当前账号' },
         { label: '备注', value: this.data.form.remark || '未填写' }
       ]
     })

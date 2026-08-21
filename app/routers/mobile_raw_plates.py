@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.auth.operator import verified_operator_name
 from app.database import get_db
 from app.models import MaterialInventory, RawPlateSpecification
 from app.services.inventory_service import inventory_write_lock
@@ -154,7 +155,9 @@ def _run_write(
 ) -> dict[str, object]:
     request_payload = {
         **(path_data or {}),
-        **payload.model_dump(mode="json", exclude={"client_request_id"}),
+        **payload.model_dump(
+            mode="json", exclude={"client_request_id", "operator_name"}
+        ),
     }
     replay = replayed_mobile_response(
         db, operation_type, payload.client_request_id, request_payload
@@ -285,6 +288,10 @@ def update_mobile_raw_plate_batch(
     payload: RawPlateBatchUpdatePayload,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    service_payload = payload.model_dump(
+        exclude={"client_request_id", "operator_name"}
+    )
+    service_payload["operator_name"] = verified_operator_name()
     with inventory_write_lock():
         return _run_write(
             db,
@@ -292,7 +299,7 @@ def update_mobile_raw_plate_batch(
             payload,
             lambda: _batch_data(
                 update_raw_plate_batch(
-                    db, batch_id, **payload.model_dump(exclude={"client_request_id"})
+                    db, batch_id, **service_payload
                 )
             ),
             path_data={"batch_id": batch_id},
@@ -303,10 +310,13 @@ def update_mobile_raw_plate_batch(
 def mobile_raw_plate_inbound(
     payload: RawPlateInboundPayload, db: Session = Depends(get_db)
 ) -> dict[str, object]:
+    service_payload = payload.model_dump(
+        exclude={"client_request_id", "operator_name"}
+    )
+    service_payload["operator_name"] = verified_operator_name()
+
     def action() -> dict[str, object]:
-        result = inbound_raw_plate(
-            db, **payload.model_dump(exclude={"client_request_id"})
-        )
+        result = inbound_raw_plate(db, **service_payload)
         return {
             "item": _batch_data(result["item"]),
             "transaction_id": result["transaction"].id,
@@ -324,13 +334,17 @@ def mobile_raw_plate_inbound(
 def mobile_raw_plate_outbound(
     payload: RawPlateOutboundPayload, db: Session = Depends(get_db)
 ) -> dict[str, object]:
+    service_payload = payload.model_dump(
+        exclude={"client_request_id", "operator_name"}
+    )
+    service_payload["operator_name"] = verified_operator_name()
     with inventory_write_lock():
         return _run_write(
             db,
             "raw_plate_outbound",
             payload,
             lambda: outbound_raw_plate_fifo(
-                db, **payload.model_dump(exclude={"client_request_id"})
+                db, **service_payload
             ),
         )
 
@@ -360,11 +374,13 @@ def reverse_mobile_raw_plate_transaction(
     payload: RawPlateReversePayload,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    operator_name = verified_operator_name()
+
     def action() -> dict[str, object]:
         record = reverse_raw_plate_transaction(
             db,
             transaction_id,
-            operator_name=payload.operator_name,
+            operator_name=operator_name,
             remark=payload.remark,
         )
         return {

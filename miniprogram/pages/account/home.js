@@ -2,18 +2,31 @@ const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 const pcLogin = require('../../utils/pc-login')
 
+const ROLE_LABELS = {
+  superadmin: '主管理员',
+  owner: '老板',
+  employee: '员工'
+}
+
 Page({
-  data: { account: {}, roleLabel: '', loading: false, error: '' },
+  data: {
+    account: {},
+    roleLabel: '',
+    canApprovePcLogin: false,
+    loading: false,
+    error: ''
+  },
 
   onShow() {
     const account = auth.loadAccount(wx)
-    if (!account || !['owner', 'superadmin'].includes(account.role)) {
+    if (!account || !ROLE_LABELS[account.role]) {
       auth.handleUnauthorized(wx)
       return
     }
     this.setData({
       account,
-      roleLabel: account.role === 'superadmin' ? '主管理员' : '老板'
+      roleLabel: ROLE_LABELS[account.role],
+      canApprovePcLogin: auth.canApprovePcLogin(account.role)
     })
   },
 

@@ -87,8 +87,12 @@ async function activate(wxApi, request, username, activationCode) {
   return result
 }
 
-function homeForRole(role) {
-  return role === 'employee' ? '/pages/plan/home' : '/pages/account/home'
+function homeForRole() {
+  return '/pages/plan/home'
+}
+
+function canApprovePcLogin(role) {
+  return role === 'owner' || role === 'superadmin'
 }
 
 async function logout(wxApi, request) {
@@ -104,6 +108,7 @@ module.exports = {
   ACCOUNT_KEY,
   activate,
   authorizationHeader,
+  canApprovePcLogin,
   clearSession,
   handleUnauthorized,
   hasSession,

@@ -25,7 +25,7 @@
     <view class="form-section">
       <view class="form-field"><view class="form-label">数量</view><input class="input" type="number" placeholder="请输入入库数量" value="{{form.quantity}}" data-field="quantity" bindinput="onInput" /></view>
       <view class="form-field"><view class="form-label">库位</view><input class="input" placeholder="例如 A-01" value="{{form.location}}" data-field="location" bindinput="onInput" /></view>
-      <view class="form-field"><view class="form-label">操作人</view><input class="input" placeholder="请输入姓名" value="{{form.operator_name}}" data-field="operator_name" bindinput="onInput" /></view>
+      <view class="form-field"><view class="form-label">操作人</view><view class="selected-value">{{operatorName || '当前账号'}}</view></view>
       <button class="primary-action" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">确认入库</button>
     </view>
   </block>

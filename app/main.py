@@ -40,7 +40,7 @@ app = FastAPI(
 )
 
 owner_dependencies = [Depends(require_pc_admin_account)]
-employee_dependencies = [Depends(require_mobile_account)]
+mobile_account_dependencies = [Depends(require_mobile_account)]
 
 app.include_router(auth_pages.router, tags=["身份验证"])
 app.include_router(auth_api.router, tags=["小程序身份验证"])
@@ -63,19 +63,19 @@ app.include_router(
     mobile_plan.router,
     prefix="/api/mobile",
     tags=["小程序计划"],
-    dependencies=employee_dependencies,
+    dependencies=mobile_account_dependencies,
 )
 app.include_router(
     mobile_raw_plates.router,
     prefix="/api/mobile",
     tags=["小程序钢板"],
-    dependencies=employee_dependencies,
+    dependencies=mobile_account_dependencies,
 )
 app.include_router(
     mobile_paper.router,
     prefix="/api/mobile",
     tags=["小程序纸材"],
-    dependencies=employee_dependencies,
+    dependencies=mobile_account_dependencies,
 )
 app.include_router(
     admin_pages.router,

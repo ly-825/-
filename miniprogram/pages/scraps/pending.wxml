@@ -18,7 +18,7 @@
         <view class="form-field"><view class="form-label">实际数量</view><input class="input" type="number" placeholder="请输入数量" value="{{item.actual_quantity}}" data-index="{{index}}" data-field="actual_quantity" bindinput="onInput" /></view>
         <view class="form-field"><view class="form-label">实际直径</view><input class="input" type="digit" placeholder="留空沿用理论值" value="{{item.actual_diameter}}" data-index="{{index}}" data-field="actual_diameter" bindinput="onInput" /></view>
         <view class="form-field"><view class="form-label">库位 *</view><input class="input" placeholder="例如 B-02" value="{{item.confirm_location}}" data-index="{{index}}" data-field="confirm_location" bindinput="onInput" /></view>
-        <view class="form-field"><view class="form-label">确认人</view><input class="input" placeholder="请输入姓名" value="{{item.operator_name}}" data-index="{{index}}" data-field="operator_name" bindinput="onInput" /></view>
+        <view class="form-field"><view class="form-label">确认人</view><view class="selected-value">{{operatorName || '当前账号'}}</view></view>
       </view>
       <button class="btn secondary" bindtap="confirm" data-index="{{index}}" loading="{{item.confirming}}" disabled="{{item.confirming || submitting}}">确认入库</button>
     </view>

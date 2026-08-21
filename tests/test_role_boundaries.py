@@ -13,7 +13,7 @@ from app.auth.pages import router as auth_pages_router
 from app.auth.dependencies import require_mobile_account
 from app.auth.service import activate_employee, create_employee, create_owner, create_session
 from app.database import Base, get_db
-from app.models import Account, OperationLog, ProductDrawing
+from app.models import Account, InventoryTransactionRecord, OperationLog, ProductDrawing
 from app.routers.mobile import router as mobile_router
 from app.main import app as production_app
 
@@ -169,16 +169,20 @@ class RoleBoundaryTest(unittest.TestCase):
         self.assertEqual(anonymous.status_code, 401)
         self.assertEqual(employee.status_code, 200)
 
-    def test_admin_mobile_identities_cannot_use_employee_business_routes(self) -> None:
-        for token in (self.owner_mobile_token, self.superadmin_mobile_token):
+    def test_all_account_roles_can_use_mobile_business_routes(self) -> None:
+        for token in (
+            self.employee_token,
+            self.owner_mobile_token,
+            self.superadmin_mobile_token,
+        ):
             with self.subTest(token=token[:6]):
                 response = self.client.get(
                     "/api/mobile/summary",
                     headers={"Authorization": f"Bearer {token}"},
                 )
-                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.status_code, 200)
 
-    def test_verified_employee_name_overrides_payload_operator_in_audit_log(self) -> None:
+    def test_verified_employee_name_overrides_payload_operator_everywhere(self) -> None:
         response = self.client.post(
             "/api/mobile/products/inbound",
             headers=self.employee_headers(),
@@ -194,7 +198,48 @@ class RoleBoundaryTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         with self.Session() as db:
             log = db.query(OperationLog).filter_by(action="product_inbound").one()
+            transaction = db.query(InventoryTransactionRecord).one()
             self.assertEqual(log.operator_name, "张三")
+            self.assertEqual(transaction.operator_name, "张三")
+
+    def test_account_rename_changes_only_future_operator_snapshots(self) -> None:
+        first = self.client.post(
+            "/api/mobile/products/inbound",
+            headers=self.employee_headers(),
+            json={
+                "drawing_id": self.drawing_id,
+                "quantity": 1,
+                "operator_name": "伪造姓名",
+                "client_request_id": "operator-before-rename",
+            },
+        )
+        self.assertEqual(first.status_code, 200)
+
+        with self.Session() as db:
+            account = db.query(Account).filter_by(role="employee").one()
+            account.display_name = "张三新名"
+            db.commit()
+
+        second = self.client.post(
+            "/api/mobile/products/inbound",
+            headers=self.employee_headers(),
+            json={
+                "drawing_id": self.drawing_id,
+                "quantity": 1,
+                "operator_name": "另一个伪造姓名",
+                "client_request_id": "operator-after-rename",
+            },
+        )
+        self.assertEqual(second.status_code, 200)
+
+        with self.Session() as db:
+            names = [
+                row.operator_name
+                for row in db.query(InventoryTransactionRecord)
+                .order_by(InventoryTransactionRecord.id)
+                .all()
+            ]
+            self.assertEqual(names, ["张三", "张三新名"])
 
     def test_every_registered_business_router_requires_employee_session(self) -> None:
         route_map = {

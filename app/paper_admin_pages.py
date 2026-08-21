@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.admin_pages import export_link, page, safe_value
+from app.admin_pages import export_link, operator_identity_field, page, safe_value
+from app.auth.operator import verified_operator_name
 from app.database import get_db
 from app.models import PaperInventoryBatch, PaperInventoryTransaction, PaperSpecification
 from app.services.inventory_service import inventory_write_lock
@@ -240,7 +241,7 @@ def paper_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
       <div><label>入库数量</label><input name="quantity" type="number" min="1" required></div>
       <div><label>入库单价（元/圈或元/张）</label><input name="unit_price" type="number" step="0.01" min="0" required></div>
       <div><label>库位</label><input name="location" placeholder="例如 纸材区-P01"></div>
-      <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
+      {operator_identity_field()}
       <div><label>备注</label><input name="remark" placeholder="例如 采购入库"></div>
       <div style="align-self:end"><button class="btn" type="submit">确认入库</button></div>
     </form></section>
@@ -260,6 +261,7 @@ def create_paper_inbound(
     _lock=Depends(locked_paper_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     inbound_paper(
         db,
         specification_id=specification_id,
@@ -430,7 +432,7 @@ def paper_outbound_page(
         <div><label>出库数量</label><input name="quantity" type="number" min="1" required></div>
         <div><label>指定库位，可选</label><input name="location" placeholder="不填则所有库位FIFO"></div>
         <div><label>客户/去向</label><input name="customer_name" placeholder="例如 一车间"></div>
-        <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
+        {operator_identity_field()}
         <div><label>备注</label><input name="remark" placeholder="例如 生产领用"></div>
         <div style="align-self:end"><button class="btn" type="submit" {'disabled' if not selected else ''}>确认出库</button></div>
       </form>
@@ -450,6 +452,7 @@ def outbound_paper_from_page(
     _lock=Depends(locked_paper_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     outbound_paper_fifo(
         specification_id,
         quantity,
@@ -495,7 +498,7 @@ def paper_transactions_page(
             continue
         reverse_form = "-"
         if record.transaction_type in ("in", "out") and record.reversed_transaction_id is None:
-            reverse_form = f"<form method='post' action='/admin/paper-materials/transactions/{record.id}/reverse' class='actions'><input name='operator_name' placeholder='操作人' style='width:90px'><input name='remark' placeholder='撤回原因' style='width:120px'><button class='btn secondary' type='submit'>撤回</button></form>"
+            reverse_form = f"<form method='post' action='/admin/paper-materials/transactions/{record.id}/reverse' class='actions'>{operator_identity_field()}<input name='remark' placeholder='撤回原因' style='width:120px'><button class='btn secondary' type='submit'>撤回</button></form>"
         values = (
             batch.batch_code,
             PAPER_TYPE_LABELS[batch.paper_type],
@@ -534,6 +537,7 @@ def reverse_paper_transaction_from_page(
     _lock=Depends(locked_paper_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     reverse_paper_transaction(transaction_id, operator_name, remark, db)
     db.commit()
     return RedirectResponse("/admin/paper-materials/transactions", status_code=303)

@@ -73,10 +73,6 @@ Page({
     app.globalData.authenticated = true
     app.globalData.account = account || auth.loadAccount(wx)
     const url = auth.homeForRole(app.globalData.account && app.globalData.account.role)
-    if (url === '/pages/plan/home') {
-      wx.switchTab({ url })
-      return
-    }
-    wx.reLaunch({ url })
+    wx.switchTab({ url })
   }
 })

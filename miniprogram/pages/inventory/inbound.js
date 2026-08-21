@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const { createPendingRequestTracker } = require('../../utils/request-id')
 const { retryPendingWrite } = require('../../utils/pending-write')
+const { currentOperatorName } = require('../../utils/operator')
 
 const requestTracker = createPendingRequestTracker('product-inbound')
 
@@ -15,10 +16,14 @@ Page({
     submitting: false,
     confirmOpen: false,
     confirmLines: [],
-    form: { drawing_id: null, quantity: 1, location: '', operator_name: '' }
+    operatorName: '',
+    form: { drawing_id: null, quantity: 1, location: '' }
   },
 
-  onShow() { this.loadDrawings() },
+  onShow() {
+    this.setData({ operatorName: currentOperatorName(wx) })
+    this.loadDrawings()
+  },
 
   async loadDrawings() {
     if (this.data.loading) return
@@ -87,7 +92,7 @@ Page({
         { label: '产品', value: this.data.selectedDrawingLabel },
         { label: '数量', value: String(this.data.form.quantity) },
         { label: '库位', value: this.data.form.location || '未填写' },
-        { label: '操作人', value: this.data.form.operator_name || '未填写' }
+        { label: '操作人', value: this.data.operatorName || '当前账号' }
       ]
     })
   },

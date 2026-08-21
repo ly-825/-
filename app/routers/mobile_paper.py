@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.auth.operator import verified_operator_name
 from app.database import get_db
 from app.models import PaperInventoryBatch, PaperSpecification
 from app.services.inventory_service import inventory_write_lock
@@ -114,7 +115,12 @@ def _json(value):
 
 
 def _write(db: Session, operation: str, payload: WritePayload, action: Callable[[], dict], path: dict | None = None) -> dict:
-    request = {**(path or {}), **payload.model_dump(mode="json", exclude={"client_request_id"})}
+    request = {
+        **(path or {}),
+        **payload.model_dump(
+            mode="json", exclude={"client_request_id", "operator_name"}
+        ),
+    }
     replay = replayed_mobile_response(db, operation, payload.client_request_id, request)
     if replay is not None: return replay
     response = action()
@@ -158,16 +164,21 @@ def mobile_paper_batches(specification_id: int, q: str = "", location: str = "",
 
 @router.post("/paper-materials/inbound")
 def mobile_paper_inbound(payload: PaperInboundPayload, db: Session = Depends(get_db)):
+    service_payload = payload.model_dump(exclude={"client_request_id", "operator_name"})
+    service_payload["operator_name"] = verified_operator_name()
+
     def action():
-        result = inbound_paper(db, **payload.model_dump(exclude={"client_request_id"}))
+        result = inbound_paper(db, **service_payload)
         return {"batch": _batch(result["batch"]), "transaction_id": result["transaction"].id}
     with inventory_write_lock(): return _write(db, "paper_inbound", payload, action)
 
 
 @router.post("/paper-materials/outbound")
 def mobile_paper_outbound(payload: PaperOutboundPayload, db: Session = Depends(get_db)):
+    operator_name = verified_operator_name()
+
     def action():
-        records = outbound_paper_fifo(payload.specification_id, payload.quantity, payload.location, payload.customer_name, payload.operator_name, payload.remark, db)
+        records = outbound_paper_fifo(payload.specification_id, payload.quantity, payload.location, payload.customer_name, operator_name, payload.remark, db)
         return {"message": "纸材出库成功", "quantity": payload.quantity, "allocations": [{"transaction_id": record.id, "inventory_id": record.inventory_id, "quantity": record.quantity, "before_quantity": record.before_quantity, "after_quantity": record.after_quantity} for record in records]}
     with inventory_write_lock(): return _write(db, "paper_outbound", payload, action)
 
@@ -179,7 +190,9 @@ def mobile_paper_transactions(q: str = "", paper_type: str = "", transaction_typ
 
 @router.post("/paper-materials/transactions/{transaction_id}/reverse")
 def reverse_mobile_paper_transaction(transaction_id: int, payload: PaperReversePayload, db: Session = Depends(get_db)):
+    operator_name = verified_operator_name()
+
     def action():
-        record = reverse_paper_transaction(transaction_id, payload.operator_name, payload.remark, db)
+        record = reverse_paper_transaction(transaction_id, operator_name, payload.remark, db)
         return {"id": record.id, "inventory_id": record.inventory_id, "transaction_type": record.transaction_type, "quantity": record.quantity, "before_quantity": record.before_quantity, "after_quantity": record.after_quantity, "reversed_transaction_id": record.reversed_transaction_id}
     with inventory_write_lock(): return _write(db, "paper_transaction_reverse", payload, action, {"transaction_id": transaction_id})

@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const { createPendingRequestTracker } = require('../../utils/request-id')
 const { retryPendingWrite } = require('../../utils/pending-write')
+const { currentOperatorName } = require('../../utils/operator')
 
 const tracker = createPendingRequestTracker('paper-inbound')
 
@@ -8,6 +9,7 @@ Page({
   data: {
     specs: [],
     selected: null,
+    operatorName: '',
     loading: false,
     error: '',
     confirmOpen: false,
@@ -18,12 +20,12 @@ Page({
       quantity: '',
       unit_price: '',
       location: '',
-      operator_name: '',
       remark: '',
     },
   },
 
   onShow() {
+    this.setData({ operatorName: currentOperatorName(wx) })
     this.load()
   },
 
@@ -71,6 +73,7 @@ Page({
         { label: '数量', value: `${f.quantity} ${selected.unit}` },
         { label: '单价', value: `¥${f.unit_price}` },
         { label: '库位', value: f.location || '-' },
+        { label: '操作人', value: this.data.operatorName || '当前账号' },
       ],
     })
   },

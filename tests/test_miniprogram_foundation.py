@@ -68,7 +68,7 @@ class MiniProgramFoundationTest(unittest.TestCase):
         self.assertNotIn("radial-gradient", wxss)
         self.assertNotIn("linear-gradient", wxss)
 
-    def test_manifest_has_three_tabs_with_auth_then_connection(self) -> None:
+    def test_manifest_has_four_tabs_with_auth_then_connection(self) -> None:
         app_json = json.loads(self.read("miniprogram/app.json"))
         self.assertEqual(app_json["pages"][0], "pages/auth/login")
         self.assertEqual(app_json["pages"][1], "pages/connection/index")
@@ -81,6 +81,7 @@ class MiniProgramFoundationTest(unittest.TestCase):
                 ("pages/plan/home", "计划"),
                 ("pages/materials/home", "材料"),
                 ("pages/products/home", "成品"),
+                ("pages/account/home", "我的"),
             ],
         )
         self.assertNotIn(
@@ -92,9 +93,12 @@ class MiniProgramFoundationTest(unittest.TestCase):
 
     def test_admin_login_pages_require_explicit_confirmation(self) -> None:
         account_home = self.read("miniprogram/pages/account/home.wxml")
+        account_source = self.read("miniprogram/pages/account/home.js")
         confirm_view = self.read("miniprogram/pages/auth/pc-login-confirm.wxml")
         confirm_source = self.read("miniprogram/pages/auth/pc-login-confirm.js")
         self.assertIn("扫码登录电脑后台", account_home)
+        self.assertIn('wx:if="{{canApprovePcLogin}}"', account_home)
+        self.assertIn("employee: '员工'", account_source)
         self.assertIn("确认登录", confirm_view)
         self.assertIn("拒绝", confirm_view)
         self.assertIn("approved: true", confirm_source)
@@ -200,15 +204,15 @@ class MiniProgramFoundationTest(unittest.TestCase):
                 self.assertIn("wx.showToast", source)
 
         quantity_pages = {
-            "miniprogram/pages/raw-plates/inbound.js": "Number(f.total_weight_ton)<=0",
-            "miniprogram/pages/raw-plates/outbound.js": "Number(f.quantity) <= 0",
-            "miniprogram/pages/paper/inbound.js": "Number(f.quantity) <= 0",
-            "miniprogram/pages/paper/outbound.js": "Number(f.quantity) <= 0",
+            "miniprogram/pages/raw-plates/inbound.js": "total_weight_ton",
+            "miniprogram/pages/raw-plates/outbound.js": "quantity",
+            "miniprogram/pages/paper/inbound.js": "quantity",
+            "miniprogram/pages/paper/outbound.js": "quantity",
         }
-        for page, validation in quantity_pages.items():
+        for page, field in quantity_pages.items():
             with self.subTest(page=page):
                 source = self.read(page)
-                self.assertIn(validation, source)
+                self.assertRegex(source, rf"Number\(\w+\.{field}\)\s*<=\s*0")
                 self.assertIn("wx.showToast", source)
         self.assertIn(
             "!String(f.unit_price).trim()",

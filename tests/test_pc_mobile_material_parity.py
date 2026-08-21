@@ -3,8 +3,15 @@ import unittest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.auth.context import current_account
 from app.database import Base
-from app.models import MaterialInventory, ProductDrawing
+from app.models import (
+    Account,
+    InventoryTransactionRecord,
+    MaterialInventory,
+    PaperInventoryTransaction,
+    ProductDrawing,
+)
 from app.routers.mobile_paper import (
     PaperOutboundPayload,
     PaperReversePayload,
@@ -42,6 +49,12 @@ class PcMobileMaterialParityTest(unittest.TestCase):
         self.Session = sessionmaker(
             bind=engine, autoflush=False, autocommit=False
         )
+        self.account_token = current_account.set(
+            Account(username="tns008", display_name="张三", role="employee")
+        )
+
+    def tearDown(self) -> None:
+        current_account.reset(self.account_token)
 
     def test_pc_raw_plate_write_and_mobile_outbound_share_one_balance(self) -> None:
         with self.Session() as db:
@@ -94,8 +107,13 @@ class PcMobileMaterialParityTest(unittest.TestCase):
             pc_groups = list_raw_plate_groups(db)
             self.assertEqual(pc_groups[0]["quantity"], receipt["quantity"] - 7)
             self.assertEqual(pc_groups[0]["batch_ids"], {receipt["item"].id})
+            outbound_record = db.get(
+                InventoryTransactionRecord,
+                outbound["allocations"][0]["transaction_id"],
+            )
+            self.assertEqual(outbound_record.operator_name, "张三")
 
-            reverse_mobile_raw_plate_transaction(
+            reversal = reverse_mobile_raw_plate_transaction(
                 outbound["allocations"][0]["transaction_id"],
                 RawPlateReversePayload(
                     client_request_id="parity-raw-reverse-001",
@@ -107,6 +125,8 @@ class PcMobileMaterialParityTest(unittest.TestCase):
             self.assertEqual(
                 list_raw_plate_groups(db)[0]["quantity"], receipt["quantity"]
             )
+            reversal_record = db.get(InventoryTransactionRecord, reversal["id"])
+            self.assertEqual(reversal_record.operator_name, "张三")
 
     def test_pc_paper_write_and_mobile_outbound_share_one_balance(self) -> None:
         with self.Session() as db:
@@ -154,8 +174,13 @@ class PcMobileMaterialParityTest(unittest.TestCase):
             pc_groups = list_paper_inventory(db)
             self.assertEqual(pc_groups[0]["quantity"], 5)
             self.assertEqual(pc_groups[0]["batch_count"], 1)
+            outbound_record = db.get(
+                PaperInventoryTransaction,
+                outbound["allocations"][0]["transaction_id"],
+            )
+            self.assertEqual(outbound_record.operator_name, "张三")
 
-            reverse_mobile_paper_transaction(
+            reversal = reverse_mobile_paper_transaction(
                 outbound["allocations"][0]["transaction_id"],
                 PaperReversePayload(
                     client_request_id="parity-paper-reverse-001",
@@ -165,6 +190,8 @@ class PcMobileMaterialParityTest(unittest.TestCase):
                 db=db,
             )
             self.assertEqual(list_paper_inventory(db)[0]["quantity"], 8)
+            reversal_record = db.get(PaperInventoryTransaction, reversal["id"])
+            self.assertEqual(reversal_record.operator_name, "张三")
 
     def test_pc_and_mobile_plan_matching_return_the_same_result(self) -> None:
         with self.Session() as db:

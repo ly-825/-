@@ -25,7 +25,7 @@
     <view class="form-section">
       <view class="form-field"><view class="form-label">出库数量</view><input class="input" type="number" placeholder="请输入数量" value="{{form.quantity}}" data-field="quantity" bindinput="onInput" /></view>
       <view class="form-field"><view class="form-label">指定库位</view><input class="input" placeholder="可选；不填按所有库位 FIFO" value="{{form.location}}" data-field="location" bindinput="onInput" /></view>
-      <view class="form-field"><view class="form-label">操作人</view><input class="input" placeholder="请输入姓名" value="{{form.operator_name}}" data-field="operator_name" bindinput="onInput" /></view>
+      <view class="form-field"><view class="form-label">操作人</view><view class="selected-value">{{operatorName || '当前账号'}}</view></view>
       <view class="form-field"><view class="form-label">备注</view><input class="input" placeholder="填写客户或用途" value="{{form.remark}}" data-field="remark" bindinput="onInput" /></view>
       <button class="primary-action" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">确认出库</button>
     </view>

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.auth.operator import verified_operator_name
 from app.database import get_db
 from app.models import InventoryTransactionRecord, MaterialInventory
 from app.schemas import InventoryAdjust, InventoryCreate, InventoryOut, InventoryTransactionOut, TransactionReverse
@@ -45,14 +46,15 @@ def list_inventory_transactions(db: Session = Depends(get_db)) -> list[Inventory
 
 @router.post("/transactions/{transaction_id}/reverse", response_model=InventoryTransactionOut)
 def reverse_transaction(transaction_id: int, payload: TransactionReverse, db: Session = Depends(get_db)) -> InventoryTransactionRecord:
-    reversal = reverse_inventory_transaction(transaction_id, payload.operator_name, payload.remark, db)
+    operator_name = verified_operator_name()
+    reversal = reverse_inventory_transaction(transaction_id, operator_name, payload.remark, db)
     db.flush()
     record_operation_log(
         db,
         "transaction_reverse",
         "inventory_transaction",
         transaction_id,
-        payload.operator_name or None,
+        operator_name,
         payload.remark or "API撤销库存流水",
         after_data={"reversal_transaction_id": reversal.id},
     )
@@ -75,15 +77,16 @@ def adjust_inventory(inventory_id: int, payload: InventoryAdjust, db: Session = 
     item = db.get(MaterialInventory, inventory_id)
     if not item:
         raise HTTPException(status_code=404, detail="库存不存在")
+    operator_name = verified_operator_name()
     before_data = inventory_snapshot(item)
-    record = adjust_inventory_quantity(item, payload.transaction_type, payload.quantity, payload.operator_name, payload.remark, db)
+    record = adjust_inventory_quantity(item, payload.transaction_type, payload.quantity, operator_name, payload.remark, db)
     db.flush()
     record_operation_log(
         db,
         "inventory_adjust",
         "inventory",
         item.id,
-        payload.operator_name or None,
+        operator_name,
         payload.remark or record.remark,
         before_data=before_data,
         after_data=inventory_snapshot(item),

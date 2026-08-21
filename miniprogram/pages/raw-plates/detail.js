@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const { createPendingRequestTracker } = require('../../utils/request-id')
 const { retryPendingWrite } = require('../../utils/pending-write')
+const { currentOperatorName } = require('../../utils/operator')
 
 const tracker = createPendingRequestTracker('raw-plate-batch-update')
 
@@ -8,6 +9,7 @@ Page({
   data: {
     group: {},
     items: [],
+    operatorName: '',
     form: null,
     loading: false,
     error: '',
@@ -17,6 +19,7 @@ Page({
   },
 
   onShow() {
+    this.setData({ operatorName: currentOperatorName(wx) })
     this.load()
   },
 
@@ -53,6 +56,7 @@ Page({
         { label: '批次', value: form.material_code || '-' },
         { label: '型号', value: form.raw_plate_model },
         { label: '库位', value: form.location || '-' },
+        { label: '操作人', value: this.data.operatorName || '当前账号' },
       ],
     })
   },
@@ -77,7 +81,6 @@ Page({
           thickness: Number(form.thickness),
           location: form.location || '',
           status: form.status,
-          operator_name: form.operator_name || '',
           remark: form.remark || '',
         },
         '修改钢板批次',

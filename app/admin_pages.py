@@ -18,6 +18,8 @@ from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File, R
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.auth.context import get_current_account
+from app.auth.operator import verified_operator_name
 from app.assistant.engine import run_assistant
 from app.config import settings
 from app.database import SessionLocal, get_db
@@ -152,6 +154,17 @@ def drawing_version_code(value: ProductDrawing | int | None) -> str:
 def locked_inventory_write():
     with inventory_write_lock():
         yield
+
+
+def operator_identity_field(label: str = "操作员") -> str:
+    account = get_current_account()
+    operator_name = account.display_name.strip() if account else "当前登录账号"
+    return (
+        '<div class="operator-identity">'
+        f'<span>{html.escape(label)}</span>'
+        f'<strong>当前操作员：{html.escape(operator_name)}</strong>'
+        '</div>'
+    )
 
 
 def apply_recognition_to_drawing(drawing: ProductDrawing) -> None:
@@ -884,7 +897,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }}
     a {{ color:inherit; text-decoration:none; }}
     .layout {{ display:grid; grid-template-columns:220px minmax(0,1fr); min-height:100vh; }}
-    aside {{ background:#0f1f46; color:white; padding:20px 14px; max-height:100vh; overflow:auto; position:sticky; top:0; }}
+    aside {{ display:flex; flex-direction:column; background:#0f1f46; color:white; padding:20px 14px; max-height:100vh; overflow:auto; position:sticky; top:0; }}
     .brand {{ font-size:17px; font-weight:800; margin:0 8px 12px; }}
     .nav-current {{ margin:0 6px 14px; padding:10px 12px; border-radius:10px; background:rgba(147,197,253,.14); color:#dbeafe; border:1px solid rgba(147,197,253,.24); }}
     .nav-current span {{ display:block; font-size:11px; color:rgba(219,234,254,.62); margin-bottom:4px; }}
@@ -903,6 +916,15 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .nav-section .nav-items a.active {{ background:rgba(147,197,253,.18); color:white; }}
     .nav-subhead {{ display:block; margin:9px 9px 5px; padding-top:9px; border-top:1px solid rgba(255,255,255,.12); color:rgba(219,234,254,.58); font-size:11px; font-weight:900; }}
     .nav-root {{ margin-bottom:10px; }}
+    nav {{ flex:0 0 auto; }}
+    .sidebar-system {{ margin-top:auto; padding-top:12px; border-top:1px solid rgba(255,255,255,.12); }}
+    .sidebar-system .nav-subhead {{ margin-top:0; padding-top:0; border-top:0; }}
+    .sidebar-system a {{ display:block; padding:8px 10px; border-radius:8px; color:rgba(255,255,255,.68); margin-bottom:3px; font-size:13px; font-weight:600; line-height:1.35; }}
+    .sidebar-system a:hover,.sidebar-system a.active {{ background:rgba(255,255,255,.08); color:white; }}
+    .sidebar-system a.active {{ box-shadow:inset 2px 0 0 #93c5fd; }}
+    .operator-identity {{ display:flex; flex-direction:column; justify-content:center; gap:6px; min-height:68px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#f8fafc; }}
+    .operator-identity span {{ color:var(--muted); font-size:12px; font-weight:700; }}
+    .operator-identity strong {{ color:var(--text); font-size:14px; }}
     main {{ min-width:0; padding:28px; }}
     .top {{ display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:22px; }}
     h1 {{ margin:0; font-size:28px; }}
@@ -1113,8 +1135,6 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
       <nav>
         <div class="nav-root">
           <a href="/admin">后台首页</a>
-          <a href="/admin/mobile-connection">小程序连接</a>
-          <a href="/admin/accounts">账号管理</a>
         </div>
         <details class="nav-section" data-nav-section="drawing">
           <summary>图纸管理</summary>
@@ -1163,7 +1183,12 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
           </div>
         </details>
       </nav>
-      <form action="/auth/logout" method="post" style="margin-top:auto;padding-top:16px;">
+      <div class="sidebar-system" aria-label="系统设置">
+        <div class="nav-subhead">系统设置</div>
+        <a href="/admin/mobile-connection">小程序连接</a>
+        <a href="/admin/accounts">账号管理</a>
+      </div>
+      <form action="/auth/logout" method="post" style="margin-top:8px;padding-top:8px;">
         <button type="submit" class="btn secondary" style="width:100%;">退出登录</button>
       </form>
     </aside>
@@ -1334,7 +1359,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
       }});
       const currentPath = window.location.pathname;
       let bestLink = null;
-      document.querySelectorAll('nav a[href]').forEach((link) => {{
+      document.querySelectorAll('#admin-sidebar a[href]').forEach((link) => {{
         const href = link.getAttribute('href');
         if (href === currentPath || (href !== '/admin' && currentPath.startsWith(href + '/'))) {{
           if (!bestLink || href.length > bestLink.getAttribute('href').length) bestLink = link;
@@ -2183,7 +2208,7 @@ def edit_raw_plate_page(inventory_id: int, db: Session = Depends(get_db)) -> HTM
         <div><label>厚度 mm</label><input name="thickness" type="number" step="0.1" min="0.1" value="{format_steel_thickness(item.thickness)}" {disabled} required></div>
         <div><label>库位</label><input name="location" value="{html.escape(item.location or '')}"></div>
         <div><label>状态</label><select name="status" {"disabled" if has_out_record else ""}><option value="available" {"selected" if item.status == "available" else ""}>available</option><option value="used" {"selected" if item.status == "used" else ""}>used</option></select></div>
-        <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
+        {operator_identity_field()}
         <div><label>修改原因</label><input name="remark" placeholder="例如 修正录入错误"></div>
         <div style="align-self:end"><button class="btn" type="submit">保存修改</button></div>
       </form>
@@ -2208,6 +2233,7 @@ def update_raw_plate_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     update_raw_plate_batch(
         db,
         inventory_id,
@@ -2437,7 +2463,7 @@ def raw_plate_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
         <div><label>厚度 mm</label><input id="raw-plate-thickness" name="thickness" type="number" step="0.1" min="0.1" required></div>
         <div><label>密度 g/cm³</label><input id="raw-plate-density" name="density" type="number" step="0.001" min="0.001" value="7.85" required></div>
         <div><label>库位</label><input name="location" list="raw-plate-location-options" placeholder="例如 原料区-A01"><datalist id="raw-plate-location-options">{location_candidates}</datalist></div>
-        <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
+        {operator_identity_field()}
         <div><label>备注</label><input name="remark" placeholder="例如 采购入库"></div>
         <p class="confirm-hint">提交前会先列出板料编号、材质、重量、尺寸、密度和库位，确认无误后才会真正入库。</p>
         <div style="align-self:end"><button class="btn" type="submit">计算并入库</button></div>
@@ -2477,6 +2503,7 @@ def create_raw_plate_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     spec_id_value = raw_plate_spec_id.strip()
     if spec_id_value:
         if not spec_id_value.isdigit():
@@ -2586,7 +2613,7 @@ def raw_plate_outbound_page(
         <div><label>出库块数</label><input name="quantity" type="number" min="1" value="1" required></div>
         <div><label>指定库位，可选</label><input name="location" value="{html.escape(location.strip())}" list="raw-out-location-options" placeholder="不填则所有库位FIFO"><datalist id="raw-out-location-options">{location_candidates}</datalist></div>
         <div><label>客户/去向</label><input name="customer_name" list="raw-out-customer-options" placeholder="例如 XX客户 / 车间领用"><datalist id="raw-out-customer-options">{customer_candidates}</datalist></div>
-        <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
+        {operator_identity_field()}
         <div><label>备注</label><input name="remark" placeholder="例如 生产领料"></div>
         <p class="confirm-hint">提交前会先核对材质、长宽厚、出库块数、指定库位和客户/去向，确认后才扣减库存。</p>
         <div style="align-self:end"><button class="btn" type="submit">确认出库</button></div>
@@ -2610,6 +2637,7 @@ def outbound_raw_plate_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     outbound_raw_plate_fifo(
         db,
         material=material,
@@ -2670,7 +2698,7 @@ def raw_plate_transactions_page(q: str = "", material: str = "", transaction_typ
         if record.transaction_type in ("in", "out") and record.reversed_transaction_id is None:
             reverse_form = f"""
             <form method="post" action="/admin/raw-plates/transactions/{record.id}/reverse" class="actions" style="gap:6px;justify-content:flex-start">
-              <input name="operator_name" placeholder="操作人" style="width:90px">
+              {operator_identity_field()}
               <input name="remark" placeholder="撤回原因" style="width:120px">
               <button class="btn secondary" type="submit">撤回</button>
             </form>
@@ -2732,6 +2760,7 @@ def reverse_raw_plate_transaction_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     reverse_raw_plate_transaction(
         db,
         transaction_id,
@@ -2757,7 +2786,7 @@ def inventory_inbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
         <div><label>数量</label><input name="quantity" type="number" value="1" min="1" required></div>
         <div><label>库位</label><input name="location" list="product-in-location-options" placeholder="例如 A-01"><datalist id="product-in-location-options">{location_candidates}</datalist></div>
         <div><label>纸材质/颜色</label><input name="paper_material" placeholder="例如 蓝色纸 / 黄色纸"></div>
-        <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
+        {operator_identity_field()}
         <p class="confirm-hint">提交前会先核对产品型号、数量、库位和操作人，确认无误后才会入库。</p>
         <div style="align-self:end"><button class="btn" type="submit">确认入库</button></div>
       </form>
@@ -2835,7 +2864,7 @@ def inventory_outbound_page(db: Session = Depends(get_db)) -> HTMLResponse:
         <div><label>指定库位，可选</label><input name="location" list="product-out-location-options" placeholder="不填则所有库位FIFO"><datalist id="product-out-location-options">{location_candidates}</datalist></div>
         <div><label>客户/去向</label><input name="customer_name" list="product-out-customer-options" placeholder="例如 XX客户 / 车间领用"><datalist id="product-out-customer-options">{customer_candidates}</datalist></div>
         <div><label>用途</label><select name="outbound_purpose">{purpose_options}</select></div>
-        <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
+        {operator_identity_field()}
         <div><label>备注</label><input name="remark" placeholder="例如 发货/领用"></div>
         <p class="confirm-hint">提交前会先核对产品型号、出库数量、指定库位、客户/去向、用途和备注，确认后才扣减库存。</p>
         <div style="align-self:end"><button class="btn" type="submit">确认出库</button></div>
@@ -2857,6 +2886,7 @@ def create_inventory_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     client_request_value = client_request_id.strip() if isinstance(client_request_id, str) else ""
     idempotency_key = f"admin_product_inbound:{client_request_value}" if client_request_value else None
     drawing = db.get(ProductDrawing, drawing_id)
@@ -2900,6 +2930,7 @@ def outbound_inventory_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     idempotency_key = f"admin_product_outbound:{client_request_id.strip()}" if client_request_id.strip() else None
     if idempotency_key:
         existing_record = db.query(InventoryTransactionRecord).filter(InventoryTransactionRecord.idempotency_key == idempotency_key).first()
@@ -3039,6 +3070,7 @@ def adjust_inventory_from_page(
     remark: str = Form(""),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     reject_direct_inventory_write()
     item = db.get(MaterialInventory, inventory_id)
     if not item:
@@ -3431,7 +3463,7 @@ def inventory_transactions_page(product_code: str = "", transaction_type: str = 
         before_quantity = "-" if r.transaction_type == "confirm" else r.before_quantity
         after_quantity = "-" if r.transaction_type == "confirm" else r.after_quantity
         quantity_label = r.after_quantity if r.transaction_type == "confirm" and r.quantity == 0 else r.quantity
-        reverse_action = "-" if r.transaction_type not in ("in", "out") or r.reversed_transaction_id else f"<form method='post' action='/admin/inventory/transactions/{r.id}/reverse' class='actions' style='margin:0;justify-content:flex-start' onsubmit=\"return confirm('确定撤销这条流水吗？系统会生成一条反向流水，不会删除原记录。')\"><input name='operator_name' placeholder='操作人' style='width:80px'><input name='remark' placeholder='撤销原因' required style='width:120px'><button class='btn secondary' type='submit'>撤销</button></form>"
+        reverse_action = "-" if r.transaction_type not in ("in", "out") or r.reversed_transaction_id else f"<form method='post' action='/admin/inventory/transactions/{r.id}/reverse' class='actions' style='margin:0;justify-content:flex-start' onsubmit=\"return confirm('确定撤销这条流水吗？系统会生成一条反向流水，不会删除原记录。')\">{operator_identity_field()}<input name='remark' placeholder='撤销原因' required style='width:120px'><button class='btn secondary' type='submit'>撤销</button></form>"
         rows += f"<tr><td>{product_link}</td><td>{transaction_label(r.transaction_type)}</td><td>{quantity_label}</td><td>{before_quantity}</td><td>{after_quantity}</td><td>{r.customer_name or '-'}</td><td>{r.operator_name or '-'}</td><td>{r.remark or '-'}</td><td>{r.created_at}</td><td>{reverse_action}</td></tr>"
     product_codes = inventory_distinct_options(db, "product", "material_code") + inventory_distinct_options(db, "product", "source_product_code")
     product_options = datalist_options(product_codes)
@@ -3492,7 +3524,7 @@ def scrap_transactions_page(q: str = "", material: str = "", transaction_type: s
         before_quantity = "-" if r.transaction_type == "confirm" else r.before_quantity
         after_quantity = "-" if r.transaction_type == "confirm" else r.after_quantity
         quantity_label = r.after_quantity if r.transaction_type == "confirm" and r.quantity == 0 else r.quantity
-        reverse_action = "-" if r.transaction_type not in ("in", "out") or r.reversed_transaction_id else f"<form method='post' action='/admin/scraps/transactions/{r.id}/reverse' class='actions' style='margin:0;justify-content:flex-start' onsubmit=\"return confirm('确定撤销这条余料流水吗？系统会生成一条反向流水，不会删除原记录。')\"><input name='operator_name' placeholder='操作人' style='width:80px'><input name='remark' placeholder='撤销原因' required style='width:120px'><button class='btn secondary' type='submit'>撤销</button></form>"
+        reverse_action = "-" if r.transaction_type not in ("in", "out") or r.reversed_transaction_id else f"<form method='post' action='/admin/scraps/transactions/{r.id}/reverse' class='actions' style='margin:0;justify-content:flex-start' onsubmit=\"return confirm('确定撤销这条余料流水吗？系统会生成一条反向流水，不会删除原记录。')\">{operator_identity_field()}<input name='remark' placeholder='撤销原因' required style='width:120px'><button class='btn secondary' type='submit'>撤销</button></form>"
         rows += f"<tr><td>{item.material}</td><td>{item.thickness}</td><td>{item.usable_size or '-'}</td><td>{scrap_location_label(item)}</td><td>{transaction_label(r.transaction_type)}</td><td>{quantity_label}</td><td>{before_quantity}</td><td>{after_quantity}</td><td>{r.customer_name or '-'}</td><td>{r.operator_name or '-'}</td><td>{r.remark or '-'}</td><td>{r.created_at}</td><td>{reverse_action}</td></tr>"
     material_options = datalist_options(inventory_distinct_options(db, "scrap", "material"))
     type_options = "".join(
@@ -3522,6 +3554,7 @@ def reverse_inventory_transaction_from_page(
     remark: str = Form(""),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     reversal = reverse_inventory_transaction(transaction_id, operator_name or None, remark or None, db)
     db.flush()
     record_operation_log(
@@ -3544,6 +3577,7 @@ def reverse_scrap_transaction_from_page(
     remark: str = Form(""),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     reversal = reverse_inventory_transaction(transaction_id, operator_name or None, remark or None, db)
     db.flush()
     record_operation_log(
@@ -3577,7 +3611,7 @@ def pending_scraps_page(db: Session = Depends(get_db)) -> HTMLResponse:
               <input name='actual_quantity' aria-label='实际数量' type='number' min='0' value='{item.quantity}' style='width:75px'>
               <input name='actual_diameter' aria-label='实际直径' type='number' step='0.01' value='{item.diameter or ''}' style='width:90px'>
               <input name='location' aria-label='库位' value='{'' if item.location in ('待入库', '未入库') else item.location or ''}' list='pending-scrap-location-options' placeholder='库位' style='width:100px' required>
-              <input name='operator_name' aria-label='确认人' placeholder='确认人' style='width:90px'>
+              {operator_identity_field('确认人')}
               <button class='btn secondary' type='submit' style='min-width:96px;white-space:nowrap'>确认入库</button>
             </form>
           </td>
@@ -3603,6 +3637,7 @@ def confirm_pending_scrap_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     item = db.get(MaterialInventory, inventory_id)
     if not item:
         raise HTTPException(status_code=404, detail="余料不存在")
@@ -3737,7 +3772,7 @@ def scrap_outbound_page(
         <div><label>选择余料规格</label><select id="scrap-outbound-group-select" name="scrap_group_key" required>{options}</select></div>
         <div><label>出库数量</label><input name="quantity" type="number" value="1" min="1" required></div>
         <div><label>客户/去向</label><input name="customer_name" list="scrap-out-customer-options" placeholder="例如 XX客户 / 车间领用"><datalist id="scrap-out-customer-options">{customer_candidates}</datalist></div>
-        <div><label>操作人</label><input name="operator_name" placeholder="例如 张三"></div>
+        {operator_identity_field()}
         <div><label>备注</label><input name="remark" placeholder="例如 生产领用/报废"></div>
         <p class="confirm-hint">提交前会先核对余料规格、出库数量、客户/去向、操作人和备注，确认后才扣减库存。</p>
         <div style="align-self:end"><button class="btn" type="submit">确认出库</button></div>
@@ -3759,6 +3794,7 @@ def outbound_scrap_from_page(
     _lock=Depends(locked_inventory_write),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    operator_name = verified_operator_name()
     idempotency_key = f"admin_scrap_outbound:{client_request_id.strip()}" if client_request_id.strip() else None
     if idempotency_key:
         existing_record = db.query(InventoryTransactionRecord).filter(InventoryTransactionRecord.idempotency_key == idempotency_key).first()

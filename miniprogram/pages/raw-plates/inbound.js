@@ -1,1 +1,77 @@
-const api=require('../../utils/api');const{createPendingRequestTracker}=require('../../utils/request-id');const{retryPendingWrite}=require('../../utils/pending-write');const tracker=createPendingRequestTracker('raw-plate-inbound');Page({data:{specs:[],loading:false,error:'',confirmOpen:false,confirmLines:[],submitting:false,form:{specification_id:null,total_weight_ton:'',location:'',material_code:'',operator_name:'',remark:''}},onShow(){this.load()},async load(){this.setData({loading:true,error:''});try{this.setData({specs:(await api.rawPlateSpecifications()).filter(s=>s.is_active)})}catch(e){this.setData({error:e.message})}finally{this.setData({loading:false})}},select(e){this.setData({'form.specification_id':this.data.specs[e.detail.value].id})},input(e){this.setData({[`form.${e.currentTarget.dataset.field}`]:e.detail.value})},submit(){const f=this.data.form,s=this.data.specs.find(x=>x.id===f.specification_id);if(!s||Number(f.total_weight_ton)<=0){wx.showToast({title:'请选择规格并填写重量',icon:'none'});return}this.setData({confirmOpen:true,confirmLines:[{label:'规格',value:s.spec_name},{label:'总重量',value:`${f.total_weight_ton} 吨`},{label:'库位',value:f.location||'-'},{label:'操作人',value:f.operator_name||'-'}]})},cancelConfirm(){this.setData({confirmOpen:false})},async confirmSubmit(){this.setData({submitting:true});try{const p=await retryPendingWrite(tracker,{...this.data.form,total_weight_ton:Number(this.data.form.total_weight_ton)},'钢板入库');if(!p)return;const r=await api.rawPlateInbound(p);tracker.complete();this.setData({confirmOpen:false});wx.showModal({title:'入库成功',content:`入库 ${r.quantity} 块，余重 ${Number(r.remaining_weight_kg).toFixed(3)}kg`,showCancel:false})}catch(e){this.setData({error:e.message})}finally{this.setData({submitting:false})}}})
+const api = require('../../utils/api')
+const { createPendingRequestTracker } = require('../../utils/request-id')
+const { retryPendingWrite } = require('../../utils/pending-write')
+const { currentOperatorName } = require('../../utils/operator')
+
+const tracker = createPendingRequestTracker('raw-plate-inbound')
+
+Page({
+  data: {
+    specs: [],
+    operatorName: '',
+    loading: false,
+    error: '',
+    confirmOpen: false,
+    confirmLines: [],
+    submitting: false,
+    form: { specification_id: null, total_weight_ton: '', location: '', material_code: '', remark: '' },
+  },
+  onShow() {
+    this.setData({ operatorName: currentOperatorName(wx) })
+    this.load()
+  },
+  async load() {
+    this.setData({ loading: true, error: '' })
+    try {
+      this.setData({ specs: (await api.rawPlateSpecifications()).filter((item) => item.is_active) })
+    } catch (error) {
+      this.setData({ error: error.message })
+    } finally {
+      this.setData({ loading: false })
+    }
+  },
+  select(event) {
+    this.setData({ 'form.specification_id': this.data.specs[event.detail.value].id })
+  },
+  input(event) {
+    this.setData({ [`form.${event.currentTarget.dataset.field}`]: event.detail.value })
+  },
+  submit() {
+    const form = this.data.form
+    const specification = this.data.specs.find((item) => item.id === form.specification_id)
+    if (!specification || Number(form.total_weight_ton) <= 0) {
+      wx.showToast({ title: '请选择规格并填写重量', icon: 'none' })
+      return
+    }
+    this.setData({
+      confirmOpen: true,
+      confirmLines: [
+        { label: '规格', value: specification.spec_name },
+        { label: '总重量', value: `${form.total_weight_ton} 吨` },
+        { label: '库位', value: form.location || '-' },
+        { label: '操作人', value: this.data.operatorName || '当前账号' },
+      ],
+    })
+  },
+  cancelConfirm() {
+    this.setData({ confirmOpen: false })
+  },
+  async confirmSubmit() {
+    this.setData({ submitting: true })
+    try {
+      const pending = await retryPendingWrite(tracker, {
+        ...this.data.form,
+        total_weight_ton: Number(this.data.form.total_weight_ton),
+      }, '钢板入库')
+      if (!pending) return
+      const result = await api.rawPlateInbound(pending)
+      tracker.complete()
+      this.setData({ confirmOpen: false })
+      wx.showModal({ title: '入库成功', content: `入库 ${result.quantity} 块，余重 ${Number(result.remaining_weight_kg).toFixed(3)}kg`, showCancel: false })
+    } catch (error) {
+      this.setData({ error: error.message })
+    } finally {
+      this.setData({ submitting: false })
+    }
+  },
+})

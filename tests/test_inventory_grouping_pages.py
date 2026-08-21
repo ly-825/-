@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.auth.context import current_account
 from app.admin_pages import (
     confirmed_drawing_options,
     create_raw_plate_from_page,
@@ -18,7 +19,7 @@ from app.admin_pages import (
     update_raw_plate_from_page,
 )
 from app.database import Base
-from app.models import InventoryTransactionRecord, MaterialInventory, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
+from app.models import Account, InventoryTransactionRecord, MaterialInventory, ProductDrawing, RawPlateSpecification, ScrapGenerationRecord
 
 
 class InventoryGroupingPagesTest(unittest.TestCase):
@@ -26,6 +27,10 @@ class InventoryGroupingPagesTest(unittest.TestCase):
         engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
         Base.metadata.create_all(engine)
         self.Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        account_token = current_account.set(
+            Account(username="boss", display_name="老板", role="owner")
+        )
+        self.addCleanup(current_account.reset, account_token)
 
     def test_material_sidebar_orders_raw_plate_links_and_separates_scraps(self) -> None:
         html = page("测试", "").body.decode("utf-8")
@@ -428,6 +433,8 @@ class InventoryGroupingPagesTest(unittest.TestCase):
             self.assertEqual(manual.raw_plate_model, "2.0×500×1000")
             self.assertEqual(records[fixed.id].after_quantity, fixed.quantity)
             self.assertEqual(records[manual.id].after_quantity, manual.quantity)
+            self.assertEqual(records[fixed.id].operator_name, "老板")
+            self.assertEqual(records[manual.id].operator_name, "老板")
 
     def test_raw_plate_summary_ignores_legacy_sorting_and_uses_dimension_order(self) -> None:
         with self.Session() as db:
