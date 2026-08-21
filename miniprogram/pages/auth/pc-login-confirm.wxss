@@ -1,0 +1,3 @@
+.auth-card { margin-top: 24rpx; }
+.group-row { display:flex; justify-content:space-between; gap:24rpx; padding:22rpx 0; border-bottom:1rpx solid #e2e8f0; }
+.primary-action, .danger-action { margin-top: 28rpx; width:100%; }

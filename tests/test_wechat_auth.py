@@ -66,7 +66,10 @@ class WechatAuthTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["account"], {"display_name": "张三", "role": "employee"})
+        self.assertEqual(
+            response.json()["account"],
+            {"username": "tns008", "display_name": "张三", "role": "employee"},
+        )
         self.assertNotIn("openid", response.text.lower())
         self.assertNotIn("session_key", response.text.lower())
         exchange.assert_called_once_with("wx-code-1")
@@ -95,8 +98,58 @@ class WechatAuthTest(unittest.TestCase):
 
         self.assertEqual(activation.status_code, 200)
         self.assertEqual(login.status_code, 200)
-        self.assertEqual(me.json(), {"display_name": "张三", "role": "employee"})
+        self.assertEqual(
+            me.json(),
+            {"username": "tns008", "display_name": "张三", "role": "employee"},
+        )
         self.assertNotIn("openid", me.text.lower())
+
+    @patch("app.auth.api.exchange_code_for_openid", return_value="openid-owner")
+    def test_bound_owner_can_login_and_read_safe_identity(self, exchange) -> None:
+        with self.Session() as db:
+            account = Account(
+                username="boss1",
+                display_name="老板一",
+                role="owner",
+                wechat_openid="openid-owner",
+                is_active=True,
+                session_version=1,
+            )
+            db.add(account)
+            db.commit()
+
+        login = self.client.post(
+            "/api/auth/wechat/login", json={"wx_code": "owner-code"}
+        )
+        self.assertEqual(login.status_code, 200)
+        self.assertEqual(login.json()["account"]["role"], "owner")
+        self.assertNotIn("openid", login.text.lower())
+
+        me = self.client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {login.json()['token']}"},
+        )
+        self.assertEqual(
+            me.json(),
+            {"username": "boss1", "display_name": "老板一", "role": "owner"},
+        )
+
+    @patch("app.auth.api.exchange_code_for_openid", return_value="openid-superadmin")
+    def test_me_accepts_superadmin_and_returns_only_safe_fields(self, exchange) -> None:
+        with self.Session() as db:
+            db.add(Account(
+                username="admin", display_name="主管理员", role="superadmin",
+                wechat_openid="openid-superadmin", is_active=True, session_version=1,
+            ))
+            db.commit()
+        login = self.client.post(
+            "/api/auth/wechat/login", json={"wx_code": "admin-code"}
+        )
+        me = self.client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {login.json()['token']}"},
+        )
+        self.assertEqual(set(me.json()), {"username", "display_name", "role"})
 
     @patch("app.auth.api.exchange_code_for_openid", return_value="openid-zhangsan")
     def test_activation_code_cannot_be_reused(self, exchange) -> None:

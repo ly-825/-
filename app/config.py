@@ -23,7 +23,9 @@ class Settings(BaseSettings):
     wechat_app_id: str | None = None
     wechat_app_secret: str | None = None
     pc_session_hours: int = 12
+    pc_login_request_seconds: int = 120
     mobile_session_days: int = 30
+    legacy_password_login_enabled: bool = True
     auth_cookie_name: str = "tns_session"
     production: bool = False
 

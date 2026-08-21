@@ -430,6 +430,8 @@ For every inventory, transaction, drawing, raw-plate, paper-material, and scrap 
 
 ### Task 6: Create the owner, validate backups, and accept the PC system
 
+> 2026-08-20 更新：本节原有“创建唯一 owner 并长期使用密码/TOTP”的步骤已被微信管理员登录方案取代。旧 `owner` 只作为阶段 A 的临时应急入口；正式主管理员使用 `scripts/manage_superadmin.py bootstrap` 创建并绑定微信。只有真实主管理员和老板均完成扫码登录后，才进入阶段 B：停用临时 owner、设置 `LEGACY_PASSWORD_LOGIN_ENABLED=false`，并验证 `/auth/legacy-login` 返回 404。准确顺序、备份和恢复命令以 `deploy/README.md` 的“微信管理员登录两阶段切换”为准。
+
 **Files:**
 - Modify on ECS database: owner account and authentication records only.
 - Create on ECS: one verified backup bundle under `/srv/tenaishi/backups/`.

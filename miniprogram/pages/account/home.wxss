@@ -1,0 +1,3 @@
+.auth-card { margin-top: 24rpx; }
+.primary-action { margin-top: 28rpx; width: 100%; }
+.secondary-button { margin-top: 40rpx; }

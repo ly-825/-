@@ -2,6 +2,8 @@
   "pages": [
     "pages/auth/login",
     "pages/connection/index",
+    "pages/account/home",
+    "pages/auth/pc-login-confirm",
     "pages/plan/home",
     "pages/materials/home",
     "pages/products/home",

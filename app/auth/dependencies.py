@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.auth.context import current_account
+from app.auth.roles import EMPLOYEE, PC_ADMIN_ROLES
 from app.auth.service import resolve_session
 from app.config import settings
 from app.database import get_db
@@ -29,7 +30,7 @@ def _raise_unauthenticated(request: Request) -> None:
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="请先登录")
 
 
-async def require_owner_account(
+async def require_pc_admin_account(
     request: Request,
     db: Session = Depends(get_db),
 ) -> AsyncGenerator[Account, None]:
@@ -39,7 +40,7 @@ async def require_owner_account(
     account = resolve_session(db, raw_token, client_type)
     if not account:
         _raise_unauthenticated(request)
-    if account.role != "owner" or client_type != "pc":
+    if account.role not in PC_ADMIN_ROLES or client_type != "pc":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问")
     context_token = current_account.set(account)
     try:
@@ -48,10 +49,10 @@ async def require_owner_account(
         current_account.reset(context_token)
 
 
-async def require_mobile_account(
-    request: Request,
-    db: Session = Depends(get_db),
-) -> AsyncGenerator[Account, None]:
+require_owner_account = require_pc_admin_account
+
+
+def _miniprogram_account(request: Request, db: Session) -> Account:
     raw_token, client_type = raw_request_token(request)
     if not raw_token or client_type != "miniprogram":
         raise HTTPException(
@@ -64,7 +65,27 @@ async def require_mobile_account(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="请先登录",
         )
-    if account.role != "employee":
+    return account
+
+
+async def require_miniprogram_account(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AsyncGenerator[Account, None]:
+    account = _miniprogram_account(request, db)
+    context_token = current_account.set(account)
+    try:
+        yield account
+    finally:
+        current_account.reset(context_token)
+
+
+async def require_mobile_account(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AsyncGenerator[Account, None]:
+    account = _miniprogram_account(request, db)
+    if account.role != EMPLOYEE:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问")
     context_token = current_account.set(account)
     try:

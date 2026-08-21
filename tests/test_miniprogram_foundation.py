@@ -87,6 +87,19 @@ class MiniProgramFoundationTest(unittest.TestCase):
             "pages/drawings/home",
             [item["pagePath"] for item in app_json["tabBar"]["list"]],
         )
+        self.assertIn("pages/account/home", app_json["pages"])
+        self.assertIn("pages/auth/pc-login-confirm", app_json["pages"])
+
+    def test_admin_login_pages_require_explicit_confirmation(self) -> None:
+        account_home = self.read("miniprogram/pages/account/home.wxml")
+        confirm_view = self.read("miniprogram/pages/auth/pc-login-confirm.wxml")
+        confirm_source = self.read("miniprogram/pages/auth/pc-login-confirm.js")
+        self.assertIn("扫码登录电脑后台", account_home)
+        self.assertIn("确认登录", confirm_view)
+        self.assertIn("拒绝", confirm_view)
+        self.assertIn("approved: true", confirm_source)
+        self.assertIn("approved: false", confirm_source)
+        self.assertNotIn("decidePcLogin", confirm_source.split("onLoad", 1)[1].split("async confirm", 1)[0])
 
     def test_materials_home_has_three_clear_business_entries(self) -> None:
         wxml = self.read("miniprogram/pages/materials/home.wxml")
