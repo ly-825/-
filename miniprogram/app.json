@@ -64,6 +64,12 @@
         "text": "成品",
         "iconPath": "assets/tabbar/products.png",
         "selectedIconPath": "assets/tabbar/products-active.png"
+      },
+      {
+        "pagePath": "pages/account/home",
+        "text": "我的",
+        "iconPath": "assets/tabbar/workbench.png",
+        "selectedIconPath": "assets/tabbar/workbench-active.png"
       }
     ]
   },

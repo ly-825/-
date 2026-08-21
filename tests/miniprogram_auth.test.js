@@ -54,10 +54,16 @@ test('activation sends wx login code with username and activation code', async (
   assert.equal(result.account.display_name, '张三')
 })
 
-test('role routing separates employee tabs from administrator home', () => {
-  assert.equal(auth.homeForRole('employee'), '/pages/plan/home')
-  assert.equal(auth.homeForRole('owner'), '/pages/account/home')
-  assert.equal(auth.homeForRole('superadmin'), '/pages/account/home')
+test('every account role enters the shared inventory tab bar', () => {
+  for (const role of ['employee', 'owner', 'superadmin']) {
+    assert.equal(auth.homeForRole(role), '/pages/plan/home')
+  }
+})
+
+test('only administrators may approve PC login', () => {
+  assert.equal(auth.canApprovePcLogin('employee'), false)
+  assert.equal(auth.canApprovePcLogin('owner'), true)
+  assert.equal(auth.canApprovePcLogin('superadmin'), true)
 })
 
 test('administrator logout revokes server session before clearing local state', async () => {

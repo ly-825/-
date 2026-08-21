@@ -33,6 +33,14 @@ class AdminNavigationAndDrawingConfirmTest(unittest.TestCase):
         self.assertIn('href="/admin/reports/outbound">综合出库统计', home_html)
         self.assertIn('href="/admin/reports/product-outbound">产品出入库分析', home_html)
         self.assertIn('href="/admin/accounts">账号管理', home_html)
+        system_index = home_html.index("系统设置")
+        connection_index = home_html.index('href="/admin/mobile-connection">小程序连接')
+        accounts_index = home_html.index('href="/admin/accounts">账号管理')
+        logout_index = home_html.index("退出登录")
+        self.assertLess(home_html.index("<summary>成品管理</summary>"), system_index)
+        self.assertLess(system_index, connection_index)
+        self.assertLess(connection_index, accounts_index)
+        self.assertLess(accounts_index, logout_index)
 
     def test_product_outbound_analysis_links_to_comprehensive_outbound_report(self) -> None:
         with self.Session() as db:

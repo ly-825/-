@@ -897,7 +897,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); }}
     a {{ color:inherit; text-decoration:none; }}
     .layout {{ display:grid; grid-template-columns:220px minmax(0,1fr); min-height:100vh; }}
-    aside {{ background:#0f1f46; color:white; padding:20px 14px; max-height:100vh; overflow:auto; position:sticky; top:0; }}
+    aside {{ display:flex; flex-direction:column; background:#0f1f46; color:white; padding:20px 14px; max-height:100vh; overflow:auto; position:sticky; top:0; }}
     .brand {{ font-size:17px; font-weight:800; margin:0 8px 12px; }}
     .nav-current {{ margin:0 6px 14px; padding:10px 12px; border-radius:10px; background:rgba(147,197,253,.14); color:#dbeafe; border:1px solid rgba(147,197,253,.24); }}
     .nav-current span {{ display:block; font-size:11px; color:rgba(219,234,254,.62); margin-bottom:4px; }}
@@ -916,6 +916,12 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
     .nav-section .nav-items a.active {{ background:rgba(147,197,253,.18); color:white; }}
     .nav-subhead {{ display:block; margin:9px 9px 5px; padding-top:9px; border-top:1px solid rgba(255,255,255,.12); color:rgba(219,234,254,.58); font-size:11px; font-weight:900; }}
     .nav-root {{ margin-bottom:10px; }}
+    nav {{ flex:0 0 auto; }}
+    .sidebar-system {{ margin-top:auto; padding-top:12px; border-top:1px solid rgba(255,255,255,.12); }}
+    .sidebar-system .nav-subhead {{ margin-top:0; padding-top:0; border-top:0; }}
+    .sidebar-system a {{ display:block; padding:8px 10px; border-radius:8px; color:rgba(255,255,255,.68); margin-bottom:3px; font-size:13px; font-weight:600; line-height:1.35; }}
+    .sidebar-system a:hover,.sidebar-system a.active {{ background:rgba(255,255,255,.08); color:white; }}
+    .sidebar-system a.active {{ box-shadow:inset 2px 0 0 #93c5fd; }}
     .operator-identity {{ display:flex; flex-direction:column; justify-content:center; gap:6px; min-height:68px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#f8fafc; }}
     .operator-identity span {{ color:var(--muted); font-size:12px; font-weight:700; }}
     .operator-identity strong {{ color:var(--text); font-size:14px; }}
@@ -1129,8 +1135,6 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
       <nav>
         <div class="nav-root">
           <a href="/admin">后台首页</a>
-          <a href="/admin/mobile-connection">小程序连接</a>
-          <a href="/admin/accounts">账号管理</a>
         </div>
         <details class="nav-section" data-nav-section="drawing">
           <summary>图纸管理</summary>
@@ -1179,7 +1183,12 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
           </div>
         </details>
       </nav>
-      <form action="/auth/logout" method="post" style="margin-top:auto;padding-top:16px;">
+      <div class="sidebar-system" aria-label="系统设置">
+        <div class="nav-subhead">系统设置</div>
+        <a href="/admin/mobile-connection">小程序连接</a>
+        <a href="/admin/accounts">账号管理</a>
+      </div>
+      <form action="/auth/logout" method="post" style="margin-top:8px;padding-top:8px;">
         <button type="submit" class="btn secondary" style="width:100%;">退出登录</button>
       </form>
     </aside>
@@ -1350,7 +1359,7 @@ def page(title: str, body: str, notice: str = "") -> HTMLResponse:
       }});
       const currentPath = window.location.pathname;
       let bestLink = null;
-      document.querySelectorAll('nav a[href]').forEach((link) => {{
+      document.querySelectorAll('#admin-sidebar a[href]').forEach((link) => {{
         const href = link.getAttribute('href');
         if (href === currentPath || (href !== '/admin' && currentPath.startsWith(href + '/'))) {{
           if (!bestLink || href.length > bestLink.getAttribute('href').length) bestLink = link;

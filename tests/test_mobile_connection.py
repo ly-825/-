@@ -136,3 +136,5 @@ class MobileConnectionTest(unittest.TestCase):
     def test_sidebar_contains_connection_entry(self) -> None:
         html = page("测试", "").body.decode("utf-8")
         self.assertIn('href="/admin/mobile-connection">小程序连接</a>', html)
+        self.assertLess(html.index("系统设置"), html.index("小程序连接</a>"))
+        self.assertLess(html.index("小程序连接</a>"), html.index("退出登录"))
