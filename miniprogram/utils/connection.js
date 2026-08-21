@@ -59,12 +59,16 @@ function normalizeReleaseBaseUrl(value) {
   return `https://${host}`
 }
 
-function canEditConnection(envVersion) {
-  return envVersion !== 'release'
+function hasReleaseBaseUrl(value) {
+  return Boolean(String(value || '').trim())
+}
+
+function canEditConnection(envVersion, releaseBaseUrl = '') {
+  return envVersion !== 'release' && !hasReleaseBaseUrl(releaseBaseUrl)
 }
 
 function baseUrlForEnvironment(envVersion, options = {}) {
-  if (envVersion === 'release') {
+  if (envVersion === 'release' || hasReleaseBaseUrl(options.releaseBaseUrl)) {
     return normalizeReleaseBaseUrl(options.releaseBaseUrl)
   }
   return loadSavedBaseUrl(options.wxApi)

@@ -60,6 +60,21 @@ test('release uses explicit personal HTTPS endpoint and cannot edit connection',
   assert.equal(connection.canEditConnection('develop'), true)
 })
 
+test('preview of a release build uses its HTTPS endpoint instead of saved LAN', () => {
+  const releaseBaseUrl = 'https://personal-inventory.example.test'
+  const wxApi = { getStorageSync: () => 'http://192.168.1.9:8000' }
+
+  assert.equal(
+    connection.baseUrlForEnvironment('develop', { releaseBaseUrl: '', wxApi }),
+    'http://192.168.1.9:8000'
+  )
+  assert.equal(
+    connection.baseUrlForEnvironment('develop', { releaseBaseUrl, wxApi }),
+    releaseBaseUrl
+  )
+  assert.equal(connection.canEditConnection('develop', releaseBaseUrl), false)
+})
+
 test('release ignores saved LAN and rejects absent or IP endpoints', () => {
   const wxApi = { getStorageSync: () => 'http://192.168.1.9:8000' }
 
@@ -85,7 +100,10 @@ test('app selects endpoint from mini-program environment and release config', ()
   assert.match(source, /getAccountInfoSync/)
   assert.match(source, /release-config/)
   assert.match(source, /baseUrlForEnvironment/)
-  assert.match(source, /canEditConnection/)
+  assert.match(
+    source,
+    /canEditConnection\(\s*envVersion,\s*releaseConfig\.releaseBaseUrl\s*\)/
+  )
 })
 
 test('release connection page hides LAN scan and manual controls', () => {
