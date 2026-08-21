@@ -1,6 +1,10 @@
+import os
 import re
+import subprocess
+import sys
 import unittest
 from datetime import datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 from sqlalchemy import create_engine
@@ -62,6 +66,20 @@ class ManageSuperadminScriptTest(unittest.TestCase):
             ])
             with self.assertRaises(IntegrityError):
                 db.commit()
+
+    def test_documented_direct_cli_runs_without_pythonpath(self) -> None:
+        environment = os.environ.copy()
+        environment.pop("PYTHONPATH", None)
+        result = subprocess.run(
+            [sys.executable, "scripts/manage_superadmin.py", "--help"],
+            cwd=Path(__file__).resolve().parents[1],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("管理唯一主管理员的微信绑定", result.stdout)
 
 
 if __name__ == "__main__":
