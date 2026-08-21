@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const { createPendingRequestTracker } = require('../../utils/request-id')
 const { retryPendingWrite } = require('../../utils/pending-write')
+const { currentOperatorName } = require('../../utils/operator')
 
 const tracker = createPendingRequestTracker('paper-reverse')
 
@@ -8,6 +9,7 @@ Page({
   data: {
     items: [],
     target: null,
+    operatorName: '',
     loading: false,
     error: '',
     confirmOpen: false,
@@ -16,6 +18,7 @@ Page({
   },
 
   onShow() {
+    this.setData({ operatorName: currentOperatorName(wx) })
     this.load()
   },
 
@@ -39,6 +42,7 @@ Page({
         { label: '流水', value: String(transaction.id) },
         { label: '批次', value: transaction.batch.batch_code },
         { label: '库存变化', value: `${transaction.before_quantity} → ${transaction.after_quantity}` },
+        { label: '操作人', value: this.data.operatorName || '当前账号' },
       ],
     })
   },
@@ -54,7 +58,6 @@ Page({
         tracker,
         {
           transaction_id: this.data.target.id,
-          operator_name: '',
           remark: '小程序撤销',
         },
         '撤销纸材流水',

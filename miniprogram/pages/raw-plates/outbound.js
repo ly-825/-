@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const { createPendingRequestTracker } = require('../../utils/request-id')
 const { retryPendingWrite } = require('../../utils/pending-write')
+const { currentOperatorName } = require('../../utils/operator')
 
 const tracker = createPendingRequestTracker('raw-plate-outbound')
 
@@ -15,6 +16,7 @@ Page({
   data: {
     items: [],
     selected: null,
+    operatorName: '',
     loading: false,
     error: '',
     confirmOpen: false,
@@ -24,12 +26,12 @@ Page({
       quantity: '',
       location: '',
       customer_name: '',
-      operator_name: '',
       remark: '',
     },
   },
 
   onShow() {
+    this.setData({ operatorName: currentOperatorName(wx) })
     this.load()
   },
 
@@ -73,6 +75,7 @@ Page({
         { label: '出库数量', value: `${f.quantity} 块` },
         { label: '指定库位', value: f.location || '全部库位 FIFO' },
         { label: '客户/去向', value: f.customer_name || '-' },
+        { label: '操作人', value: this.data.operatorName || '当前账号' },
       ],
     })
   },
@@ -96,7 +99,6 @@ Page({
           quantity: Number(f.quantity),
           location: f.location,
           customer_name: f.customer_name,
-          operator_name: f.operator_name,
           remark: f.remark,
         },
         '钢板出库',

@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const { createPendingRequestTracker } = require('../../utils/request-id')
 const { retryPendingWrite } = require('../../utils/pending-write')
+const { currentOperatorName } = require('../../utils/operator')
 
 const requestTrackers = new Map()
 
@@ -22,9 +23,13 @@ Page({
     submitting: false,
     confirmOpen: false,
     confirmLines: [],
-    confirmingIndex: null
+    confirmingIndex: null,
+    operatorName: ''
   },
-  onShow() { this.load() },
+  onShow() {
+    this.setData({ operatorName: currentOperatorName(wx) })
+    this.load()
+  },
   async load() {
     if (this.data.loading) return
     this.setData({ loading: true, error: '' })
@@ -36,7 +41,6 @@ Page({
         actual_quantity: item.quantity,
         actual_diameter: item.diameter || '',
         confirm_location: '',
-        operator_name: '',
         confirming: false
       }))
       this.setData({ items })
@@ -66,7 +70,7 @@ Page({
         { label: '实际数量', value: String(item.actual_quantity) },
         { label: '实际直径', value: item.actual_diameter === '' ? '沿用理论值' : String(item.actual_diameter) },
         { label: '库位', value: item.confirm_location },
-        { label: '确认人', value: item.operator_name || '未填写' }
+        { label: '确认人', value: this.data.operatorName || '当前账号' }
       ]
     })
   },
@@ -83,8 +87,7 @@ Page({
       const payload = await retryPendingWrite(requestTracker, {
         actual_quantity: Number(item.actual_quantity),
         actual_diameter: item.actual_diameter === '' ? null : Number(item.actual_diameter),
-        location: item.confirm_location,
-        operator_name: item.operator_name
+        location: item.confirm_location
       }, '余料确认入库')
       if (!payload) {
         this.setData({ confirmOpen: false, confirmingIndex: null })

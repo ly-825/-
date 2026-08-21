@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const { createPendingRequestTracker } = require('../../utils/request-id')
 const { retryPendingWrite } = require('../../utils/pending-write')
+const { currentOperatorName } = require('../../utils/operator')
 
 const requestTrackers = new Map()
 
@@ -15,16 +16,19 @@ function trackerFor(transactionId) {
 }
 
 Page({
-  data: { items: [], loading: false, error: '', reversingId: null, confirmOpen: false, confirmLines: [], reverseForm: { id: null, operator_name: '', remark: '' } },
-  onShow() { this.load() },
+  data: { items: [], operatorName: '', loading: false, error: '', reversingId: null, confirmOpen: false, confirmLines: [], reverseForm: { id: null, remark: '' } },
+  onShow() {
+    this.setData({ operatorName: currentOperatorName(wx) })
+    this.load()
+  },
   onReverseInput(event) {
     this.setData({ [`reverseForm.${event.currentTarget.dataset.field}`]: event.detail.value })
   },
   showReverseForm(event) {
-    this.setData({ reverseForm: { id: event.currentTarget.dataset.id, operator_name: '', remark: '' } })
+    this.setData({ reverseForm: { id: event.currentTarget.dataset.id, remark: '' } })
   },
   hideReverseForm() {
-    if (!this.data.reversingId) this.setData({ reverseForm: { id: null, operator_name: '', remark: '' }, confirmOpen: false })
+    if (!this.data.reversingId) this.setData({ reverseForm: { id: null, remark: '' }, confirmOpen: false })
   },
   async load() {
     if (this.data.loading) return
@@ -48,7 +52,7 @@ Page({
     }
   },
   reverse() {
-    const { id, operator_name, remark } = this.data.reverseForm
+    const { id, remark } = this.data.reverseForm
     if (this.data.reversingId) return
     if (!remark.trim()) {
       wx.showToast({ title: '请填写撤销原因', icon: 'none' })
@@ -60,7 +64,7 @@ Page({
       confirmLines: [
         { label: '余料', value: item ? `${item.material_text} / ${item.usable_size_text}` : String(id) },
         { label: '原流水', value: item ? `${item.transaction_type} / 数量 ${item.quantity}` : String(id) },
-        { label: '操作人', value: operator_name || '未填写' },
+        { label: '操作人', value: this.data.operatorName || '当前账号' },
         { label: '撤销原因', value: remark }
       ]
     })
@@ -69,14 +73,14 @@ Page({
     if (!this.data.reversingId) this.setData({ confirmOpen: false })
   },
   async confirmSubmit() {
-    const { id, operator_name, remark } = this.data.reverseForm
+    const { id, remark } = this.data.reverseForm
     if (this.data.reversingId || !id) return
     const requestTracker = trackerFor(id)
     this.setData({ reversingId: id })
     try {
       const payload = await retryPendingWrite(
         requestTracker,
-        { operator_name, remark },
+        { remark },
         '撤销余料流水'
       )
       if (!payload) {
@@ -86,7 +90,7 @@ Page({
       await api.reverseScrapTransaction(id, payload)
       requestTracker.complete()
       requestTrackers.delete(id)
-      this.setData({ confirmOpen: false, reverseForm: { id: null, operator_name: '', remark: '' } })
+      this.setData({ confirmOpen: false, reverseForm: { id: null, remark: '' } })
       wx.showToast({ title: '已撤销', icon: 'success' })
       await this.load()
     } catch (error) {
