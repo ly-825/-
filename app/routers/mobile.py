@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_mobile_account, require_owner_account
+from app.auth.operator import verified_operator_name
 from app.database import get_db
 from app.models import (
     InventoryTransactionRecord,
@@ -24,6 +25,8 @@ from app.services.scrap_service import find_scrap_batches_for_outbound
 
 
 router = APIRouter()
+
+LEGACY_OPERATOR_FIELDS = {"client_request_id", "operator_name"}
 
 
 class MobileWritePayload(BaseModel):
@@ -178,6 +181,10 @@ def _idempotency_key(scope: str, client_request_id: str | None) -> str | None:
     if not value:
         return None
     return f"{scope}:{value}"
+
+
+def _mobile_request_payload(payload: MobileWritePayload) -> dict:
+    return payload.model_dump(mode="json", exclude=LEGACY_OPERATOR_FIELDS)
 
 
 def _optional_float(value: str | float | None) -> float | None:
@@ -671,12 +678,13 @@ def product_batches(product_code: str, db: Session = Depends(get_db)) -> list[Ma
 def product_inbound(payload: ProductInboundPayload, db: Session = Depends(get_db)) -> dict:
     with inventory_write_lock():
         operation_type = "product_inbound"
-        request_payload = payload.model_dump(mode="json", exclude={"client_request_id"})
+        request_payload = _mobile_request_payload(payload)
         replayed = replayed_mobile_response(
             db, operation_type, payload.client_request_id, request_payload
         )
         if replayed is not None:
             return replayed
+        operator_name = verified_operator_name()
         drawing = db.get(ProductDrawing, payload.drawing_id)
         if not drawing or drawing.confirmed != 1 or drawing.is_active != 1:
             raise HTTPException(status_code=404, detail="已确认图纸不存在")
@@ -686,7 +694,7 @@ def product_inbound(payload: ProductInboundPayload, db: Session = Depends(get_db
             quantity=payload.quantity,
             location=payload.location,
             paper_material=payload.paper_material,
-            operator_name=payload.operator_name,
+            operator_name=operator_name,
             db=db,
             idempotency_key=idempotency_key,
         )
@@ -696,7 +704,7 @@ def product_inbound(payload: ProductInboundPayload, db: Session = Depends(get_db
                 "product_inbound",
                 "inventory",
                 result.item.id,
-                payload.operator_name or None,
+                operator_name,
                 f"小程序产品入库：{drawing.product_code}，数量 {payload.quantity}",
                 before_data={"quantity": result.before_total_quantity, "drawing": drawing_snapshot(drawing)},
                 after_data=inventory_snapshot(result.item),
@@ -720,12 +728,13 @@ def product_inbound(payload: ProductInboundPayload, db: Session = Depends(get_db
 def product_outbound(payload: ProductOutboundPayload, db: Session = Depends(get_db)) -> dict[str, int | str]:
     with inventory_write_lock():
         operation_type = "product_outbound"
-        request_payload = payload.model_dump(mode="json", exclude={"client_request_id"})
+        request_payload = _mobile_request_payload(payload)
         replayed = replayed_mobile_response(
             db, operation_type, payload.client_request_id, request_payload
         )
         if replayed is not None:
             return replayed
+        operator_name = verified_operator_name()
         idempotency_key = _idempotency_key("mobile_product_outbound", payload.client_request_id)
         existing_record = db.query(InventoryTransactionRecord).filter(InventoryTransactionRecord.idempotency_key == idempotency_key).first() if idempotency_key else None
         if existing_record:
@@ -763,13 +772,13 @@ def product_outbound(payload: ProductOutboundPayload, db: Session = Depends(get_
             item.status = "used" if item.quantity <= 0 else "available"
             affected_items.append((item, deduction, item_before_quantity, item.quantity))
         for index, (item, deduction, item_before_quantity, item_after_quantity) in enumerate(affected_items):
-            db.add(InventoryTransactionRecord(inventory_id=item.id, transaction_type="out", quantity=deduction, before_quantity=item_before_quantity, after_quantity=item_after_quantity, idempotency_key=idempotency_key if index == 0 else None, operator_name=payload.operator_name or None, customer_name=(payload.customer_name or "").strip() or None, outbound_purpose=normalize_outbound_purpose(payload.outbound_purpose), remark=payload.remark or "产品出库"))
+            db.add(InventoryTransactionRecord(inventory_id=item.id, transaction_type="out", quantity=deduction, before_quantity=item_before_quantity, after_quantity=item_after_quantity, idempotency_key=idempotency_key if index == 0 else None, operator_name=operator_name, customer_name=(payload.customer_name or "").strip() or None, outbound_purpose=normalize_outbound_purpose(payload.outbound_purpose), remark=payload.remark or "产品出库"))
         record_operation_log(
             db,
             "product_outbound",
             "inventory",
             affected_items[0][0].id if affected_items else None,
-            payload.operator_name or None,
+            operator_name,
             payload.remark or f"小程序产品出库：{drawing.product_code}，数量 {payload.quantity}",
             before_data={"quantity": before_total_quantity, "location": location_value or None, "drawing": drawing_snapshot(drawing)},
             after_data={"quantity": before_total_quantity - payload.quantity, "location": location_value or None},
@@ -821,15 +830,16 @@ def reverse_product_transaction(transaction_id: int, payload: TransactionReverse
         operation_type = "product_transaction_reverse"
         request_payload = {
             "transaction_id": transaction_id,
-            **payload.model_dump(mode="json", exclude={"client_request_id"}),
+            **_mobile_request_payload(payload),
         }
         replayed = replayed_mobile_response(
             db, operation_type, payload.client_request_id, request_payload
         )
         if replayed is not None:
             return replayed
+        operator_name = verified_operator_name()
         reversal = reverse_inventory_transaction(
-            transaction_id, payload.operator_name, payload.remark, db
+            transaction_id, operator_name, payload.remark, db
         )
         db.flush()
         record_operation_log(
@@ -837,7 +847,7 @@ def reverse_product_transaction(transaction_id: int, payload: TransactionReverse
             "transaction_reverse",
             "inventory_transaction",
             transaction_id,
-            payload.operator_name or None,
+            operator_name,
             payload.remark or "小程序撤销产品流水",
             after_data={"reversal_transaction_id": reversal.id},
         )
@@ -981,13 +991,14 @@ def confirm_scrap(inventory_id: int, payload: ScrapConfirmPayload, db: Session =
         operation_type = "scrap_confirm"
         request_payload = {
             "inventory_id": inventory_id,
-            **payload.model_dump(mode="json", exclude={"client_request_id"}),
+            **_mobile_request_payload(payload),
         }
         replayed = replayed_mobile_response(
             db, operation_type, payload.client_request_id, request_payload
         )
         if replayed is not None:
             return replayed
+        operator_name = verified_operator_name()
         item = db.get(MaterialInventory, inventory_id)
         if not item:
             raise HTTPException(status_code=404, detail="余料不存在")
@@ -1005,13 +1016,13 @@ def confirm_scrap(inventory_id: int, payload: ScrapConfirmPayload, db: Session =
         item.usable_size = f"φ{item.diameter:g}" if item.diameter else item.usable_size
         item.location = payload.location.strip()
         item.status = "available" if payload.actual_quantity > 0 else "used"
-        db.add(InventoryTransactionRecord(inventory_id=item.id, transaction_type="confirm", quantity=payload.actual_quantity, before_quantity=before_quantity, after_quantity=payload.actual_quantity, operator_name=payload.operator_name or None, remark="余料确认入库"))
+        db.add(InventoryTransactionRecord(inventory_id=item.id, transaction_type="confirm", quantity=payload.actual_quantity, before_quantity=before_quantity, after_quantity=payload.actual_quantity, operator_name=operator_name, remark="余料确认入库"))
         record_operation_log(
             db,
             "scrap_confirm",
             "inventory",
             item.id,
-            payload.operator_name or None,
+            operator_name,
             f"小程序余料确认入库：数量 {payload.actual_quantity}，库位 {payload.location.strip()}",
             before_data={"quantity": before_quantity},
             after_data=inventory_snapshot(item),
@@ -1062,12 +1073,13 @@ def scraps(material: str = "", thickness: str = "", required_diameter: str = "",
 def scrap_outbound(payload: ScrapOutboundPayload, db: Session = Depends(get_db)) -> dict[str, int | str]:
     with inventory_write_lock():
         operation_type = "scrap_outbound"
-        request_payload = payload.model_dump(mode="json", exclude={"client_request_id"})
+        request_payload = _mobile_request_payload(payload)
         replayed = replayed_mobile_response(
             db, operation_type, payload.client_request_id, request_payload
         )
         if replayed is not None:
             return replayed
+        operator_name = verified_operator_name()
         idempotency_key = _idempotency_key("mobile_scrap_outbound", payload.client_request_id)
         existing_record = db.query(InventoryTransactionRecord).filter(InventoryTransactionRecord.idempotency_key == idempotency_key).first() if idempotency_key else None
         if existing_record:
@@ -1098,13 +1110,13 @@ def scrap_outbound(payload: ScrapOutboundPayload, db: Session = Depends(get_db))
                 item.status = "used"
             affected_items.append((item, deduction, item_before_quantity, item.quantity))
         for index, (item, deduction, item_before_quantity, item_after_quantity) in enumerate(affected_items):
-            db.add(InventoryTransactionRecord(inventory_id=item.id, transaction_type="out", quantity=deduction, before_quantity=item_before_quantity, after_quantity=item_after_quantity, idempotency_key=idempotency_key if index == 0 else None, operator_name=payload.operator_name or None, customer_name=(payload.customer_name or "").strip() or None, remark=payload.remark or "余料出库"))
+            db.add(InventoryTransactionRecord(inventory_id=item.id, transaction_type="out", quantity=deduction, before_quantity=item_before_quantity, after_quantity=item_after_quantity, idempotency_key=idempotency_key if index == 0 else None, operator_name=operator_name, customer_name=(payload.customer_name or "").strip() or None, remark=payload.remark or "余料出库"))
         record_operation_log(
             db,
             "scrap_outbound",
             "inventory",
             affected_items[0][0].id if affected_items else None,
-            payload.operator_name or None,
+            operator_name,
             payload.remark or f"小程序余料出库：{material_value}，数量 {payload.quantity}",
             before_data={"quantity": before_quantity, "scrap_group_key": payload.scrap_group_key},
             after_data={"quantity": before_quantity - payload.quantity},
@@ -1135,15 +1147,16 @@ def reverse_scrap_transaction(transaction_id: int, payload: TransactionReversePa
         operation_type = "scrap_transaction_reverse"
         request_payload = {
             "transaction_id": transaction_id,
-            **payload.model_dump(mode="json", exclude={"client_request_id"}),
+            **_mobile_request_payload(payload),
         }
         replayed = replayed_mobile_response(
             db, operation_type, payload.client_request_id, request_payload
         )
         if replayed is not None:
             return replayed
+        operator_name = verified_operator_name()
         reversal = reverse_inventory_transaction(
-            transaction_id, payload.operator_name, payload.remark, db
+            transaction_id, operator_name, payload.remark, db
         )
         db.flush()
         record_operation_log(
@@ -1151,7 +1164,7 @@ def reverse_scrap_transaction(transaction_id: int, payload: TransactionReversePa
             "transaction_reverse",
             "inventory_transaction",
             transaction_id,
-            payload.operator_name or None,
+            operator_name,
             payload.remark or "小程序撤销余料流水",
             after_data={"reversal_transaction_id": reversal.id},
         )

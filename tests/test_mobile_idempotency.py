@@ -4,8 +4,10 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
+from app.auth.context import current_account
 from app.database import Base
 from app.models import (
+    Account,
     InventoryTransactionRecord,
     MaterialInventory,
     MobileRequestRecord,
@@ -40,6 +42,13 @@ class MobileIdempotencyTest(unittest.TestCase):
         self.Session = sessionmaker(
             bind=self.engine, autoflush=False, autocommit=False
         )
+        self.account_token = current_account.set(
+            Account(username="tns008", display_name="张三", role="employee")
+        )
+
+    def tearDown(self) -> None:
+        current_account.reset(self.account_token)
+        self.engine.dispose()
 
     def add_drawing(self, db, code: str = "TNX-MOBILE-001") -> ProductDrawing:
         drawing = ProductDrawing(
@@ -150,10 +159,13 @@ class MobileIdempotencyTest(unittest.TestCase):
                 drawing_id=drawing.id,
                 quantity=3,
                 location="A-01",
-                operator_name="测试员",
+                operator_name="伪造甲",
             )
             first = product_inbound(payload, db=db)
-            second = product_inbound(payload, db=db)
+            second = product_inbound(
+                payload.model_copy(update={"operator_name": "伪造乙"}),
+                db=db,
+            )
 
             self.assertEqual(first["id"], second["id"])
             total = sum(
@@ -167,6 +179,8 @@ class MobileIdempotencyTest(unittest.TestCase):
             )
             self.assertEqual(total, 3)
             self.assertEqual(db.query(MobileRequestRecord).count(), 1)
+            transaction = db.query(InventoryTransactionRecord).one()
+            self.assertEqual(transaction.operator_name, "张三")
 
             changed = ProductInboundPayload(
                 client_request_id="mobile-inbound-001",
@@ -207,6 +221,10 @@ class MobileIdempotencyTest(unittest.TestCase):
                 .count(),
                 1,
             )
+            transaction = db.query(InventoryTransactionRecord).filter_by(
+                transaction_type="out"
+            ).one()
+            self.assertEqual(transaction.operator_name, "张三")
             with self.assertRaises(HTTPException) as raised:
                 product_outbound(payload.model_copy(update={"quantity": 4}), db=db)
             self.assertEqual(raised.exception.status_code, 409)
@@ -239,6 +257,10 @@ class MobileIdempotencyTest(unittest.TestCase):
                 .count(),
                 1,
             )
+            transaction = db.query(InventoryTransactionRecord).filter_by(
+                transaction_type="confirm"
+            ).one()
+            self.assertEqual(transaction.operator_name, "张三")
             with self.assertRaises(HTTPException) as raised:
                 confirm_scrap(
                     item.id,
@@ -272,6 +294,10 @@ class MobileIdempotencyTest(unittest.TestCase):
                 .count(),
                 1,
             )
+            transaction = db.query(InventoryTransactionRecord).filter_by(
+                transaction_type="out"
+            ).one()
+            self.assertEqual(transaction.operator_name, "张三")
             with self.assertRaises(HTTPException) as raised:
                 scrap_outbound(payload.model_copy(update={"quantity": 4}), db=db)
             self.assertEqual(raised.exception.status_code, 409)
@@ -311,6 +337,10 @@ class MobileIdempotencyTest(unittest.TestCase):
                 .count(),
                 1,
             )
+            reversal = db.query(InventoryTransactionRecord).filter_by(
+                reversed_transaction_id=original.id
+            ).one()
+            self.assertEqual(reversal.operator_name, "张三")
             with self.assertRaises(HTTPException) as raised:
                 reverse_product_transaction(
                     original.id,
@@ -353,6 +383,10 @@ class MobileIdempotencyTest(unittest.TestCase):
                 .count(),
                 1,
             )
+            reversal = db.query(InventoryTransactionRecord).filter_by(
+                reversed_transaction_id=original.id
+            ).one()
+            self.assertEqual(reversal.operator_name, "张三")
             with self.assertRaises(HTTPException) as raised:
                 reverse_scrap_transaction(
                     original.id,
