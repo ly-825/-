@@ -3,6 +3,7 @@ import unittest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.auth.context import current_account
 from app.admin_pages import (
     confirm_drawing_from_page,
     confirmed_drawings_page,
@@ -11,7 +12,7 @@ from app.admin_pages import (
     inventory_product_detail_page,
 )
 from app.database import Base
-from app.models import MaterialInventory, ProductDrawing
+from app.models import Account, InventoryTransactionRecord, MaterialInventory, ProductDrawing
 from app.services.excel_export import build_export_rows
 
 
@@ -20,6 +21,10 @@ class DrawingParameterTextAndProductPaperTest(unittest.TestCase):
         engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
         Base.metadata.create_all(engine)
         self.Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        account_token = current_account.set(
+            Account(username="boss", display_name="老板", role="owner")
+        )
+        self.addCleanup(current_account.reset, account_token)
 
     def test_confirmed_drawing_with_inventory_can_still_update_manual_parameters(self) -> None:
         with self.Session() as db:
@@ -208,10 +213,12 @@ class DrawingParameterTextAndProductPaperTest(unittest.TestCase):
                 db=db,
             )
             item = db.query(MaterialInventory).filter(MaterialInventory.material_code == "TNX-PAPER").first()
+            transaction = db.query(InventoryTransactionRecord).one()
             summary_html = inventory_page(db=db).body.decode("utf-8")
             detail_html = inventory_product_detail_page("TNX-PAPER", db=db).body.decode("utf-8")
 
             self.assertEqual(item.paper_material, "蓝色纸")
+            self.assertEqual(transaction.operator_name, "老板")
             self.assertIn("<th>参数信息</th>", summary_html)
             self.assertIn("<strong>纸材质</strong> 蓝色纸", summary_html)
             self.assertIn("<th>纸材质</th>", detail_html)

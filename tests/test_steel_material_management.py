@@ -207,7 +207,8 @@ class SteelMaterialPagesTest(unittest.TestCase):
         self.assertIn("0 → 200", transaction_html)
         self.assertIn('class="transaction-note"', transaction_html)
         self.assertIn("板料入库；总重量", transaction_html)
-        self.assertIn('name="operator_name"', transaction_html)
+        self.assertNotIn('name="operator_name"', transaction_html)
+        self.assertIn("当前操作员：当前登录账号", transaction_html)
         self.assertIn('name="remark"', transaction_html)
 
 

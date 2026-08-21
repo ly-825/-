@@ -11,8 +11,9 @@ from starlette.datastructures import FormData
 
 import app.services.paper_inventory as paper_inventory_service
 from app import paper_admin_pages
+from app.auth.context import current_account
 from app.database import Base
-from app.models import PaperInventoryBatch, PaperInventoryTransaction, PaperSpecification
+from app.models import Account, PaperInventoryBatch, PaperInventoryTransaction, PaperSpecification
 from app.paper_admin_pages import (
     create_paper_inbound,
     create_paper_specification,
@@ -417,6 +418,10 @@ class PaperSpecificationAndInboundPagesTest(unittest.TestCase):
         self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
+        account_token = current_account.set(
+            Account(username="boss", display_name="老板", role="owner")
+        )
+        self.addCleanup(current_account.reset, account_token)
 
     def test_navigation_has_independent_paper_material_section(self) -> None:
         html = page("测试", "").body.decode("utf-8")
@@ -612,6 +617,7 @@ class PaperSpecificationAndInboundPagesTest(unittest.TestCase):
         self.assertEqual(batch.unit_price, Decimal("12.30"))
         self.assertEqual(batch.model, "Tnx236.2A")
         self.assertEqual(transaction.after_quantity, 20)
+        self.assertEqual(transaction.operator_name, "老板")
 
 
 class PaperInventoryWorkflowPagesTest(unittest.TestCase):
@@ -619,6 +625,10 @@ class PaperInventoryWorkflowPagesTest(unittest.TestCase):
         self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
+        account_token = current_account.set(
+            Account(username="boss", display_name="老板", role="owner")
+        )
+        self.addCleanup(current_account.reset, account_token)
 
     def _seed_roll_batches(self, db):
         spec = PaperSpecification(
@@ -896,6 +906,7 @@ class PaperInventoryWorkflowPagesTest(unittest.TestCase):
                 .filter_by(inventory_id=first.id, transaction_type="out")
                 .one()
             )
+            self.assertEqual(first_out.operator_name, "老板")
             reverse_paper_transaction_from_page(
                 transaction_id=first_out.id,
                 operator_name="李四",
@@ -905,6 +916,10 @@ class PaperInventoryWorkflowPagesTest(unittest.TestCase):
             )
             self.assertEqual(first.quantity, 2)
             self.assertEqual(first.unit_price, Decimal("10.00"))
+            reversal = db.query(PaperInventoryTransaction).filter_by(
+                reversed_transaction_id=first_out.id
+            ).one()
+            self.assertEqual(reversal.operator_name, "老板")
 
 
 if __name__ == "__main__":
